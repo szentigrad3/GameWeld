@@ -5,7 +5,7 @@
 GameWeld keeps local trainer assignments together, helps discover publisher-listed trainers, and launches supported games and trainers through their existing Wine, Proton and launcher sessions.
 
 **Latest stable:** 0.7.0  
-**Development branch:** 0.8.0 Dev 1 (publisher-file review; no unattended downloads)
+**Current development build:** 0.8.0 Dev 1 (publisher-file review; no unattended downloads)
 
 GameWeld is maintained by [@szentigrad3](https://github.com/szentigrad3).
 
@@ -23,7 +23,7 @@ GameWeld is maintained by [@szentigrad3](https://github.com/szentigrad3).
 
 ## Install
 
-Download the Linux x86_64 **AppImage** from [Releases](https://github.com/szentigrad3/GameWeld/releases) once the release assets are published, then:
+**GitHub release assets are not published yet.** Track the first stable release in [issue #4](https://github.com/szentigrad3/GameWeld/issues/4). Once published, download the Linux x86_64 **AppImage** from [Releases](https://github.com/szentigrad3/GameWeld/releases), then:
 
 ```bash
 chmod +x GameWeld-0.7.0-x86_64.AppImage
