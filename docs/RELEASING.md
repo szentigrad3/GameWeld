@@ -2,34 +2,26 @@
 
 The maintainer approves every public release. CI produces test evidence; it never silently uploads executable updates or ships unverified trainer packages.
 
-## First GitHub publication
+## First tagged GitHub release
 
-1. Verify the source rights and review the third-party checklist in `docs/PUBLICATION-REVIEW.md`.
-2. Create an empty repository `szentigrad3/GameWeld` on GitHub (don't initialize it with a separate README/LICENSE).
-3. Push this source tree as `main`, then enable Actions and (recommended) private vulnerability reporting.
-4. Publish the verified **0.7.0** stable AppImage and its SHA256 manifest as GitHub Release `v0.7.0`.
-5. Check that the uploaded stable AppImage hash equals `docs/BASELINE-SHA256.txt` before building 0.8.0 Dev 1.
+The project source has been pushed to [`main`](https://github.com/szentigrad3/GameWeld). The public `v0.7.0` release assets have **not** yet been published; follow [issue #4](https://github.com/szentigrad3/GameWeld/issues/4).
 
-Example local commands from the repository root after creating the repository:
+1. Complete the maintainer license and third-party distribution review in `docs/PUBLICATION-REVIEW.md` and [issue #5](https://github.com/szentigrad3/GameWeld/issues/5).
+2. Verify the stable AppImage matches the SHA256 in `docs/BASELINE-SHA256.txt`.
+3. Create tag `v0.7.0` at the approved source commit and attach the verified AppImage and SHA256 manifest. Keep binaries outside source Git history.
+4. Download the published AppImage and verify its checksum and startup on Linux x86_64.
+5. Only then enable the development AppImage workflow, which fetches the runtime by release tag.
 
-```bash
-git init -b main
-git add .
-git commit -m "chore: prepare GameWeld source for GitHub"
-git remote add origin https://github.com/szentigrad3/GameWeld.git
-git push -u origin main
-```
-
-Upload release assets separately from Git history:
+Example local release command, after completing the reviews:
 
 ```bash
 gh auth login
-gh release create v0.7.0 \
-  GameWeld-0.7.0-x86_64.AppImage GameWeld-0.7.0-SHA256SUMS.txt \
+gh release create v0.7.0 \\
+  GameWeld-0.7.0-x86_64.AppImage GameWeld-0.7.0-SHA256SUMS.txt \\
   --title 'GameWeld 0.7.0' --notes-file docs/RELEASE-NOTES-0.7.0.md
 ```
 
-The `gh` example requires the referenced files to exist locally and a repository account with release permissions. **Don't publish a GitHub release until the SHA256 and licensing checks pass.**
+The example assumes the files exist locally and the maintainer has release permissions. **Do not publish a GitHub release until the checksum and distribution review gates pass.**
 
 ## Subsequent development release
 
