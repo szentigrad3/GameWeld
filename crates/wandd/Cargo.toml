@@ -1,0 +1,21 @@
+[package]
+name = "wandd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+wand-core = { path = "../wand-core" }
+wand-steam = { path = "../wand-steam" }
+wand-runtime = { path = "../wand-runtime" }
+
+uuid.workspace = true
+wand-state = { path = "../wand-state" }
+wand-provider-api = { path = "../wand-provider-api" }
+wand-provider-generic = { path = "../wand-provider-generic" }
+tar.workspace = true
+zstd.workspace = true
+wand-provider-wemod = { path = "../wand-provider-wemod" }

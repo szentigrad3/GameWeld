@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "baseline_ge_proton": "GE-Proton11-7",
+  "baseline_wine_commit": "46b29104e3741fe23bf5e2547196a253aab88c89",
+  "baseline_x86_64_crypt32_sha256": "000505b2ea8ce65c57ef1610b6f1e96d3a73fb11388ba812dd71a180b722bf29",
+  "ge_proton_asset": "GE-Proton11-7-x86_64.tar.gz",
+  "ge_proton_url": "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-7/GE-Proton11-7-x86_64.tar.gz",
+  "ge_proton_sha512_asset": "GE-Proton11-7-x86_64.sha512sum",
+  "ge_proton_sha512_url": "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-7/GE-Proton11-7-x86_64.sha512sum",
+  "patched_x86_64_crypt32_sha256": null,
+  "patched_i386_crypt32_sha256": null
+}

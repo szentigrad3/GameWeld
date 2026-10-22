@@ -1,0 +1,22 @@
+--- a/dlls/crypt32/cert.c
++++ b/dlls/crypt32/cert.c
+@@ -3,6 +3,11 @@
+              cert->ctx.pbCertEncoded, cert->ctx.cbCertEncoded, pvData,
+              pcbData);
+             break;
++        case CERT_SHA256_HASH_PROP_ID:
++            ret = CertContext_GetHashProp(cert, dwPropId, CALG_SHA_256,
++             cert->ctx.pbCertEncoded, cert->ctx.cbCertEncoded, pvData,
++             pcbData);
++            break;
+         case CERT_MD5_HASH_PROP_ID:
+             ret = CertContext_GetHashProp(cert, dwPropId, CALG_MD5,
+              cert->ctx.pbCertEncoded, cert->ctx.cbCertEncoded, pvData,
+@@ -23,6 +28,7 @@
+         case CERT_DESCRIPTION_PROP_ID:
+         case CERT_FRIENDLY_NAME_PROP_ID:
+         case CERT_HASH_PROP_ID:
++        case CERT_SHA256_HASH_PROP_ID:
+         case CERT_KEY_IDENTIFIER_PROP_ID:
+         case CERT_MD5_HASH_PROP_ID:
+         case CERT_NEXT_UPDATE_LOCATION_PROP_ID:

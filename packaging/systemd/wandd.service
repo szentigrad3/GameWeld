@@ -1,0 +1,13 @@
+[Unit]
+Description=Wand Native trainer runtime
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/wandd
+Restart=on-failure
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=default.target

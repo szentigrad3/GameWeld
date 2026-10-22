@@ -1,0 +1,41 @@
+# Local runtime and user-specific data
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+config.local.*
+local-trainers.tsv
+*automation-report*.md
+*stability-preflight*.md
+
+# Build output / generated packages
+*.AppImage
+*.AppImage.zsync
+*.squashfs
+*.zip
+*.tar
+*.tar.gz
+*.deb
+*.rpm
+*.exe
+*.dll
+*.so
+*.o
+*.a
+*.pyc
+__pycache__/
+target/
+build/
+dist/
+release/
+*.log
+
+# Developer editors
+.vscode/
+.idea/
+.DS_Store
+*.swp

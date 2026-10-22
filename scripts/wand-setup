@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if wandctl setup; then
+  echo
+  echo "Setup finished. Restart Steam before selecting 'GE Proton Wand SHA256' for a game."
+else
+  rc=$?
+  echo
+  echo "Setup did not complete. The error above should explain what is missing."
+  exit "$rc"
+fi

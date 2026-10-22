@@ -1,0 +1,11 @@
+[package]
+name = "wand-provider-wemod"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+wand-core = { path = "../wand-core" }
+wand-runtime = { path = "../wand-runtime" }
+wand-provider-api = { path = "../wand-provider-api" }

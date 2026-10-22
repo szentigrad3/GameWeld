@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Wand Native
+Comment=Run Wand trainers with Steam and Proton on Linux
+Exec=wand-ui
+Icon=dev.wand.WandNative
+Terminal=false
+Categories=Game;Utility;
+StartupNotify=true
+X-AppImage-Version=0.1.43-test2

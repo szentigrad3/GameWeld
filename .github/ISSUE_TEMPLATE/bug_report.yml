@@ -1,0 +1,29 @@
+name: Bug report
+description: Report broken launcher, UI, or trainer-library behaviour
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include steps to reproduce, expected behaviour, and actual behaviour.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: GameWeld version
+      placeholder: 0.7.0 or 0.8.0-dev1
+    validations:
+      required: true
+  - type: dropdown
+    id: launcher
+    attributes:
+      label: Launcher
+      options: [Steam, Steam shortcut, Heroic Epic, Heroic GOG, Lutris, Other, Not applicable]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant diagnostics
+      description: Redact usernames, tokens, absolute home paths and other private data. Do not upload trainer binaries.

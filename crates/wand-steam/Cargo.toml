@@ -1,0 +1,9 @@
+[package]
+name = "wand-steam"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+wand-core = { path = "../wand-core" }

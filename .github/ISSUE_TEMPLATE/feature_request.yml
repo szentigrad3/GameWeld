@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest a GameWeld improvement
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Suggested workflow
+      description: Please explain how it works without bypassing provider access controls or licensing.

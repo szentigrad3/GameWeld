@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wand Native Setup
+Comment=Install or repair the Wand-compatible Proton tool
+Exec=wand-setup
+Icon=applications-system-symbolic
+Terminal=true
+Categories=Game;Utility;
+StartupNotify=false

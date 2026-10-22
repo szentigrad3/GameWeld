@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wand Native
+Comment=Steam and Proton trainer runtime
+Exec=wand-ui
+Icon=applications-games-symbolic
+Terminal=false
+Categories=Game;Utility;
+StartupNotify=true

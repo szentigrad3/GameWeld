@@ -1,0 +1,36 @@
+[workspace]
+members = [
+    "crates/wand-core",
+    "crates/wand-steam",
+    "crates/wand-runtime",
+    "crates/wand-state",
+    "crates/wand-provider-api",
+    "crates/wand-provider-generic",
+    "crates/wand-provider-wemod",
+    "crates/wand-client",
+    "crates/wand-ui",
+    "crates/wandd",
+    "crates/wandctl",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.2"
+edition = "2021"
+license = "MIT"
+authors = ["GameWeld contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+tar = "0.4"
+zstd = "0.13"
+
+gtk = { package = "gtk4", version = "0.11.3", features = ["v4_10"] }
+adw = { package = "libadwaita", version = "0.9.2" }

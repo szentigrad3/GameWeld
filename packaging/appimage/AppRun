@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+APPDIR="${APPDIR:-$(cd -- "$(dirname -- "$0")" && pwd)}"
+export WAND_NATIVE_ROOT="$APPDIR/usr/share/wand-native"
+export WAND_PAYLOAD_ROOT="$WAND_NATIVE_ROOT/payload/crypt32"
+export PATH="$APPDIR/usr/bin:${PATH:-/usr/bin:/bin}"
+export XDG_DATA_DIRS="$APPDIR/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+for libdir in \
+  "$APPDIR/usr/lib" \
+  "$APPDIR/usr/lib64" \
+  "$APPDIR/usr/lib/x86_64-linux-gnu"; do
+  [[ -d "$libdir" ]] || continue
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="$libdir:$LD_LIBRARY_PATH"
+  else
+    export LD_LIBRARY_PATH="$libdir"
+  fi
+done
+
+if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+  SOCKET_DIR="$XDG_RUNTIME_DIR/wand-native-appimage"
+else
+  SOCKET_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/wand-native/appimage-runtime"
+fi
+mkdir -p "$SOCKET_DIR"
+chmod 700 "$SOCKET_DIR" 2>/dev/null || true
+export WAND_SOCKET_PATH="$SOCKET_DIR/wand.sock"
+
+DAEMON_PID=""
+cleanup() {
+  if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+    kill "$DAEMON_PID" 2>/dev/null || true
+    wait "$DAEMON_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+rm -f "$WAND_SOCKET_PATH"
+"$APPDIR/usr/bin/wandd" >"${XDG_CACHE_HOME:-$HOME/.cache}/wand-native/appimage-wandd.log" 2>&1 &
+DAEMON_PID=$!
+
+for _ in $(seq 1 100); do
+  [[ -S "$WAND_SOCKET_PATH" ]] && break
+  kill -0 "$DAEMON_PID" 2>/dev/null || {
+    echo "Wand Native backend exited during startup." >&2
+    cat "${XDG_CACHE_HOME:-$HOME/.cache}/wand-native/appimage-wandd.log" >&2 2>/dev/null || true
+    exit 1
+  }
+  sleep 0.05
+done
+
+[[ -S "$WAND_SOCKET_PATH" ]] || {
+  echo "Wand Native backend did not create its socket: $WAND_SOCKET_PATH" >&2
+  exit 1
+}
+
+"$APPDIR/usr/bin/wand-ui" "$@"
