@@ -26,7 +26,7 @@ jobs:
           ./MAKE-APPIMAGE.sh "$PWD/build/GameWeld-0.7.0-x86_64.AppImage" "$PWD/build/GameWeld-0.8.0-dev1-x86_64.AppImage"
           sha256sum build/GameWeld-0.8.0-dev1-x86_64.AppImage > build/SHA256SUMS.txt
       - name: Upload for maintainer review (not a public release)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gameweld-0.8.0-dev1-linux-x86_64
           path: |
