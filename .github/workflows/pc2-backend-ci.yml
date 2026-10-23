@@ -65,6 +65,13 @@ jobs:
           test -s build/pc2-source/pc2-test6-aio-report.txt
           grep -q 'Result: PASS' build/pc2-source/pc2-test6-aio-report.txt
           grep -q 'Compatibility verified: false' build/pc2-source/pc2-test6-aio-report.txt
+      - name: Test 7 read-only runtime fingerprints
+        run: |
+          bash -n scripts/pc2-test7-aio-report.sh
+          bash scripts/pc2-test7-aio-report.sh
+          test -s build/pc2-source/pc2-test7-aio-report.txt
+          grep -q 'Result: PASS' build/pc2-source/pc2-test7-aio-report.txt
+          grep -q 'Integrity verified against trusted reference: false' build/pc2-source/pc2-test7-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
