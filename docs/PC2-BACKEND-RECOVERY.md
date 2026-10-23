@@ -225,6 +225,28 @@ bash scripts/pc2-test14-aio-report.sh 346900
 
 Output: `build/pc2-source/pc2-test14-aio-report.txt`. The CI fixture tests exercise positive native ELF32/ELF64 evidence, escaped install-directory paths, non-ELF executables, incorrect app-ID associations and safety failures. Passing CI does not replace the first CachyOS field run. Continue using PC1 for normal trainer operations; PC2's Steam game-only launch is user opt-in.
 
+## GameWeld PC2 — integrated WeMod Enhancer GUI patch/restore
+
+At the maintainer's request, PC2 now integrates [e-gleba/wemod_enhancer](https://github.com/e-gleba/wemod_enhancer) **directly inside GameWeld's Settings page**, rather than requiring a separate WeMod Enhancer window or using the older Windows-only k1tbyte/Wand-Enhancer GUI. The **e-gleba code is upstream MIT-licensed**; GameWeld does not copy the entire project into this branch.
+
+**How to use it on CachyOS:**
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/run-pc2-source-frontend.sh
+```
+
+In **Settings → WeMod Enhancer — Integrated Linux Patcher**, click **Detect**. By default, the helper detects `~/wemod-launcher/wemod_data/wemod_bin`, plus some standard fallback paths. The existing read-only Wand/WeMod scanner can also populate an unambiguous detected installation. If neither finds the installation, click **Choose Folder**, selecting the folder containing `WeMod.exe` and `resources/app.asar`. Close WeMod itself before patching.
+
+Click **Patch WeMod**; a confirmation dialog describes exactly what will happen. This one action downloads the pinned upstream Linux release **v1.0.7** if needed, verifies GitHub's published **SHA256** digest against a project-pinned value, extracts its `bin/wemod_enhancer.py` and `bin/version.dll` to the user's **XDG data directory** (never to the game's Proton installation), then executes the upstream `python3 wemod_enhancer.py patch --install-dir <selected>` command. The upstream patcher modifies WeMod's ASAR, updates client-side subscription display, integrity and update behavior, installs a Windows DLL proxy and maintains an original-file backup. This is a modification of a third-party application that may cease working with future WeMod updates; it is **not** the same as acquiring a legitimate paid subscription.
+
+**Restore Original** calls the upstream restore operation for that same selected WeMod folder; missing backups fail closed. **Install** downloads the helper separately, without touching WeMod. **Detect** is fully read-only. All operations use subprocess argument arrays, bounded output, and the GameWeld Activity log. No shell commands or game/Steam/Proton configuration writes are performed by GameWeld's adapter. The optional `GAMEWELD_WEMOD_ENHANCER_DIR` environment setting accepts an already-extracted upstream CLI under `bin/`, bypassing the managed download.
+
+The upstream Linux release requires **Python 3.11+** and its packaged Windows `version.dll`. GameWeld does not yet integrate the game/WeMod session launch from this patcher: use the established Linux WeMod launcher for Windows games and a supported Wine/Proton environment. Native Linux games (including AdVenture Capitalist) do not automatically become compatible with Windows-only trainers.
+
+Unit tests in `scripts/test_gameweld_wemod_enhancer.py` exercise these actions using **disposable mock WeMod files and a fake upstream patcher**; they never patch the developer's real WeMod. GitHub CI compiles PC2 GTK and runs those tests. Real field validation requires clicking Patch on a local WeMod installation and inspecting the Activity result. PC1 stable remains untouched.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
