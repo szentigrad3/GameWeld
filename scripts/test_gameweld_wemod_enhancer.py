@@ -304,5 +304,103 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bridge.safe_unpack(archive, folder)
 
+    def make_live_proton_fixture(self, appid="2353250", comm="Astrometica.exe"):
+        from pathlib import Path
+        proc = self.root / "proc-fixture"
+        prefix = self.root / "compat" / appid
+        (prefix / "pfx" / "drive_c").mkdir(parents=True, exist_ok=True)
+        steamroot = self.root / "steam-root"
+        steamroot.mkdir(exist_ok=True)
+        runtime = self.root / "Proton"
+        runtime.mkdir(exist_ok=True)
+        proton = runtime / "proton"
+        proton.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        proton.chmod(0o755)
+        for pid, process in ((701, comm), (702, "reaper")):
+            directory = proc / str(pid)
+            directory.mkdir(parents=True, exist_ok=True)
+            environment = {
+                "SteamAppId": appid,
+                "STEAM_COMPAT_APP_ID": appid,
+                "STEAM_COMPAT_DATA_PATH": str(prefix),
+                "STEAM_COMPAT_TOOL_PATHS": str(runtime),
+                "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(steamroot),
+            }
+            (directory / "environ").write_bytes(b"\0".join(
+                (key + "=" + value).encode() for key, value in environment.items()) + b"\0")
+            (directory / "comm").write_text(process + "\n", encoding="utf-8")
+        return proc, prefix, proton
+
+    def test_live_proton_requires_running_windows_game_not_steam_helper(self):
+        proc, prefix, proton = self.make_live_proton_fixture()
+        session = bridge.live_steam_proton_session("2353250", proc)
+        self.assertEqual(session["game_pid"], 701)
+        self.assertEqual(session["compat"], prefix.resolve())
+        self.assertEqual(session["proton"], proton.resolve())
+        self.assertEqual(session["process_count"], 2)
+        with self.assertRaisesRegex(ValueError, "No same-user live Proton session"):
+            bridge.live_steam_proton_session("2353251", proc)
+        (proc / "701" / "comm").write_text("steamwebhelper\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Only Steam helpers"):
+            bridge.live_steam_proton_session("2353250", proc)
+
+    def test_live_proton_rejects_ambiguous_game_prefixes(self):
+        proc, prefix, proton = self.make_live_proton_fixture()
+        other = self.root / "other-compat"
+        (other / "pfx" / "drive_c").mkdir(parents=True)
+        env_file = proc / "703" / "environ"
+        env_file.parent.mkdir()
+        raw = (proc / "701" / "environ").read_bytes()
+        env_file.write_bytes(raw.replace(str(prefix).encode(), str(other).encode()))
+        (env_file.parent / "comm").write_text("Another.exe\n")
+        with self.assertRaisesRegex(ValueError, "Multiple live Proton prefixes"):
+            bridge.live_steam_proton_session("2353250", proc)
+
+    def test_live_launch_uses_running_game_proton_and_native_dll_override(self):
+        from unittest.mock import patch
+        proc, prefix, proton = self.make_live_proton_fixture()
+        capture = self.root / "proton-capture.txt"
+        proton.write_text(
+            '#!/bin/sh\n'
+            'printf "%s\\n%s\\n%s\\n" "$WINEDLLOVERRIDES" '
+            '"$STEAM_COMPAT_DATA_PATH" "$STEAM_COMPAT_APP_ID" > "$GAMEWELD_TEST_CAPTURE"\n',
+            encoding="utf-8",
+        )
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        self.assertEqual(self.cmd("patch", "--install-dir", str(self.client),
+                                  "--confirm").returncode, 0)
+        with patch.dict(os.environ, {"GAMEWELD_TEST_CAPTURE": str(capture)}):
+            with self.assertRaisesRegex(ValueError, "Steam game installation directory"):
+                bridge.launch_wand_in_live_game(
+                    self.client, self.helper, "2353250", "", proc)
+            bridge.launch_wand_in_live_game(
+                self.client, self.helper, "2353250", str(game_dir), proc)
+        self.assertTrue(capture.exists(), "Exact fake Proton was not invoked")
+        self.assertEqual(capture.read_text().splitlines(), [
+            "version=n,b", str(prefix.resolve()), "2353250",
+        ])
+        # Nothing about the request certifies a trainer is attached.
+        self.assertEqual((self.client / "resources/app.asar").read_bytes(),
+                         b"PATCHED-FIXTURE")
+
+    def test_live_launch_cli_fails_closed_without_confirmation_or_process(self):
+        game = self.root / "Astrometica"
+        game.mkdir()
+        self.assertEqual(self.cmd("patch", "--install-dir",
+                                  str(self.client), "--confirm").returncode, 0)
+        options = ("live-launch", "--install-dir", str(self.client),
+                   "--game-provider", "steam", "--appid", "2353250",
+                   "--game-dir", str(game))
+        before = self.cmd(*options)
+        self.assertNotEqual(before.returncode, 0, before.stdout)
+        self.assertIn("requires explicit --confirm", before.stdout)
+        # Normal developer/CI machines must not claim an Astrometica session.
+        bad_id = self.cmd("live-launch", "--install-dir", str(self.client),
+                          "--game-provider", "steam", "--appid", "2353250;echo x",
+                          "--game-dir", str(game), "--confirm")
+        self.assertNotEqual(bad_id.returncode, 0, bad_id.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
