@@ -64,23 +64,23 @@ class SteamHandoffTests(unittest.TestCase):
         self.assertIn("Launch result: UNCONFIRMED", report)
         self.assertNotIn("STEAM_ASSOCIATION_OBSERVED", report)
 
-    def test_steam_handoff_observes_exact_process_association(self):
-        # This is a fake Steam child and a fake Linux process. No real game is
-        # launched, and the presence of its env var is not proof of game identity.
+    def test_steam_handoff_observes_new_exact_process_association(self):
+        # Mock one newly observed process after issuing the command. An
+        # already-running unrelated/old association must not prove a new start.
         appid = "4294967294"
         self.fake_steam("exit 0\n")
-        env = dict(os.environ, SteamAppId=appid)
-        proc = subprocess.Popen(["sleep", "4"], env=env,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
-        try:
+        with patch.object(steam, "associated_process_count", side_effect=[0, 1]):
             status, report = self.capture(appid, steam=str(self.command), duration=1)
-            self.assertEqual(status, 0, report)
-            self.assertIn("STEAM_ASSOCIATION_OBSERVED", report)
-            self.assertIn("Game executable, visible window and trainer: NOT VERIFIED", report)
-        finally:
-            proc.terminate()
-            proc.wait(timeout=5)
+        self.assertEqual(status, 0, report)
+        self.assertIn("STEAM_ASSOCIATION_OBSERVED", report)
+        self.assertIn("Game executable, visible window and trainer: NOT VERIFIED", report)
+
+    def test_existing_process_does_not_prove_new_game_launch(self):
+        self.fake_steam("exit 0\n")
+        with patch.object(steam, "associated_process_count", return_value=4):
+            status, report = self.capture("4294967294", steam=str(self.command), duration=0.01)
+        self.assertEqual(status, 2, report)
+        self.assertIn("UNCONFIRMED", report)
 
     def test_cli_needs_confirm_and_invalid_appid_never_runs_steam(self):
         marker = self.root / "executed"
