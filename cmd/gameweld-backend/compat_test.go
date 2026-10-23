@@ -56,3 +56,16 @@ func TestCompatibilitySymlinkToolNotFollowed(t *testing.T) {
 	r := inspectCompatibility([]string{other, lib})
 	if len(r.Candidates) != 1 || r.Candidates[0].Path != dir { t.Fatalf("symlink followed: %+v", r) }
 }
+
+func TestCompatibilityEndpointIsReadOnlyAndUnverified(t *testing.T) {
+    lib, _ := fixtureCompatibility(t)
+    t.Setenv("STEAM_ROOT", lib)
+    t.Setenv("HOME", t.TempDir())
+    code, response := req(t, "GET", "/api/compatibility")
+    if code != 200 || !response.OK { t.Fatalf("request failed: %d %#v", code, response) }
+    data, ok := response.Data.(map[string]any)
+    if !ok { t.Fatalf("unexpected payload: %#v", response.Data) }
+    if data["mode"] != "read_only" || data["verified"] != false || data["state"] != "detected_unverified" {
+        t.Fatalf("incorrect verification claim: %#v", data)
+    }
+}
