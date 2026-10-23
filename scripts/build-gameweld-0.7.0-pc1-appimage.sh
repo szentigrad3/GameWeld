@@ -38,6 +38,8 @@ sed -i 's/^X-AppImage-Version=.*/X-AppImage-Version=0.7.0-pc1/' "$APP/gameweld.d
 cp "$APP/gameweld.desktop" "$APP/usr/share/applications/gameweld.desktop"
 mkdir -p "$APP/usr/share/doc/gameweld"
 cp "$ROOT/docs/RELEASE-NOTES-0.7.0-pc1.md" "$APP/usr/share/doc/gameweld/RELEASE-NOTES-0.7.0-pc1.md"
+# A passing report enforces package contents; it does not grant redistribution rights.
+python3 "$ROOT/scripts/audit-appimage-files.py" "$APP"
 python3 "$ROOT/scripts/mksquash-minimal.py" "$APP" "$TMP/root.squashfs"
 OFFSET="$("$BASE" --appimage-offset)"
 python3 - "$BASE" "$OFFSET" "$TMP/root.squashfs" "$OUT" <<'PY'

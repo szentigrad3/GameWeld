@@ -8,6 +8,8 @@ for f in scripts/regression-test-0.7.0-rc6-signed-catalogs.py scripts/regression
   echo "== $f =="
   python3 "$f"
 done
+echo "== PC1 AppDir packaging audit fixtures =="
+python3 scripts/test-audit-appimage-files.py
 if command -v gcc >/dev/null 2>&1; then
  gcc -fsyntax-only -pthread crates/wand-ui/appimage-gtk3/gameweld-native-040.c
 fi
