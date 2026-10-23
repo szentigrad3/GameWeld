@@ -146,6 +146,13 @@ jobs:
           test -s build/pc2-source/pc2-test15-aio-report.txt
           grep -Fq 'Steam command launched by this diagnostic: false' build/pc2-source/pc2-test15-aio-report.txt
           grep -Fq 'Result: PASS' build/pc2-source/pc2-test15-aio-report.txt
+      - name: Test 16 live Steam Proton Wand handoff fixtures (no real game)
+        run: |
+          bash -n scripts/pc2-test16-aio-report.sh
+          bash scripts/pc2-test16-aio-report.sh
+          test -s build/pc2-source/pc2-test16-aio-report.txt
+          grep -Fq 'Result: PASS' build/pc2-source/pc2-test16-aio-report.txt
+          grep -Fq 'Real game or Wand launched: false' build/pc2-source/pc2-test16-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
