@@ -63,25 +63,91 @@ def valid_patcher(root: Path) -> bool:
     )
 
 
-def detect_wemod(explicit: str | None = None) -> Path | None:
+def client_root(candidate: Path) -> Path | None:
+    """Resolve a real Wand/WeMod Electron app version, never a Proton provider."""
+    try:
+        folder = candidate.expanduser().resolve(strict=True)
+        asar = folder / "resources" / "app.asar"
+        if (
+            not folder.is_dir() or asar.is_symlink()
+            or not asar.is_file() or not os.access(asar, os.R_OK)
+        ):
+            return None
+        # GameWeld's existing scanner can find an app-N.N.N subdirectory
+        # containing the resources, without a WeMod.exe in that subdirectory.
+        known = any((folder / executable).is_file() for executable in
+                    ("WeMod.exe", "Wand.exe", "wemod.exe", "wand.exe"))
+        if not known and not folder.name.startswith("app-"):
+            return None
+        return folder
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def discover_existing_clients() -> list[Path]:
+    """Reuse GameWeld's existing bounded Steam/Heroic/Lutris/Wine scanner."""
+    discovery = Path(__file__).resolve().with_name("gameweld-wand-discovery.py")
+    if not discovery.is_file():
+        return []
+    try:
+        result = subprocess.run(
+            [sys.executable, str(discovery), "--json"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=45, check=False, text=True,
+        )
+        if result.returncode != 0 or len(result.stdout) > (256 * 1024):
+            return []
+        import json
+        data = json.loads(result.stdout)
+        if data.get("ok") is not True:
+            return []
+        output: list[Path] = []
+        seen: set[Path] = set()
+        for item in data.get("installations", [])[:200]:
+            path = item.get("install", "")
+            if not isinstance(path, str) or not path:
+                continue
+            valid = client_root(Path(path))
+            if valid and valid not in seen:
+                output.append(valid)
+                seen.add(valid)
+        return output
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return []
+
+
+def available_clients(explicit: str | None = None) -> list[Path]:
+    if explicit:
+        valid = client_root(Path(explicit))
+        return [valid] if valid else []
     home = Path.home()
-    options = (
-        [Path(explicit)] if explicit else [
-            Path(os.environ["GAMEWELD_WEMOD_INSTALL_DIR"])
-            if os.environ.get("GAMEWELD_WEMOD_INSTALL_DIR") else None,
-            home / "wemod-launcher/wemod_data/wemod_bin",
-            home / "Games/wemod-launcher/wemod_data/wemod_bin",
-            home / ".local/share/wemod-launcher/wemod_data/wemod_bin",
-        ]
-    )
-    for candidate in options:
+    known = [
+        Path(os.environ["GAMEWELD_WEMOD_INSTALL_DIR"])
+        if os.environ.get("GAMEWELD_WEMOD_INSTALL_DIR") else None,
+        home / "wemod-launcher/wemod_data/wemod_bin",
+        home / "Games/wemod-launcher/wemod_data/wemod_bin",
+        home / ".local/share/wemod-launcher/wemod_data/wemod_bin",
+    ]
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in known:
         if candidate is None:
             continue
-        # Do not search, patch or download anything outside known locations.
-        path = candidate.expanduser().resolve()
-        if (path / "WeMod.exe").is_file() and (path / "resources/app.asar").is_file():
-            return path
-    return None
+        valid = client_root(candidate)
+        if valid and valid not in seen:
+            found.append(valid)
+            seen.add(valid)
+    for valid in discover_existing_clients():
+        if valid not in seen:
+            found.append(valid)
+            seen.add(valid)
+    return found
+
+
+def detect_wemod(explicit: str | None = None) -> Path | None:
+    found = available_clients(explicit)
+    # Never choose an arbitrary Wine prefix when more than one client exists.
+    return found[0] if len(found) == 1 else None
 
 
 def download_package(url: str, expected_sha: str, destination: Path) -> None:
@@ -226,10 +292,11 @@ def main() -> int:
     parser.add_argument("--install-dir", help="Folder containing WeMod.exe and resources/app.asar")
     parser.add_argument("--confirm", action="store_true", help="Required for download/patch/restore")
     args = parser.parse_args()
-    folder = detect_wemod(args.install_dir)
+    candidates = available_clients(args.install_dir) if args.action != "install" else []
+    folder = candidates[0] if len(candidates) == 1 else None
     if args.action == "status":
         print(f"Upstream: https://github.com/e-gleba/wemod_enhancer ({VERSION})")
-        print("WeMod installation: " + ("FOUND" if folder else "NOT FOUND (select its folder in Settings)"))
+        print("Wand/WeMod client: " + ("FOUND" if folder else "MULTIPLE FOUND (select an exact installation)" if len(candidates) > 1 else "NOT FOUND (select the app-version folder in Settings)"))
         print("WeMod Enhancer CLI: " + ("READY" if valid_patcher(installed_helper_dir()) else "NOT INSTALLED"))
         if folder:
             print("WeMod backup: " + ("AVAILABLE" if
@@ -242,7 +309,7 @@ def main() -> int:
         install_helper()
         return 0
     if folder is None:
-        raise ValueError("WeMod.exe and resources/app.asar not found; choose the WeMod install folder")
+        raise ValueError("No unique Wand/WeMod client selected. Choose the app-version folder with resources/app.asar; this is distinct from the Proton compatibility tool.")
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
         installed_helper_dir() if valid_patcher(installed_helper_dir()) else install_helper())
