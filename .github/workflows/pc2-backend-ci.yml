@@ -1,0 +1,34 @@
+name: PC2 Backend (experimental)
+on:
+  push:
+    branches:
+      - feature/pc2-source-backend
+  pull_request:
+    paths:
+      - 'cmd/gameweld-backend/**'
+      - 'scripts/run-pc2-source-frontend.sh'
+      - 'scripts/gameweld-wand-enhancer.sh'
+      - '.github/workflows/pc2-backend-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  go-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+          cache: false
+      - name: Go protocol and race tests
+        working-directory: cmd/gameweld-backend
+        run: go test -race -count=1 ./...
+      - name: Static analysis
+        working-directory: cmd/gameweld-backend
+        run: go vet ./...
+      - name: Build source backend
+        working-directory: cmd/gameweld-backend
+        run: go build -trimpath -o /tmp/wand-native-backend .
+      - name: Wand Enhancer integration script syntax
+        run: bash -n scripts/gameweld-wand-enhancer.sh
