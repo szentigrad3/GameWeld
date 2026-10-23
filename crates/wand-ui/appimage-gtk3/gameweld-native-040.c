@@ -2594,6 +2594,9 @@ static GtkWidget *build_home(void){
         GtkWidget*observe=button("Check Steam session (read-only)","action");
         g_signal_connect_data(observe,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);
         pack(copy,observe,0);
+        GtkWidget*wand_check=button("Test Wand for Selected Game","action");
+        g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
+        pack(copy,wand_check,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
             "Steam game only • selected standard Steam title • requires Yes confirmation. No trainer is started.":
             "Steam game-only launch is OFF. Restart using --enable-steam-game-launch to enable this separate button.","muted");
