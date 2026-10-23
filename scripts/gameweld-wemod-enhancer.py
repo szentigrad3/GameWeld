@@ -286,11 +286,159 @@ def run_upstream(action: str, install: Path, helper: Path) -> int:
     return 0
 
 
+
+def sha256_file(path: Path, max_bytes: int = 400 * 1024 * 1024) -> str | None:
+    if not path.is_file() or path.is_symlink():
+        return None
+    if path.stat().st_size > max_bytes:
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_patch_files(folder: Path, helper: Path) -> tuple[bool, list[str]]:
+    """Evidence that a specific existing Wand client has the Enhancer's files.
+
+    This does NOT prove runtime DLL selection, login or game trainer support.
+    """
+    messages = ["Wand/WeMod selected client: FOUND"]
+    asar = folder / "resources" / "app.asar"
+    backup = folder / "resources" / "app.asar.backup"
+    installed_proxy = folder / "version.dll"
+    trusted_proxy = helper / PATCH_DLL
+    original_hash = sha256_file(backup)
+    active_hash = sha256_file(asar)
+    proxy_hash = sha256_file(installed_proxy, max_bytes=8 * 1024 * 1024)
+    reference_hash = sha256_file(trusted_proxy, max_bytes=8 * 1024 * 1024)
+    if not original_hash:
+        messages.append("Original ASAR backup: MISSING or unreadable")
+    else:
+        messages.append("Original ASAR backup: PRESENT")
+    if not active_hash:
+        messages.append("Active ASAR: MISSING or unreadable")
+    elif original_hash and active_hash != original_hash:
+        messages.append("Active ASAR: MODIFIED compared with original backup")
+    elif original_hash:
+        messages.append("Active ASAR: SAME as original backup (not patched)")
+    else:
+        messages.append("Active ASAR: readable; patch difference unknown")
+    if proxy_hash and reference_hash and proxy_hash == reference_hash:
+        messages.append("Enhancer DLL proxy: MATCHES pinned upstream helper")
+    elif not reference_hash:
+        messages.append("Enhancer DLL proxy: reference helper unavailable")
+    else:
+        messages.append("Enhancer DLL proxy: MISSING or DOES NOT MATCH pinned helper")
+    good = bool(
+        original_hash and active_hash and original_hash != active_hash
+        and proxy_hash and reference_hash and proxy_hash == reference_hash
+    )
+    messages.append("Client patch file check: " + (
+        "PASS (files only; runtime not verified)" if good else "NOT VERIFIED"
+    ))
+    messages.append("Wine native DLL override: REQUIRED (version=n,b); actual loading not verified")
+    return good, messages
+
+
+def validate_appid(appid: str) -> str:
+    if not appid.isascii() or not appid.isdecimal() or str(int(appid)) != appid or not (0 < int(appid) < 2**32):
+        raise ValueError("A valid decimal Steam app ID is required for the selected game check")
+    return appid
+
+
+def check_selected_game(args: argparse.Namespace, patched: bool) -> list[str]:
+    """Per-game explanation without asserting unsupported trainer functionality."""
+    output = ["Selected game: " + (args.game_name or "(unnamed)")]
+    output.append("Game provider: " + (args.game_provider or "unknown"))
+    if args.game_provider != "steam":
+        output.append("Game compatibility: UNKNOWN — PC2 has not validated Wand on this provider")
+    else:
+        validate_appid(args.appid)
+        output.append("Selected Steam App ID: " + args.appid)
+        folder = Path(args.game_dir) if args.game_dir else None
+        if folder and folder.is_dir():
+            output.append("Selected game installed directory: PRESENT")
+        else:
+            output.append("Selected game installed directory: NOT VERIFIED")
+        if args.runtime_hint == "native":
+            output.append("Game runtime: NATIVE LINUX ELF observed")
+            output.append("Wand Windows trainer with this Linux build: NOT SUPPORTED")
+        elif args.runtime_hint == "windows-associated":
+            output.append("Game runtime: Windows-process name ASSOCIATED (not executable-verified)")
+        else:
+            output.append("Game runtime: UNKNOWN — run game and rerun this check")
+    selected_prefix = Path(args.wine_prefix).resolve() if args.wine_prefix else None
+    game_prefix = Path(args.game_prefix).resolve() if args.game_prefix else None
+    if selected_prefix and game_prefix:
+        output.append("Wand and game prefix: " + (
+            "SAME DIRECTORY (ownership not verified)" if selected_prefix == game_prefix
+            else "DIFFERENT — trainer must join the game's actual runtime"
+        ))
+    else:
+        output.append("Wand and game prefix: NOT VERIFIED")
+    output.append("Trainer available for this specific game: NOT VERIFIED")
+    output.append("WeMod login/Pro entitlement and runtime DLL load: NOT VERIFIED")
+    if not patched:
+        output.append("Game test result: BLOCKED — selected client patch files not verified")
+    elif args.runtime_hint == "native":
+        output.append("Game test result: NATIVE LINUX GAME — Windows Wand trainer not ready")
+    else:
+        output.append("Game test result: PATCH FILES READY — live in-game trainer not yet proven")
+    return output
+
+
+def run_wand_smoke_test(folder: Path, helper: Path, prefix_arg: str | None) -> None:
+    patched, proof = verify_patch_files(folder, helper)
+    for line in proof:
+        print(line)
+    if not patched:
+        raise ValueError("Wand launch blocked: selected installation's patch files are not verified")
+    if not prefix_arg:
+        raise ValueError("Wand launch needs the selected existing Wine prefix (no new prefix created)")
+    prefix = Path(prefix_arg).expanduser().resolve(strict=True)
+    if not prefix.is_dir() or not (prefix / "drive_c").is_dir():
+        raise ValueError("Wand launch requires a real, already-existing Wine prefix")
+    # Only launch a known client EXE from the selected installation. Never
+    # run Update.exe or create/repair/reconfigure a Proton compatibility tool.
+    executable = next(
+        (folder / name for name in ("Wand.exe", "WeMod.exe", "wand.exe", "wemod.exe")
+         if (folder / name).is_file()), None
+    )
+    if executable is None:
+        raise ValueError("No Wand.exe/WeMod.exe in selected app version; launch it via its existing launcher")
+    import shutil as sh
+    wine = sh.which("wine")
+    if not wine:
+        raise ValueError("Wine is not on PATH; no launcher was started")
+    environment = os.environ.copy()
+    environment["WINEPREFIX"] = str(prefix)
+    # Upstream requires native version.dll before Wine built-in to avoid
+    # Electron integrity rejection. This affects this ONE child only.
+    environment["WINEDLLOVERRIDES"] = "version=n,b"
+    child = subprocess.Popen(
+        [wine, str(executable)], cwd=str(folder), env=environment,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True
+    )
+    print(f"Wand Wine smoke-test launch requested (PID {child.pid}).", flush=True)
+    print("Native-first DLL loading requested: version=n,b", flush=True)
+    print("Client UI appeared / DLL loaded / login / trainer attach: NOT VERIFIED", flush=True)
+    print("This Wine client test is separate from a game's Steam Proton session.", flush=True)
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "install", "patch", "restore"))
+    parser.add_argument("action", choices=("status", "install", "patch", "restore", "verify", "game-test", "launch-test"))
     parser.add_argument("--install-dir", help="Folder containing WeMod.exe and resources/app.asar")
     parser.add_argument("--confirm", action="store_true", help="Required for download/patch/restore")
+    parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
+    parser.add_argument("--appid", default="")
+    parser.add_argument("--game-name", default="")
+    parser.add_argument("--game-dir", default="")
+    parser.add_argument("--game-prefix", default="")
+    parser.add_argument("--wine-prefix", default="")
+    parser.add_argument("--runtime-hint", choices=("native", "windows-associated", "unknown"), default="unknown")
     args = parser.parse_args()
     candidates = available_clients(args.install_dir) if args.action != "install" else []
     folder = candidates[0] if len(candidates) == 1 else None
@@ -303,13 +451,26 @@ def main() -> int:
                 (folder / "resources/app.asar.backup").exists() else "NOT PRESENT"))
         print("Status is read-only; no WeMod files have been changed.")
         return 0
-    if not args.confirm:
+    if args.action in ("verify", "game-test"):
+        if folder is None:
+            raise ValueError("Choose exactly one existing Wand/WeMod app-version folder")
+        healthy, result = verify_patch_files(folder, installed_helper_dir())
+        for line in result:
+            print(line)
+        if args.action == "game-test":
+            for line in check_selected_game(args, healthy):
+                print(line)
+        return 0 if healthy else 2
+    if args.action in ("install", "patch", "restore", "launch-test") and not args.confirm:
         raise ValueError(f"'{args.action}' requires explicit --confirm")
     if args.action == "install":
         install_helper()
         return 0
     if folder is None:
         raise ValueError("No unique Wand/WeMod client selected. Choose the app-version folder with resources/app.asar; this is distinct from the Proton compatibility tool.")
+    if args.action == "launch-test":
+        run_wand_smoke_test(folder, installed_helper_dir(), args.wine_prefix)
+        return 0
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
         installed_helper_dir() if valid_patcher(installed_helper_dir()) else install_helper())
