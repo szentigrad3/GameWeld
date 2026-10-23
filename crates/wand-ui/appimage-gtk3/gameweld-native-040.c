@@ -611,7 +611,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Wand-Enhancer Source / Build Instructions") && strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder")) pc2_guard_button(w);
     }
     return w;
 }
@@ -3744,6 +3744,7 @@ static void on_wand_detect(GtkButton *b,gpointer d){(void)b;(void)d;wand_detect_
  * Installation and patching require explicit confirmation and are isolated
  * from PC1 and the legacy GameWeld Proton/provider handlers. */
 static GtkWidget *pc2_wemod_status=NULL;
+static GtkWidget *pc2_wemod_helper_status=NULL;
 static int pc2_wemod_busy=0;
 typedef struct {char action[20],install[2048],output[4096];int success;} PC2WeModJob;
 static const char *pc2_wemod_helper(void){
@@ -3757,7 +3758,7 @@ static gboolean pc2_wemod_done(void *data){
     pc2_wemod_busy=0;
     const char*txt=j->output[0]?j->output:(j->success?"Completed.":"Command failed.");
     size_t n=strlen(txt);
-    if(pc2_wemod_status)set_label(pc2_wemod_status,n>1400?txt+n-1400:txt);
+    if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,n>1400?txt+n-1400:txt);
     log_line("WeMod Enhancer [%s] %s: %.1000s",j->action,j->success?"OK":"FAILED",txt);
     free(j);
     return FALSE;
@@ -3814,14 +3815,14 @@ static void pc2_wemod_action(const char*action){
     snprintf(j->action,sizeof j->action,"%s",action);
     if(install&&*install)snprintf(j->install,sizeof j->install,"%s",install);
     pc2_wemod_busy=1;
-    if(pc2_wemod_status)set_label(pc2_wemod_status,
-        !strcmp(action,"status")?"Checking WeMod and WeMod Enhancer installation...":
-        "Running upstream WeMod Enhancer; see Activity for the result. Do not close WeMod if it is running.");
+    if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,
+        !strcmp(action,"status")?"Checking the separate WeMod Enhancer helper...":
+        "Running upstream WeMod Enhancer. Keep the WeMod client closed during this operation.");
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_wemod_worker,j)==0)pthread_detach(thread);
-    else {pc2_wemod_busy=0;free(j);if(pc2_wemod_status)set_label(pc2_wemod_status,"Could not start helper thread.");}
+    else {pc2_wemod_busy=0;free(j);if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,"Could not start helper thread.");}
 }
-static void on_pc2_wemod_detect(GtkButton*b,void*d){(void)b;(void)d;wand_detect_start();}
+static void on_pc2_wemod_detect(GtkButton*b,void*d){(void)b;(void)d;wand_detect_start();pc2_wemod_action("status");}
 static void on_pc2_wemod_install(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("install");}
 static void on_pc2_wemod_patch(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("patch");}
 static void on_pc2_wemod_restore(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("restore");}
@@ -3865,7 +3866,7 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         pack(eh,choose,0);
         GtkWidget*controls=box(GTK_ORIENTATION_HORIZONTAL,7);
         GtkWidget*detect=button("WeMod Enhancer: Detect","action");
-        GtkWidget*install=button("WeMod Enhancer: Install","action");
+        GtkWidget*install=button("WeMod Enhancer: Install Helper","action");
         GtkWidget*patch=button("WeMod Enhancer: Patch WeMod","primary-action");
         GtkWidget*restore=button("WeMod Enhancer: Restore Original","action");
         g_signal_connect_data(detect,"clicked",(GCallback)on_pc2_wemod_detect,NULL,NULL,0);
@@ -3878,6 +3879,9 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
         G.wand_patcher_status=pc2_wemod_status;
         pack(eh,pc2_wemod_status,0);
+        pc2_wemod_helper_status=label("Enhancer helper: separate from the Wand client and Proton provider. Click Detect to check its status.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_helper_status,TRUE);
+        pack(eh,pc2_wemod_helper_status,0);
         pack(right,eh,0);
         wand_detect_start();
     }
