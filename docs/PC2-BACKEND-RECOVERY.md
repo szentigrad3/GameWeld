@@ -132,6 +132,19 @@ Under that opt-in mode only, selecting an ordinary **installed Steam game** and 
 
 The Test 10 AIO script performs all offline and safe gate probes **without opening the UI or starting Steam**; the test checks normal default disabled, inherited environment disabled, explicit gate enabled, and Test 9 preview regressions. Output: `build/pc2-source/pc2-test10-aio-report.txt`. If the tester wants to verify a real launch, they must deliberately supply the opt-in flag and confirm in the UI. Continue using validated PC1 for normal trainer operations.
 
+## Test 10 Overview usability correction (CachyOS screenshot)
+
+The 23 October 2026 CachyOS screenshot shows PC2 loading the rich inherited Overview correctly with **135 Steam entries (122 installed manifests + 13 Steam shortcuts), 2 Heroic entries, and 3 Lutris entries**. It also reveals that the inherited PC1 Overview continued to visually advertise **PLAY WITH STEAM TRAINER**, **Play Normally**, **Services ready**, and **Needs repair**, even though those legacy actions are blocked and trainer/Proton health is unverified. These were misleading descriptions, **not** proof of available trainer functionality or a defective Proton tool.
+
+PC2's guarded source frontend now:
+
+- Adds its **Launch Steam game only (opt-in)** button directly to the **Overview current-game panel**, using the **same confirmed, backend-validated Steam-only handler** as Library. The button remains insensitive in the default source runner and enables only for `--enable-steam-game-launch`.
+- Clearly labels the Overview as **PC2 SOURCE TEST**, refers to **library discovery** instead of global service readiness, and describes legacy trainer controls as disabled.
+- Displays **Unverified / Not verified** for trainer and runtime rather than asserting a repair is needed.
+- Visually disables inherited action buttons and guards their sensitive state from legacy `refresh_ui()` re-enablement. Navigation uses independent nav controls and remains available.
+
+Testing the UI remains a separate manual field gate. The **Test 10 AIO**, despite passing, did not execute a game; the launch requires deliberate opt-in, selection of an installed standard Steam game and a Yes confirmation. Keep using PC1 for trainer/session operations.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
