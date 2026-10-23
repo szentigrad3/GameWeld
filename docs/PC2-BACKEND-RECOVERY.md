@@ -247,6 +247,27 @@ The upstream Linux release requires **Python 3.11+** and its packaged Windows `v
 
 Unit tests in `scripts/test_gameweld_wemod_enhancer.py` exercise these actions using **disposable mock WeMod files and a fake upstream patcher**; they never patch the developer's real WeMod. GitHub CI compiles PC2 GTK and runs those tests. Real field validation requires clicking Patch on a local WeMod installation and inspecting the Activity result. PC1 stable remains untouched.
 
+## PC2 integrated WeMod Enhancer — single-panel cleanup and existing Wand installs
+
+A 23 October 2026 CachyOS Settings screenshot exposed a confusing duplicate: the new **WeMod Enhancer — Integrated Linux Patcher** sat above the old **Wand / WeMod Patcher (experimental)**, which referred to the obsolete k1tbyte Windows WPF helper. The screenshot also showed **Multiple Wand/WeMod installs found** in the old scanner but **WeMod installation: NOT FOUND** in the new adapter.
+
+Resolved on `feature/pc2-source-backend`:
+
+- Removed the old patcher **panel and retired GUI handlers**, keeping only the integrated upstream e-gleba patch/restore workflow.
+- Reused the established GameWeld read-only Wand/WeMod scanner in the integrated panel. It lists existing client installations in Steam, Heroic, Lutris and Wine prefixes. If multiple versions exist, the user **must select the correct app-version**; no arbitrary installation is patched. Manual folder choice remains supported.
+- The upstream bridge recognizes `Wand.exe`, `WeMod.exe` or a discovered `app-N.N.N` Electron client directory with a real `resources/app.asar`. It does **not** confuse the `GE-Proton-Wand-SHA256` compatibility runtime with a standalone Wand/WeMod application.
+- Clarified the distinction between **installing the Wand/WeMod client**, **installing a Wand-compatible Proton provider**, and **installing the e-gleba WeMod Enhancer patcher**. The PC1 UI/backend handled Wand/WeMod setup in earlier versions, and the previous PC1 release remains untouched. The source-only PC2 backend still intentionally returns HTTP 501 to install/setup requests and does not install or replace existing Proton tools. A missing optional `WAND-HYBRID.json` file is not reason to reinstall a working provider.
+
+To inspect the updated GUI:
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/run-pc2-source-frontend.sh
+```
+
+Under **Settings → WeMod Enhancer — Patch / Restore**, select the desired client in **Existing Wand / WeMod client installations**, then use **Patch WeMod**. If no installation is recognized, choose the actual installed client version directory containing `resources/app.asar` (not the GE-Proton tool directory). Upstream Patch/Restore still requires confirmation and closes no processes; **close the Wand/WeMod client yourself** beforehand. CI fixture checks cover both Wand and WeMod forms and ambiguous discovery; a real local patch still needs field validation.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
