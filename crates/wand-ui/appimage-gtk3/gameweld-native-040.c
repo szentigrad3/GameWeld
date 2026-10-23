@@ -3979,7 +3979,10 @@ static void pc2_wemod_action(const char*action){
             free(j);return;
         }
         Game*g=&G.games[G.selected];
-        log_line("Wand patch check is read-only: it does NOT launch the game or trainer. Launch Steam game only (opt-in) is a separate action.");
+        if(!strcmp(action,"game-test"))
+            log_line("Wand patch check is read-only: it does NOT launch the game or trainer. Launch Steam game only (opt-in) is a separate action.");
+        else
+            log_line("Wand live launch requested for selected game %s (Steam app %s). A verified, uniquely patched client will be used; no game launch or trainer attachment is implied.",g->name,g->appid);
         snprintf(j->game_name,sizeof j->game_name,"%s",g->name);
         snprintf(j->game_provider,sizeof j->game_provider,"%s",
             game_is_steam_shortcut(g)?"other":game_is_steam(g)?"steam":game_is_heroic(g)?"heroic":game_is_lutris(g)?"lutris":"other");
