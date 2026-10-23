@@ -89,8 +89,15 @@ func inspectCompatibility(libraries []string) compatibilityReport {
 		manifest := regularSmall(filepath.Join(path, "compatibilitytool.vdf"))
 		candidate.HasManifest = strings.Contains(string(manifest), `"`+pc2CompatToolID+`"`)
 		candidate.MetadataState, candidate.HasMetadata = metadataCondition(filepath.Join(path, "WAND-HYBRID.json"))
-		if candidate.HasProton && candidate.HasManifest && candidate.HasMetadata {
-			candidate.State = "detected_unverified"
+		if candidate.HasProton && candidate.HasManifest {
+			switch {
+			case candidate.HasMetadata:
+				candidate.State = "detected_unverified"
+			case candidate.MetadataState == "missing":
+				// Older installations can work without a GameWeld-created sidecar.
+				// Do not mark them healthy or trigger a reinstall.
+				candidate.State = "legacy_metadata_missing"
+			}
 		}
 		result.Candidates = append(result.Candidates, candidate)
 	}
@@ -103,6 +110,10 @@ func inspectCompatibility(libraries []string) compatibilityReport {
 				result.State = "detected_unverified"
 				result.Message = "Wand Proton metadata detected; DLL hashes, provider health and live compatibility NOT verified"
 				break
+			}
+			if candidate.State == "legacy_metadata_missing" {
+				result.State = "legacy_metadata_missing"
+				result.Message = "Wand Proton launcher and Steam registration exist, but the optional GameWeld sidecar is absent; keep the existing installation; runtime health NOT verified"
 			}
 		}
 	}
