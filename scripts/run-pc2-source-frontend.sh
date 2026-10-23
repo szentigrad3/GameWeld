@@ -26,6 +26,14 @@ for required in gameweld-wand-discovery.py gameweld-wand-compat-audit.py \
   [[ -f "$LIBEXEC/$required" ]] || { echo "Missing PC2 helper: $required" >&2; exit 1; }
 done
 export APPDIR="$APPDIR_DEV"
+# Steam game-only launch is opt-in for this ONE invocation, never inherited
+# accidentally from the shell. The normal source runner stays discovery-only.
+unset GAMEWELD_PC2_ENABLE_STEAM_LAUNCH
+if [[ "${1:-}" == "--enable-steam-game-launch" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  printf '%s\n' 'PC2 explicit Steam GAME-ONLY launch gate enabled (still requires per-game confirmation).'
+  set --
+fi
 if [[ "${1:-}" == "--check-layout" && "$#" -eq 1 ]]; then
   printf 'PC2 source helper layout verified: %s\n' "$LIBEXEC"
   exit 0
