@@ -96,6 +96,23 @@ bash scripts/pc2-test8-aio-report.sh
 
 Result: `build/pc2-source/pc2-test8-aio-report.txt`. A match confirms local byte equality **only**; neither result should be used to automatically repair Proton or enable trainers. The original PC1 remains the known working release; source-built PC2 stays discovery-only.
 
+## PC2 Test 8 field result and Test 9 Steam launch preview
+
+Maintainer-uploaded Test 8 report (23 October 2026): AIO **PASS**, **122 Steam manifests**, installed Proton tool with two readable and fingerprinted `crypt32.dll` files, but **both local reference payloads are absent** (`comparison_unavailable`). The repository payload manifest has `null` patched-DLL checksums, and no compiled payload DLLs are committed. **This is a missing comparison source, not a damaged installation.** No reinstall, downloaded patch, or metadata repair is justified by that report.
+
+PC2 Test 9 begins functional recovery with **source-owned, GET-only Steam launch preview**. `GET /api/launch-preview?appid=<decimal Steam ID>` rejects unknown, uninstalled, malformed and nonnumeric IDs; for a Steam appmanifest it returns a `steam://rungameid/<id>` URI with `mode=preview_only` and `launch_enabled=false`. It does not execute Steam, issue a process, modify LaunchOptions, or invoke a trainer. The discovery-only GTK Library page has a `Preview Steam launch (no action)` button for the selected standard Steam game; Heroic, Lutris and shortcuts remain outside the scope.
+
+Developer / maintainer validation:
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test9-aio-report.sh
+bash scripts/run-pc2-source-frontend.sh
+```
+
+The AIO creates `build/pc2-source/pc2-test9-aio-report.txt` and checks that malformed or unknown IDs cannot produce a launch plan, a valid installed Steam manifest generates the expected preview URI, and mutation endpoints still fail closed. CI without installed Steam uses the backend's fixture-backed unit tests. **A successful URI preview is not a live launch, trainer readiness, Proton health, or release approval.** The source frontend remains guarded, and PC1 is the live gaming baseline.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
