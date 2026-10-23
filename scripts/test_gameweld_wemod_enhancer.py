@@ -66,7 +66,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         before = (self.client / "resources/app.asar").read_bytes()
         response = self.cmd("status", "--install-dir", str(self.client))
         self.assertEqual(response.returncode, 0, response.stdout)
-        self.assertIn("WeMod installation: FOUND", response.stdout)
+        self.assertIn("Wand/WeMod client: FOUND", response.stdout)
         self.assertIn("WeMod Enhancer CLI: READY", response.stdout)
         self.assertEqual(before, (self.client / "resources/app.asar").read_bytes())
 
@@ -87,7 +87,40 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
     def test_missing_wemod_folder_is_not_patched(self):
         response = self.cmd("patch", "--install-dir", str(self.root / "not-found"), "--confirm")
         self.assertNotEqual(response.returncode, 0)
-        self.assertIn("not found", response.stdout.lower())
+        self.assertIn("no unique wand/wemod client", response.stdout.lower())
+
+    def test_wand_executable_and_app_version_discovery(self):
+        original = self.client / "WeMod.exe"
+        original.rename(self.client / "Wand.exe")
+        self.assertEqual(bridge.client_root(self.client), self.client.resolve())
+        response = self.cmd("status", "--install-dir", str(self.client))
+        self.assertEqual(response.returncode, 0, response.stdout)
+        self.assertIn("Wand/WeMod client: FOUND", response.stdout)
+
+        # PC1's scanner reports app-versions whose WeMod.exe is in a parent.
+        version = self.root / "app-11.12.13"
+        (version / "resources").mkdir(parents=True)
+        (version / "resources/app.asar").write_bytes(b"FIXTURE")
+        self.assertEqual(bridge.client_root(version), version.resolve())
+
+    def test_ambiguous_existing_clients_are_not_selected(self):
+        from unittest.mock import patch
+        second = self.root / "app-3.4.5"
+        (second / "resources").mkdir(parents=True)
+        (second / "resources/app.asar").write_bytes(b"FIXTURE")
+        with patch.object(bridge, "discover_existing_clients", return_value=[self.client, second]):
+            self.assertIsNone(bridge.detect_wemod())
+            self.assertEqual(len(bridge.available_clients()), 2)
+        # Even if the scanner finds multiple, selecting one explicit
+        # installation still works without changing its files.
+        with patch.object(bridge, "discover_existing_clients", return_value=[self.client, second]):
+            self.assertEqual(bridge.detect_wemod(str(second)), second.resolve())
+
+    def test_unrelated_proton_tool_is_not_a_wemod_client(self):
+        tool = self.root / "GE-Proton-Wand-SHA256"
+        (tool / "resources").mkdir(parents=True)
+        (tool / "resources/app.asar").write_bytes(b"FAKE")
+        self.assertIsNone(bridge.client_root(tool))
 
     def test_restore_requires_original_backup(self):
         response = self.cmd("restore", "--install-dir", str(self.client), "--confirm")
