@@ -2,6 +2,8 @@ package main
 
 import (
  "testing"
+ "os"
+ "path/filepath"
 )
 
 func TestSteamLaunchPlanOnlyInstalled(t *testing.T){
@@ -35,4 +37,24 @@ func TestSteamLaunchPreviewHTTP(t *testing.T) {
  }
  code,v:=req(t,"POST","/api/launch-preview?appid=1")
  if code!=405 || v.OK {t.Fatalf("POST accepted: %d %+v",code,v)}
+}
+
+func TestSteamLaunchPreviewReadsFixtureManifest(t *testing.T) {
+    home:=t.TempDir()
+    t.Setenv("HOME",home)
+    root:=filepath.Join(home,"Steam")
+    t.Setenv("STEAM_ROOT",root)
+    apps:=filepath.Join(root,"steamapps")
+    if err:=os.MkdirAll(apps,0700);err!=nil{t.Fatal(err)}
+    manifest:=filepath.Join(apps,"appmanifest_12345.acf")
+    original:=[]byte("\"AppState\" { \"appid\" \"12345\" \"name\" \"Test Game\" \"installdir\" \"testgame\" }")
+    if err:=os.WriteFile(manifest,original,0600);err!=nil{t.Fatal(err)}
+    status,data:=req(t,"GET","/api/launch-preview?appid=12345")
+    if status!=200||!data.OK {t.Fatalf("fixture preview unavailable: %d %+v",status,data)}
+    plan,ok:=data.Data.(map[string]any)
+    if !ok||plan["uri"]!="steam://rungameid/12345"||plan["mode"]!="preview_only"||plan["launch_enabled"]!=false{
+        t.Fatalf("unsafe preview payload %#v",data.Data)
+    }
+    after,err:=os.ReadFile(manifest)
+    if err!=nil||string(after)!=string(original){t.Fatal("Steam manifest modified by preview")}
 }
