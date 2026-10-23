@@ -34,7 +34,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc libgtk-3-dev
-          gcc -O2 -pipe -pthread crates/wand-ui/appimage-gtk3/gameweld-native-040.c -o /tmp/gameweld-pc2 $(pkg-config --cflags --libs gtk+-3.0)
+          gcc -O2 -pipe -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 crates/wand-ui/appimage-gtk3/gameweld-native-040.c -o /tmp/gameweld-pc2 $(pkg-config --cflags --libs gtk+-3.0)
+      - name: Prevent Steam hook mutation in discovery-only mode
+        run: |
+          set +e
+          output=$(/tmp/gameweld-pc2 --cleanup-steam-hooks 2>&1)
+          status=$?
+          set -e
+          test "$status" -eq 3
+          grep -q 'Steam hook cleanup disabled' <<<"$output"
       - name: Verify source helper AppDir layout
         run: |
           bash scripts/run-pc2-source-frontend.sh --check-layout
