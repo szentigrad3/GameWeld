@@ -119,6 +119,21 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         bridge.safe_unpack(archive, folder)
         self.assertTrue(bridge.valid_patcher(folder))
 
+    def test_safe_unpack_handles_cpack_nested_root(self):
+        archive = self.root / "cpack.tar.xz"
+        with tarfile.open(archive, "w:xz") as tar:
+            for path, data in [
+                ("wemod_enhancer/bin/wemod_enhancer.py", b"print('fixture')"),
+                ("wemod_enhancer/bin/version.dll", b"MZ\x00\x00fixture"),
+            ]:
+                info = tarfile.TarInfo(path)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        folder = self.root / "cpack-unpacked"
+        folder.mkdir()
+        bridge.safe_unpack(archive, folder)
+        self.assertTrue(bridge.valid_patcher(folder))
+
     def test_safe_unpack_rejects_symlinks_and_traversal(self):
         for index, name in enumerate(("../outside", "bin/alias")):
             archive = self.root / f"unsafe-{index}.tar.xz"
