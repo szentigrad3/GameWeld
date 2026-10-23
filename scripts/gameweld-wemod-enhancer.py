@@ -457,9 +457,161 @@ def run_wand_smoke_test(folder: Path, helper: Path, prefix_arg: str | None) -> N
     print("Client UI appeared / DLL loaded / login / trainer attach: NOT VERIFIED", flush=True)
     print("This Wine client test is separate from a game's Steam Proton session.", flush=True)
 
+
+# PC2 Test 16: one-click live Steam/Proton Wand handoff. This deliberately
+# requests a client launch, NOT a trainer attach or entitlement verification.
+# Read live same-user /proc evidence; never infer a Proton prefix from the
+# installed game's path or select a Proton build from an unrelated Steam game.
+def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> dict[str, object]:
+    validate_appid(appid)
+    matching = []
+    examined = 0
+    try:
+        entries = os.scandir(proc_root)
+    except OSError as exc:
+        raise ValueError("Unable to inspect running Steam processes") from exc
+    with entries:
+        for entry in entries:
+            if not entry.name.isascii() or not entry.name.isdecimal():
+                continue
+            examined += 1
+            if examined > 8192:
+                break
+            proc = Path(entry.path)
+            try:
+                if proc.stat().st_uid != os.getuid():
+                    continue
+                raw = (proc / "environ").open("rb")
+                with raw:
+                    data = raw.read(262145)
+                if len(data) > 262144:
+                    continue
+                env: dict[str, str] = {}
+                for token in data.split(b"\0"):
+                    if b"=" not in token:
+                        continue
+                    key, value = token.split(b"=", 1)
+                    if key in (b"SteamAppId", b"SteamGameId", b"STEAM_COMPAT_APP_ID",
+                               b"STEAM_COMPAT_DATA_PATH", b"STEAM_COMPAT_TOOL_PATHS",
+                               b"STEAM_COMPAT_CLIENT_INSTALL_PATH"):
+                        env[key.decode("ascii")] = value.decode("utf-8", "replace")
+                if not any(env.get(key) == appid for key in (
+                        "SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID")):
+                    continue
+                compat = env.get("STEAM_COMPAT_DATA_PATH", "")
+                if not compat or not Path(compat).is_absolute():
+                    continue
+                prefix = Path(compat).resolve(strict=True)
+                if not prefix.is_dir() or not (prefix / "pfx" / "drive_c").is_dir():
+                    continue
+                comm = (proc / "comm").read_text(encoding="utf-8", errors="replace").strip().lower()
+                # Windows .exe process evidence, not just a Steam helper, is
+                # required; even this is not proof of trainer compatibility.
+                excluded = {
+                    "services.exe", "explorer.exe", "wineserver", "wineboot.exe",
+                    "svchost.exe", "rpcss.exe", "plugplay.exe",
+                    "steam.exe", "crashpad.exe", "crashreport.exe",
+                }
+                game_candidate = comm.endswith(".exe") and comm not in excluded
+                tool = None
+                for tool_dir in env.get("STEAM_COMPAT_TOOL_PATHS", "").split(":")[:16]:
+                    if not tool_dir or not Path(tool_dir).is_absolute():
+                        continue
+                    p = Path(tool_dir)
+                    p = p if p.name == "proton" else p / "proton"
+                    try:
+                        if p.is_file() and os.access(p, os.X_OK):
+                            tool = p.resolve(strict=True)
+                            break
+                    except (OSError, ValueError):
+                        continue
+                steamroot = env.get("STEAM_COMPAT_CLIENT_INSTALL_PATH", "")
+                matching.append((int(entry.name), prefix, game_candidate, tool, steamroot))
+            except (OSError, UnicodeError, ValueError):
+                continue
+    if not matching:
+        raise ValueError("No same-user live Proton session found for the selected Steam App ID; start the game first")
+    prefixes = {str(row[1]) for row in matching}
+    if len(prefixes) != 1:
+        raise ValueError("Multiple live Proton prefixes claim this Steam App ID; refusing ambiguous handoff")
+    candidates = [row for row in matching if row[2]]
+    if not candidates:
+        raise ValueError("Only Steam helpers were found; a Windows .exe game process is not yet observed")
+    tools = {str(row[3]) for row in matching if row[3] is not None}
+    if len(tools) != 1:
+        raise ValueError("Cannot identify ONE exact Proton executable from the live game's environment")
+    roots = {row[4] for row in matching if row[4]}
+    if len(roots) != 1 or not Path(next(iter(roots))).is_dir():
+        raise ValueError("Cannot identify the live Steam client root; no Wand handoff attempted")
+    result: dict[str, object] = {
+        "compat": candidates[0][1],
+        "game_pid": candidates[0][0],
+        "proton": Path(next(iter(tools))),
+        "steamroot": Path(next(iter(roots))),
+        "process_count": len(matching),
+    }
+    return result
+
+
+def launch_wand_in_live_game(folder: Path, helper: Path,
+                             appid: str, game_dir: str) -> None:
+    """Opt-in external client launch using the running game's exact Proton.
+
+    Never runs a random Wine binary against an active Steam Proton prefix.
+    Does not install or patch Wand, change Steam settings, or attach a trainer.
+    """
+    validate_appid(appid)
+    if not game_dir or not Path(game_dir).is_dir():
+        raise ValueError("The selected Steam game installation directory is not verified")
+    patched, report = verify_patch_files(folder, helper)
+    for line in report:
+        print(line, flush=True)
+    if not patched:
+        raise ValueError("Live launch blocked: the chosen Wand app-version patch is not verified")
+    executable = next((folder / name for name in
+                      ("Wand.exe", "WeMod.exe", "wand.exe", "wemod.exe")
+                      if (folder / name).is_file() and not (folder / name).is_symlink()), None)
+    if executable is None:
+        raise ValueError(
+            "Selected app-version contains patch files but no direct Wand.exe/WeMod.exe; "
+            "use its existing launcher. No Steam/Proton settings were changed."
+        )
+    session = live_steam_proton_session(appid)
+    print("Exact Steam App ID association: FOUND", flush=True)
+    print("Windows executable candidate: OBSERVED (not authenticated)", flush=True)
+    print("Live Proton executable: FOUND", flush=True)
+    print("Live Proton prefix: FOUND (shared with running game)", flush=True)
+    # A request is allowed only while the observed Windows process still exists.
+    if not Path("/proc", str(session["game_pid"])).is_dir():
+        raise ValueError("The observed game process exited before Wand could start")
+    environment = os.environ.copy()
+    environment["STEAM_COMPAT_DATA_PATH"] = str(session["compat"])
+    environment["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = str(session["steamroot"])
+    environment["SteamAppId"] = appid
+    environment["SteamGameId"] = appid
+    environment["STEAM_COMPAT_APP_ID"] = appid
+    environment["WINEDLLOVERRIDES"] = "version=n,b"
+    command = [str(session["proton"]), "runinprefix", str(executable)]
+    child = subprocess.Popen(
+        command, cwd=str(folder), env=environment,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True
+    )
+    # A Proton launcher can exit after handing off to another process; exit 0
+    # still does not attest to a visible Wand window or trainer attachment.
+    import time
+    time.sleep(1)
+    code = child.poll()
+    if code is not None and code != 0:
+        raise RuntimeError(f"Live Proton handoff command exited with status {code}")
+    print("Live Wand Proton runinprefix request: SENT", flush=True)
+    print("Same running-game Proton/prefix used; no Steam launch options modified.", flush=True)
+    print("Wand window, version.dll actual load, login and game trainer attachment: NOT VERIFIED", flush=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "install", "patch", "restore", "verify", "game-test", "launch-test"))
+    parser.add_argument("action", choices=("status", "install", "patch", "restore", "verify", "game-test", "launch-test", "live-launch"))
     parser.add_argument("--install-dir", help="Folder containing WeMod.exe and resources/app.asar")
     parser.add_argument("--confirm", action="store_true", help="Required for download/patch/restore")
     parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
@@ -496,7 +648,7 @@ def main() -> int:
             for line in check_selected_game(args, healthy):
                 print(line)
         return 0 if healthy else 2
-    if args.action in ("install", "patch", "restore", "launch-test") and not args.confirm:
+    if args.action in ("install", "patch", "restore", "launch-test", "live-launch") and not args.confirm:
         raise ValueError(f"'{args.action}' requires explicit --confirm")
     if args.action == "install":
         install_helper()
@@ -505,6 +657,12 @@ def main() -> int:
         raise ValueError("No unique Wand/WeMod client selected. Choose the app-version folder with resources/app.asar; this is distinct from the Proton compatibility tool.")
     if args.action == "launch-test":
         run_wand_smoke_test(folder, installed_helper_dir(), args.wine_prefix)
+        return 0
+    if args.action == "live-launch":
+        if args.game_provider != "steam":
+            raise ValueError("Live Wand handoff is limited to a selected standard Steam game")
+        launch_wand_in_live_game(folder, installed_helper_dir(),
+                                 args.appid, args.game_dir)
         return 0
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
