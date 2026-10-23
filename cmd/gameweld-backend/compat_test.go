@@ -69,3 +69,48 @@ func TestCompatibilityEndpointIsReadOnlyAndUnverified(t *testing.T) {
         t.Fatalf("incorrect verification claim: %#v", data)
     }
 }
+
+func TestMetadataConditionDiagnostics(t *testing.T) {
+    _, dir := fixtureCompatibility(t)
+    path := filepath.Join(dir, "WAND-HYBRID.json")
+    cases := []struct {
+        name string
+        raw string
+        state string
+        valid bool
+        remove bool
+    }{
+        {"valid", `{"schema":1,"tool_id":"GE-Proton-Wand-SHA256","base_proton":"/example"}`, "valid_metadata_only", true, false},
+        {"missing", "", "missing", false, true},
+        {"empty", "", "empty", false, false},
+        {"invalid_json", "garbled", "invalid_json", false, false},
+        {"invalid_schema", `{"schema":2,"tool_id":"GE-Proton-Wand-SHA256","base_proton":"/example"}`, "invalid_schema", false, false},
+        {"unexpected_tool", `{"schema":1,"tool_id":"other","base_proton":"/example"}`, "unexpected_tool_id", false, false},
+        {"missing_base", `{"schema":1,"tool_id":"GE-Proton-Wand-SHA256","base_proton":" "}`, "missing_base_proton", false, false},
+    }
+    for _, tc := range cases {
+        t.Run(tc.name,func(t *testing.T){
+            if tc.remove {
+                if err := os.Remove(path); err != nil { t.Fatal(err) }
+            } else {
+                if err := os.WriteFile(path, []byte(tc.raw), 0600); err != nil { t.Fatal(err) }
+            }
+            state, ok := metadataCondition(path)
+            if state != tc.state || ok != tc.valid { t.Fatalf("state %q valid %v; want %q %v",state,ok,tc.state,tc.valid) }
+            if !tc.remove {
+                after, err := os.ReadFile(path)
+                if err != nil || string(after) != tc.raw { t.Fatal("inspector altered source") }
+            }
+        })
+    }
+}
+func TestMetadataConditionRejectsSymlink(t *testing.T) {
+    _, dir := fixtureCompatibility(t)
+    path := filepath.Join(dir,"WAND-HYBRID.json")
+    if err := os.Remove(path); err != nil { t.Fatal(err) }
+    outside := filepath.Join(t.TempDir(),"metadata.json")
+    if err := os.WriteFile(outside, []byte("{}"),0600); err != nil { t.Fatal(err) }
+    if err := os.Symlink(outside,path); err != nil { t.Fatal(err) }
+    state, ok := metadataCondition(path)
+    if ok || state != "not_regular" { t.Fatalf("symlink followed: %v %v",state,ok) }
+}
