@@ -21,7 +21,7 @@ class StablePromotion(unittest.TestCase):
     def test_stable_native_identity(self):
         self.assertIn('"--version","0.7.0"',C)
         self.assertNotIn('0.7.0-rc11',C)
-        self.assertIn('0.7.0 Stable • Game & Trainer Management',C)
+        self.assertIn('0.7.0 PC1 • Game & Trainer Management',C)
     def test_main_window_stable_identity(self):
         self.assertIn('"0.7.0"',C)
         self.assertNotIn('"0.7.0 RC10"',C)

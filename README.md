@@ -1,58 +1,19 @@
-# GameWeld
+# GameWeld 0.7.0 — Stable source snapshot
 
-**Linux game and trainer management for Steam, Heroic and Lutris.**
+This directory is a curated snapshot of GameWeld 0.7.0 stable source files, reconstructed from the tested stable source archive and the GitHub source tree. It is **not yet a published tag**, and it has not been approved for public binary redistribution.
 
-GameWeld keeps local trainer assignments together, helps discover publisher-listed trainers, and launches supported games and trainers through their existing Wine, Proton and launcher sessions.
+For current development, see https://github.com/szentigrad3/GameWeld (`main` tracks 0.8.0 development). The verified stable AppImage SHA256 is `8e1906a488de83f51378ed593c75f643c9640ef5d23e503aa3dab78941b1756a`.
 
-**Latest stable:** 0.7.0  
-**Current development build:** 0.8.0 Dev 1 (publisher-file review; no unattended downloads)
+## Build
 
-GameWeld is maintained by [@szentigrad3](https://github.com/szentigrad3).
-
-## Features
-
-- Trainer Library with **My Trainers**, **Find Updates**, and **Advanced** views.
-- Steam and Steam-shortcut, Heroic (Epic/GOG), and Lutris game discovery and session-aware trainer launching.
-- FLiNG publisher page and release-listing discovery with game-version compatibility hints.
-- Local trainer filename comparisons and read-only metadata reporting.
-- Signed-catalog verification (Ed25519 with locally pinned keys), approved checksum-pinned staging, inspection and rollback.
-- Read-only upgrade preflight, automatic-check limits, and support diagnostics.
-- Experimental Wand/WeMod prefix detection and manager awareness.
-
-**Important:** a publisher page is not a verified trainer update. GameWeld does not bundle third-party trainers, does not guarantee that a found executable is trustworthy, and does not install arbitrary publisher files automatically. The signed catalog format is implemented, but no official signing keys or authenticated feeds for FLiNG, HexTrainer, Aurora, Cheat Evolution or Wand are bundled.
-
-## Install
-
-**GitHub release assets are not published yet.** Track the first stable release in [issue #4](https://github.com/szentigrad3/GameWeld/issues/4). Once published, download the Linux x86_64 **AppImage** from [Releases](https://github.com/szentigrad3/GameWeld/releases), then:
+The historical stable packager requires the tested 0.7.0 RC11 AppImage as its runtime input. It is **not a source-complete, independently reproducible build**.
 
 ```bash
-chmod +x GameWeld-0.7.0-x86_64.AppImage
-./GameWeld-0.7.0-x86_64.AppImage
+./MAKE-APPIMAGE.sh /absolute/path/GameWeld-0.7.0-rc11-x86_64.AppImage
 ```
 
-Use 0.7.0 for daily play. Test 0.8.0 development releases separately and retain the stable AppImage as a fallback. Existing user configuration lives under XDG configuration/state directories and is not embedded in release packages.
+The snapshot deliberately excludes game-specific reference images and redistributable prebuilt trainer executables. The existing binary does still contain reference artwork and a game-specific native trainer. Resolve the license/provenance review in the live repository before tagging/releasing the binary. See `docs/RELEASE-AUDIT-0.7.0.md` after the release audit PR is merged.
 
-## Build the development AppImage
+## Source and rights
 
-Current packaging **requires the exact 0.7.0 stable AppImage as its runtime baseline**. This is not yet an entirely from-scratch build. A clean build is a tracked roadmap item. For a build from the checked-out source, see [Building](docs/BUILDING.md).
-
-```bash
-./MAKE-APPIMAGE.sh /absolute/path/GameWeld-0.7.0-x86_64.AppImage
-```
-
-The build regenerates the GTK application and embeds the current GameWeld helpers into the baseline runtime. Do not use an unverified AppImage as the baseline.
-
-## Development & support
-
-- [Build and test](docs/BUILDING.md)
-- [Project roadmap](ROADMAP.md)
-- [Release process](docs/RELEASING.md)
-- [Third-party components](THIRD-PARTY.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security reporting](SECURITY.md)
-
-Bug reports should include the GameWeld version, launcher (Steam/Heroic/Lutris), Linux distribution, relevant symptoms and a **redacted** log. Don't upload credentials, proprietary trainer executables, Wine prefixes or personal files.
-
-## Licensing and independence
-
-GameWeld's own source is distributed under the [MIT license](LICENSE). Third-party tools, libraries, runtime components and artwork retain their own terms; see [THIRD-PARTY.md](THIRD-PARTY.md). GameWeld is not affiliated with Valve, Epic, GOG, FLiNG, Cheat Happens, HexTrainer, Cheat Evolution or WeMod.
+GameWeld-owned source carries the MIT license, but this does not automatically license any derived third-party material or runtime binaries. Check `THIRD-PARTY.md` and `docs/PUBLICATION-REVIEW.md` before distribution.

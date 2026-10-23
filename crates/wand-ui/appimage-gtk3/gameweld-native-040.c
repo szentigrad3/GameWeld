@@ -208,8 +208,6 @@ extern void g_object_unref(void *);
 #define GTK_FILE_CHOOSER_ACTION_OPEN 0
 #define GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER 2
 #define GTK_DIALOG_MODAL 1
-#define GTK_MESSAGE_INFO 0
-#define GTK_BUTTONS_CLOSE 2
 #define GTK_MESSAGE_QUESTION 2
 #define GTK_BUTTONS_YES_NO 4
 #define GTK_RESPONSE_YES -8
@@ -1482,7 +1480,7 @@ static void native_profiles_path(char *out,size_t cap){
     if(xdg&&*xdg)snprintf(out,cap,"%s/gameweld/native-profiles.tsv",xdg);
     else snprintf(out,cap,"%s/.config/gameweld/native-profiles.tsv",home?home:".");
 }
-static const char *available_native_profile(const char *appid){return appid&&!strcmp(appid,"2713000")?"resonance-paul44-v1.1":NULL;}
+static const char *available_native_profile(const char *appid){(void)appid;return NULL; /* third-party native profile excluded from distribution candidate */}
 static int load_native_profile(const char *appid,char *out,size_t cap){
     if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char p[2048];native_profiles_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;
     char line[4096];int ok=0;while(fgets(line,sizeof line,f)){char*tab=strchr(line,'\t');if(!tab)continue;*tab=0;char*v=tab+1;v[strcspn(v,"\r\n")]=0;if(!strcmp(line,appid)&&*v){snprintf(out,cap,"%s",v);ok=1;break;}}fclose(f);return ok;
@@ -2267,7 +2265,7 @@ static void on_export_support_bundle(GtkButton *b,void *d){
     if(p==0){
         close(fd[0]);dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);close(fd[1]);
         execlp("python3","python3",support_bundle_tool(),"create",
-            "--version","0.8.0-dev1","--name",g->name,"--key",game_key(g),"--provider",g->provider,"--appid",g->appid,"--launch-id",g->launch_id,"--runner",g->runner,
+            "--version","0.7.0","--name",g->name,"--key",game_key(g),"--provider",g->provider,"--appid",g->appid,"--launch-id",g->launch_id,"--runner",g->runner,
             "--target-kind",g->target_kind,"--executable",g->executable,"--install-dir",g->install_dir,"--prefix",g->prefix,"--compatdata",g->compatdata,
             "--compat-tool",g->compat_tool,"--compat-tool-path",g->compat_tool_path,"--compat-tool-source",g->compat_tool_source,"--resolution-state",g->resolution_state,"--resolution",g->resolution_label,
             "--trainer",trainer,(char*)NULL);_exit(127);
@@ -3004,72 +3002,6 @@ static void on_check_local_trainer_catalog(GtkButton*b,void*d){
     if(G.trainer_updates_status)set_label(G.trainer_updates_status,"Checking imported catalog and staged versions offline; no publisher requests…");
     start_trainer_update_job(j);
 }
-
-/* 0.8.0 dev1: read-only publisher file review. Exact selected game/epoch
- * validation prevents an old result from appearing for a later selection.
- * No downloaded executable is ever passed into staging by this action. */
-typedef struct {char game[320],key[320],output[8192]; unsigned long long epoch; int ok;} OfficialFilesJob;
-static int official_files_busy=0;
-static gboolean official_files_done(void*payload){
-    OfficialFilesJob*j=(OfficialFilesJob*)payload;official_files_busy=0;
-    if(j->epoch!=G.trainer_updates_context_epoch ||G.selected<0||G.selected>=G.game_count ||
-       strcmp(j->key,game_key(&G.games[G.selected]))){free(j);return FALSE;}
-    GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_CLOSE,
-         "FLiNG publisher files — review only");
-    GtkWidget*area=gtk_dialog_get_content_area((GtkDialog*)dlg);
-    GtkWidget*heading=label("These are links advertised by the publisher page, NOT cryptographically verified downloads. No trainer was downloaded or installed. Select/copy a link only after reviewing it.","muted");
-    gtk_label_set_line_wrap((GtkLabel*)heading,TRUE);pack(area,heading,0);
-    GtkWidget*scroll=gtk_scrolled_window_new(NULL,NULL);
-    gtk_widget_set_size_request(scroll,740,290);
-    GtkWidget*view=gtk_text_view_new();gtk_text_view_set_editable((GtkTextView*)view,FALSE);
-    gtk_text_view_set_cursor_visible((GtkTextView*)view,FALSE);
-    gtk_text_view_set_wrap_mode((GtkTextView*)view,2);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer((GtkTextView*)view),j->ok?j->output:"Official publisher page unavailable or could not be verified. Open Publisher page to review manually.",-1);
-    gtk_container_add(scroll,view);pack(area,scroll,1);
-    gtk_widget_show_all(dlg);gtk_dialog_run((GtkDialog*)dlg);gtk_widget_destroy(dlg);
-    free(j);return FALSE;
-}
-static void*official_files_worker(void*payload){
-    OfficialFilesJob*j=(OfficialFilesJob*)payload;
-    int fds[2];char page[2048]={0};
-    if(pipe(fds)!=0){g_idle_add(official_files_done,j);return NULL;}
-    pid_t pid=fork();
-    if(pid==0){close(fds[0]);dup2(fds[1],STDOUT_FILENO);close(fds[1]);
-        execlp("python3","python3",trainer_monitor_tool(),"publisher-page","--game",j->game,"--provider","fling","--plain",(char*)NULL);_exit(127);}
-    close(fds[1]);int ok=pid>0&&bounded_child_output(pid,fds[0],page,sizeof page,4);
-    if(!ok){g_idle_add(official_files_done,j);return NULL;}
-    page[strcspn(page,"\r\n")]=0;
-    if(strncmp(page,"https://flingtrainer.com/trainer/",33)!=0 &&
-       strncmp(page,"https://www.flingtrainer.com/trainer/",37)!=0){
-        g_idle_add(official_files_done,j);return NULL;
-    }
-    if(pipe(fds)!=0){g_idle_add(official_files_done,j);return NULL;}
-    pid=fork();
-    if(pid==0){close(fds[0]);dup2(fds[1],STDOUT_FILENO);close(fds[1]);
-        execlp("python3","python3",trainer_updates_tool(),"publisher-files","--game",j->game,"--page",page,"--plain",(char*)NULL);_exit(127);}
-    close(fds[1]);j->ok=pid>0&&bounded_child_output(pid,fds[0],j->output,sizeof j->output,12);
-    if(j->ok&&!strstr(j->output,"FILE\t")){
-        snprintf(j->output,sizeof j->output,"No exact package/download links were verified on the official page for %.200s.\nThe publisher page can still be opened manually. No file downloaded.",j->game);
-    }
-    g_idle_add(official_files_done,j);return NULL;
-}
-static void on_review_official_files(GtkButton*b,void*d){
-    (void)b;(void)d;
-    if(G.selected<0||G.selected>=G.game_count)return;
-    const char*provider=G.trainer_updates_provider?gtk_combo_box_get_active_id((GtkComboBox*)G.trainer_updates_provider):NULL;
-    if(!provider||strcmp(provider,"fling")){
-        if(G.trainer_updates_status)set_label(G.trainer_updates_status,"Publisher file review currently supports FLiNG only. Use Publisher page for other providers.");return;
-    }
-    if(official_files_busy){if(G.trainer_updates_status)set_label(G.trainer_updates_status,"Official file review already in progress.");return;}
-    OfficialFilesJob*j=calloc(1,sizeof *j);if(!j)return;
-    snprintf(j->game,sizeof j->game,"%s",G.games[G.selected].name);
-    snprintf(j->key,sizeof j->key,"%s",game_key(&G.games[G.selected]));
-    j->epoch=G.trainer_updates_context_epoch;
-    official_files_busy=1;
-    if(G.trainer_updates_status)set_label(G.trainer_updates_status,"Reading exact FLiNG package links for selected game (review only; no download)…");
-    pthread_t thread;if(pthread_create(&thread,NULL,official_files_worker,j)==0)pthread_detach(thread);
-    else{official_files_busy=0;free(j);if(G.trainer_updates_status)set_label(G.trainer_updates_status,"Could not start publisher file review.");}
-}
 static void on_find_official_trainer(GtkButton*b,void*d){
     (void)b;(void)d;
     if(G.selected<0||G.selected>=G.game_count){log_line("Select a game before finding official trainers.");return;}
@@ -3390,9 +3322,7 @@ static GtkWidget *build_trainer_library(void){
     g_signal_connect_data(official,"clicked",(GCallback)on_find_official_trainer,NULL,NULL,0);
     g_signal_connect_data(check,"clicked",(GCallback)on_check_trainer_updates,NULL,NULL,0);
     g_signal_connect_data(source_status,"clicked",(GCallback)on_inspect_release_sources,NULL,NULL,0);
-    GtkWidget*review_files=button("Review official files…","action");
-    g_signal_connect_data(review_files,"clicked",(GCallback)on_review_official_files,NULL,NULL,0);
-    pack(updates_row,official,0);pack(updates_row,check,0);pack(updates_row,review_files,0);pack(upd,updates_row,0);
+    pack(updates_row,official,0);pack(updates_row,check,0);pack(upd,updates_row,0);
     GtkWidget*updates_row2=box(GTK_ORIENTATION_HORIZONTAL,5);
     GtkWidget*offline_check=button("Check saved downloads","action");
     g_signal_connect_data(offline_check,"clicked",(GCallback)on_check_local_trainer_catalog,NULL,NULL,0);
@@ -3717,12 +3647,12 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
     G.wand_patcher_status=label("Looking for installed Wand automatically…","muted");gtk_label_set_line_wrap((GtkLabel*)G.wand_patcher_status,TRUE);pack(wc,G.wand_patcher_status,0);pack(right,wc,0);
     wand_detect_start();
     GtkWidget*scard=box(GTK_ORIENTATION_VERTICAL,8);style(scard,"card");pack(scard,label("Steam Direct Launch Cleanup","card-title"),0);GtkWidget*sd=label("Older pre-GameWeld builds could leave the legacy wand-steam-wrap hook in a game's Steam Launch Options. Steam can still invoke that obsolete hook and leave a terminal attached to the game. This cleanup removes only LaunchOptions entries that still reference wand-steam-wrap and creates a timestamped localconfig.vdf backup first.","muted");gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(scard,sd,0);GtkWidget*sbtn=button("Remove Legacy Steam Hooks","action");g_signal_connect_data(sbtn,"clicked",(GCallback)on_clean_legacy_hooks,NULL,NULL,0);pack(scard,sbtn,0);G.steam_cleanup_status=label("After cleanup, restart Steam once before testing direct Play.","good");gtk_label_set_line_wrap((GtkLabel*)G.steam_cleanup_status,TRUE);pack(scard,G.steam_cleanup_status,0);pack(right,scard,0);pack(right,card("Safety","Use native profiles, local trainers and Cheat Engine tables for single-player/offline games. Do not use them in anti-cheat protected or competitive multiplayer modes. No provider bypasses anti-cheat systems.",NULL),0);return outer;}
-static GtkWidget *build_about(void){GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,16);margins(p,24);gtk_container_add(outer,p);GtkWidget*hero=box(GTK_ORIENTATION_VERTICAL,6);gtk_widget_set_halign(hero,GTK_ALIGN_CENTER);GtkWidget*wm=asset_image("gameweld-brand-logo.png",540,180);if(wm){gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}else{wm=label("GameWeld",NULL);gtk_widget_set_name(wm,"section-title");gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}GtkWidget*v=label("0.8.0 Dev 1 • Game & Trainer Management","page-subtitle");gtk_widget_set_halign(v,GTK_ALIGN_CENTER);pack(hero,v,0);pack(p,hero,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*c1=box(GTK_ORIENTATION_VERTICAL,8);style(c1,"panel");pack(c1,label("WHAT IT DOES","section-kicker"),0);pack(c1,label("Unified Steam, Steam non-Steam shortcut, Heroic and Lutris game discovery\nLutris Test 4 keeps the Test 3 GE-Proton/UMU and classic Wine resolver, launches through Lutris, validates the exact live prefix/runtime owner, and hands assigned/custom local trainers into that same session with no generic fallback\nTrainer Library with conservative automatic matching\nDedicated Aurora / Cheat Evolution manager launch prefixes\nOverview Launch With hub for assigned trainers, Cheat Engine .CT tables, WeMod, Aurora, Cheat Evolution and custom trainer EXEs\nSteam non-Steam Cheat Evolution uses a field-validated restart-free live attach path: configured shortcuts keep Steam rungameid, while unconfigured shortcuts start only the selected resolved Windows target through Steam’s already-running runtime service with STEAM_COMPAT_LAUNCHER_SERVICE=proton injected for that launch. Steam stays open, shortcuts.vdf is never edited, exact App0/service provenance validation rejects unrelated Steam sessions, and the UI now reports restart-free handoff readiness explicitly\nSelected-game launch choices stay visible on Overview; each game can save or reset a one-click default while manager buttons retain explicit launch/close control\nSaved defaults drive the primary Play action; manager defaults now enforce game-first ordering before manager attachment\nSerialized Steam WeMod provider preparation with staging recovery and correct one-shot gate arming\nHeroic WeMod retains verified native .NET 4.8 + DWriteCore preparation, repairs stale GameWeld temporary Wand-runner residue before launch, refreshes the true Heroic game runtime from disk, follows exact launcher-to-game executable handoffs, then attaches Wand through the same live Heroic Wine prefix; readiness rejects Proton/UMU argv wrappers and requires both exact processes to remain live\nSteam shortcut local-trainer handoff now rejects Steam runtime wrappers as fake game PIDs and waits for the final mapped game window to remain stable before starting the trainer, preventing early attachment to black bootstrap surfaces\nLive manager attachment to compatible running game sessions\nCompatibility Engine v2 recipe inspection\nValidated live-session trainer handoff\nManaged Heroic FLiNG compatibility sessions\nPrivacy-scoped diagnostics and support bundles","muted"),0);GtkWidget*c2=box(GTK_ORIENTATION_VERTICAL,8);style(c2,"panel");pack(c2,label("DESIGN PRINCIPLES","section-kicker"),0);pack(c2,label("Game-first navigation\nOne clear primary action per context\nLauncher-native runtime ownership\nVisible readiness before launch\nAdvanced controls kept out of the main workflow","muted"),0);pack(cols,c1,1);pack(cols,c2,1);pack(p,cols,0);GtkWidget*f=label("Open source • MIT • Play more, your way.","muted");gtk_widget_set_halign(f,GTK_ALIGN_CENTER);pack(p,f,0);return outer;}
+static GtkWidget *build_about(void){GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,16);margins(p,24);gtk_container_add(outer,p);GtkWidget*hero=box(GTK_ORIENTATION_VERTICAL,6);gtk_widget_set_halign(hero,GTK_ALIGN_CENTER);GtkWidget*wm=asset_image("gameweld-brand-logo.png",540,180);if(wm){gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}else{wm=label("GameWeld",NULL);gtk_widget_set_name(wm,"section-title");gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}GtkWidget*v=label("0.7.0 PC1 • Game & Trainer Management","page-subtitle");gtk_widget_set_halign(v,GTK_ALIGN_CENTER);pack(hero,v,0);pack(p,hero,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*c1=box(GTK_ORIENTATION_VERTICAL,8);style(c1,"panel");pack(c1,label("WHAT IT DOES","section-kicker"),0);pack(c1,label("Unified Steam, Steam non-Steam shortcut, Heroic and Lutris game discovery\nLutris Test 4 keeps the Test 3 GE-Proton/UMU and classic Wine resolver, launches through Lutris, validates the exact live prefix/runtime owner, and hands assigned/custom local trainers into that same session with no generic fallback\nTrainer Library with conservative automatic matching\nDedicated Aurora / Cheat Evolution manager launch prefixes\nOverview Launch With hub for assigned trainers, Cheat Engine .CT tables, WeMod, Aurora, Cheat Evolution and custom trainer EXEs\nSteam non-Steam Cheat Evolution uses a field-validated restart-free live attach path: configured shortcuts keep Steam rungameid, while unconfigured shortcuts start only the selected resolved Windows target through Steam’s already-running runtime service with STEAM_COMPAT_LAUNCHER_SERVICE=proton injected for that launch. Steam stays open, shortcuts.vdf is never edited, exact App0/service provenance validation rejects unrelated Steam sessions, and the UI now reports restart-free handoff readiness explicitly\nSelected-game launch choices stay visible on Overview; each game can save or reset a one-click default while manager buttons retain explicit launch/close control\nSaved defaults drive the primary Play action; manager defaults now enforce game-first ordering before manager attachment\nSerialized Steam WeMod provider preparation with staging recovery and correct one-shot gate arming\nHeroic WeMod retains verified native .NET 4.8 + DWriteCore preparation, repairs stale GameWeld temporary Wand-runner residue before launch, refreshes the true Heroic game runtime from disk, follows exact launcher-to-game executable handoffs, then attaches Wand through the same live Heroic Wine prefix; readiness rejects Proton/UMU argv wrappers and requires both exact processes to remain live\nSteam shortcut local-trainer handoff now rejects Steam runtime wrappers as fake game PIDs and waits for the final mapped game window to remain stable before starting the trainer, preventing early attachment to black bootstrap surfaces\nLive manager attachment to compatible running game sessions\nCompatibility Engine v2 recipe inspection\nValidated live-session trainer handoff\nManaged Heroic FLiNG compatibility sessions\nPrivacy-scoped diagnostics and support bundles","muted"),0);GtkWidget*c2=box(GTK_ORIENTATION_VERTICAL,8);style(c2,"panel");pack(c2,label("DESIGN PRINCIPLES","section-kicker"),0);pack(c2,label("Game-first navigation\nOne clear primary action per context\nLauncher-native runtime ownership\nVisible readiness before launch\nAdvanced controls kept out of the main workflow","muted"),0);pack(cols,c1,1);pack(cols,c2,1);pack(p,cols,0);GtkWidget*f=label("Open source • MIT • Play more, your way.","muted");gtk_widget_set_halign(f,GTK_ALIGN_CENTER);pack(p,f,0);return outer;}
 
 static void build_ui(void){
     int initial_w=1480,initial_h=900;recommended_window_geometry(&initial_w,&initial_h);G.window=gtk_window_new(GTK_WINDOW_TOPLEVEL);gtk_window_set_title((GtkWindow*)G.window,"GameWeld");gtk_window_set_icon_name((GtkWindow*)G.window,"gameweld");gtk_window_set_default_size((GtkWindow*)G.window,initial_w,initial_h);gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);gtk_window_set_decorated((GtkWindow*)G.window,TRUE);g_signal_connect_data(G.window,"destroy",(GCallback)on_destroy,NULL,NULL,0);
     GtkWidget*titlebar=box(GTK_ORIENTATION_HORIZONTAL,12);gtk_widget_set_name(titlebar,"app-titlebar");gtk_widget_set_size_request(titlebar,-1,54);gtk_widget_set_margin_start(titlebar,14);gtk_widget_set_margin_end(titlebar,10);
-    GtkWidget*titlebrand=box(GTK_ORIENTATION_HORIZONTAL,10);gtk_widget_set_name(titlebrand,"title-brand");GtkWidget*wm=asset_image("gameweld-app-icon.png",36,36);if(!wm){wm=label("GW",NULL);gtk_widget_set_name(wm,"wandmark");}pack(titlebrand,wm,0);GtkWidget*bt=box(GTK_ORIENTATION_VERTICAL,0);GtkWidget*brand=label("GameWeld",NULL);gtk_widget_set_name(brand,"brand");pack(bt,brand,0);GtkWidget*ver=label("0.8.0-dev1",NULL);gtk_widget_set_name(ver,"brandver");pack(bt,ver,0);pack(titlebrand,bt,0);pack(titlebar,titlebrand,0);
+    GtkWidget*titlebrand=box(GTK_ORIENTATION_HORIZONTAL,10);gtk_widget_set_name(titlebrand,"title-brand");GtkWidget*wm=asset_image("gameweld-app-icon.png",36,36);if(!wm){wm=label("GW",NULL);gtk_widget_set_name(wm,"wandmark");}pack(titlebrand,wm,0);GtkWidget*bt=box(GTK_ORIENTATION_VERTICAL,0);GtkWidget*brand=label("GameWeld",NULL);gtk_widget_set_name(brand,"brand");pack(bt,brand,0);GtkWidget*ver=label("0.7.0",NULL);gtk_widget_set_name(ver,"brandver");pack(bt,ver,0);pack(titlebrand,bt,0);pack(titlebar,titlebrand,0);
     GtkWidget*grow=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow,1);GtkWidget*searchwrap=box(GTK_ORIENTATION_HORIZONTAL,0);gtk_widget_set_name(searchwrap,"global-search-wrap");G.search_scope=gtk_combo_box_text_new();gtk_widget_set_name(G.search_scope,"global-search-scope");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"all","All games");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"steam","Steam");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"shortcut","Steam shortcuts");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"heroic","Heroic");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"lutris","Lutris");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"trainers","Trainers");gtk_combo_box_set_active_id((GtkComboBox*)G.search_scope,"all");gtk_widget_set_size_request(G.search_scope,126,36);g_signal_connect_data(G.search_scope,"changed",(GCallback)on_search_scope_changed,NULL,NULL,0);pack(searchwrap,G.search_scope,0);G.search=gtk_entry_new();gtk_widget_set_name(G.search,"global-search-entry");gtk_entry_set_placeholder_text((GtkEntry*)G.search,"Search all games…");gtk_entry_set_icon_from_icon_name((GtkEntry*)G.search,GTK_ENTRY_ICON_PRIMARY,"system-search-symbolic");gtk_widget_set_size_request(G.search,250,36);g_signal_connect_data(G.search,"changed",(GCallback)on_search,NULL,NULL,0);pack(searchwrap,G.search,0);pack(titlebar,searchwrap,0);GtkWidget*grow2=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow2,1);G.top_steam_status=label("Detecting Steam, Heroic and Lutris…","muted");pack(titlebar,G.top_steam_status,0);pack(titlebar,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);GtkWidget*mi=button("—","windowctl");GtkWidget*ma=button("□","windowctl");GtkWidget*cl=button("×","windowctl");gtk_widget_set_name(cl,"closectl");g_signal_connect_data(mi,"clicked",(GCallback)on_minimize,NULL,NULL,0);g_signal_connect_data(ma,"clicked",(GCallback)on_maximize,NULL,NULL,0);g_signal_connect_data(cl,"clicked",(GCallback)on_close_btn,NULL,NULL,0);pack(titlebar,mi,0);pack(titlebar,ma,0);pack(titlebar,cl,0);gtk_window_set_titlebar((GtkWindow*)G.window,titlebar);
     GtkWidget*root=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(root,"root");gtk_container_add(G.window,root);GtkWidget*nav=box(GTK_ORIENTATION_HORIZONTAL,5);gtk_widget_set_name(nav,"navstrip");G.nav_home=make_nav("go-home-symbolic","Overview",(GCallback)nav_home);G.nav_library=make_nav("view-grid-symbolic","Library",(GCallback)nav_library);G.nav_trainers=make_nav("applications-engineering-symbolic","Trainer Library",(GCallback)nav_trainers);G.nav_setup=make_nav("emblem-system-symbolic","Compatibility",(GCallback)nav_setup);G.nav_diag=make_nav("help-browser-symbolic","Support",(GCallback)nav_diag);G.nav_settings=make_nav("preferences-system-symbolic","Settings",(GCallback)nav_settings);G.nav_about=make_nav("dialog-information-symbolic","About",(GCallback)nav_about);pack(nav,G.nav_home,0);pack(nav,G.nav_library,0);pack(nav,G.nav_trainers,0);pack(nav,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);pack(nav,G.nav_setup,0);pack(nav,G.nav_diag,0);GtkWidget*ng=box(GTK_ORIENTATION_HORIZONTAL,0);pack(nav,ng,1);GtkWidget*hint=label("Ctrl+F Search","command-hint");pack(nav,hint,0);pack(nav,G.nav_settings,0);pack(nav,G.nav_about,0);pack(root,nav,0);
     G.stack=gtk_stack_new();gtk_stack_set_hhomogeneous((GtkStack*)G.stack,FALSE);gtk_stack_set_vhomogeneous((GtkStack*)G.stack,FALSE);gtk_widget_set_hexpand(G.stack,TRUE);gtk_widget_set_vexpand(G.stack,TRUE);gtk_stack_add_named((GtkStack*)G.stack,build_home(),"home");gtk_stack_add_named((GtkStack*)G.stack,build_library(),"library");gtk_stack_add_named((GtkStack*)G.stack,build_trainer_library(),"trainers");gtk_stack_add_named((GtkStack*)G.stack,build_setup(),"setup");gtk_stack_add_named((GtkStack*)G.stack,build_diag(),"diag");gtk_stack_add_named((GtkStack*)G.stack,build_settings(),"settings");gtk_stack_add_named((GtkStack*)G.stack,build_about(),"about");pack(root,G.stack,1);

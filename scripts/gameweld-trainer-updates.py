@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GameWeld trainer update pipeline (0.8.0 dev1).
+"""GameWeld trainer update pipeline (0.7.0 RC6).
 
 Read-only official-page discovery and opt-in, catalog-pinned installs.
 No arbitrary web search results are treated as executable download sources.
@@ -274,91 +274,6 @@ def publisher_page_metadata(provider, html):
     return result
 
 
-
-class OfficialFileLinkParser(HTMLParser):
-    """Pair a FLiNG package anchor with its *own* table row's published date.
-
-    Browsing evidence only; no redirect is followed and no bytes are downloaded.
-    """
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.rows=[];self.row=None;self.cell=None;self.anchor=None
-    def handle_starttag(self, tag, attrs):
-        attrs=dict(attrs)
-        if tag=='tr':self.row=[];self.cell=None
-        elif tag in ('td','th') and self.row is not None:
-            self.cell={'parts':[],'links':[]};self.anchor=None
-        elif tag=='a' and self.cell is not None:
-            self.anchor={'href':attrs.get('href',''),'parts':[]}
-    def handle_data(self, data):
-        if self.cell is not None:self.cell['parts'].append(data)
-        if self.anchor is not None:self.anchor['parts'].append(data)
-    def handle_endtag(self, tag):
-        if tag=='a' and self.anchor is not None:
-            self.cell['links'].append((' '.join(' '.join(self.anchor['parts']).split()),self.anchor['href']))
-            self.anchor=None
-        elif tag in ('td','th') and self.cell is not None and self.row is not None:
-            self.row.append({'text':' '.join(' '.join(self.cell['parts']).split()),'links':self.cell['links']})
-            self.cell=None;self.anchor=None
-        elif tag=='tr' and self.row is not None:
-            if len(self.rows)<120:self.rows.append(self.row)
-            self.row=None;self.cell=None;self.anchor=None
-
-
-def _fling_download_link(url):
-    """Accept only an unchanged first-party HTTPS opaque /downloads/ locator."""
-    try:
-        p=urllib.parse.urlsplit(url)
-        return (p.scheme=='https' and p.hostname in ('flingtrainer.com','www.flingtrainer.com')
-                and p.port in (None,443) and not p.username and not p.password
-                and not p.query and not p.fragment and
-                re.fullmatch(r'/downloads/(?:[a-zA-Z0-9,_\-.]|%2[Cc]){8,220}/?',p.path) is not None)
-    except ValueError:return False
-
-
-def _fling_matching_game(package, game):
-    prefix=re.split(r'\.v\d',package,maxsplit=1,flags=re.I)[0]
-    norm=lambda value:re.sub(r'[^a-z0-9]','',str(value).casefold().replace('®',''))
-    return norm(prefix)==norm(game)
-
-
-def official_page_links(game,page,html):
-    """Return informational package links directly represented by official HTML.
-
-    A publisher link and a publication date do not establish SHA256, signer identity
-    or safety. They are NOT eligible for GameWeld's approved staging operation.
-    """
-    if not isinstance(game,str) or not game or len(game)>190:raise UpdateError('Invalid game title')
-    if not isinstance(page,str) or not publisher_host(page,'fling'):raise UpdateError('Not an official FLiNG HTTPS page')
-    url=urllib.parse.urlsplit(page)
-    slug=safe_slug(game.replace("'",'').replace('’','').replace('®',''))
-    if (url.query or url.fragment or not re.fullmatch(r'/trainer/[a-z0-9-]+-trainer/?',url.path)
-        or url.path.rstrip('/')!='/trainer/'+slug+'-trainer'):
-        raise UpdateError('Official page does not match the selected game title')
-    if not isinstance(html,str) or len(html)>MAX_HTML_BYTES:raise UpdateError('Official page invalid or too large')
-    parsed=OfficialFileLinkParser();parsed.feed(html)
-    results=[];seen=set()
-    for row in parsed.rows:
-        cells=[c['text'] for c in row]
-        record=_release_from_row(cells)
-        if not record or not _fling_matching_game(record['name'],game):continue
-        # An anchor must sit inside the exact filename cell, never a nearby
-        # advertisement, attachment, another trainer or a download-count cell.
-        loc=[]
-        for cell in row:
-            if _package_name(cell['text'])!=record['name']:continue
-            for label,href in cell['links']:
-                if label!=record['name']:continue
-                target=urllib.parse.urljoin(page,href)
-                if _fling_download_link(target):loc.append(target)
-        if len(set(loc))!=1 or record['name'].casefold() in seen:continue
-        seen.add(record['name'].casefold())
-        results.append(dict(record,official_link=loc[0],status='PUBLISHER LINK ONLY — SHA256 NOT VERIFIED'))
-        if len(results)>=8:break
-    return {'game':game,'page':page,'releases':results,'count':len(results),
-            'authenticated':False,'downloaded':False,
-            'warning':'First-party page links are informational only. No publisher-authenticated checksum or executable safety verified. Review in a browser; never use these as verified catalog entries.'}
-
 def check_providers(game, providers=None, live=False):
     reports=[]
     for provider in (providers or PROVIDERS):
@@ -429,7 +344,7 @@ class RestrictedRedirect(urllib.request.HTTPRedirectHandler):
 def open_trusted(url, host_rule=_official_host, timeout=12):
     if not host_rule(url): raise UpdateError('URL is outside an approved HTTPS publisher host')
     opener=urllib.request.build_opener(RestrictedRedirect(host_rule))
-    req=urllib.request.Request(url,headers={'User-Agent':'GameWeld/0.8.0-dev1 (+read-only trainer release check)','Accept':'text/html,application/zip,application/octet-stream'})
+    req=urllib.request.Request(url,headers={'User-Agent':'GameWeld/0.7.0-rc6 (+read-only trainer release check)','Accept':'text/html,application/zip,application/octet-stream'})
     return opener.open(req,timeout=timeout)
 
 class PageLinks(HTMLParser):
@@ -929,7 +844,6 @@ def main(argv=None):
     a=sub.add_parser('trust-report');a.add_argument('--catalog');a.add_argument('--plain',action='store_true')
     s=sub.add_parser('sources');s.add_argument('--plain',action='store_true')
     i=sub.add_parser('import-signed');i.add_argument('--file',required=True);i.add_argument('--confirm',action='store_true')
-    r=sub.add_parser('publisher-files');r.add_argument('--game',required=True);r.add_argument('--page',required=True);r.add_argument('--html-file');r.add_argument('--plain',action='store_true')
     args=p.parse_args(argv)
     try:
         if args.cmd=='fingerprint-key':print(json.dumps({'sha256':fingerprint_key(args.key),'warning':'Verify against a trusted independent publisher channel'}))
@@ -948,26 +862,6 @@ def main(argv=None):
                 for info in record['providers']:
                     print('PROVIDER\t'+info['provider']+'\t'+info['capability']+'\t'+('user-key-pinned' if info['pinned_local_key'] else 'no-key-pinned')+'\t'+info['home'])
             else:print(json.dumps(record,sort_keys=True))
-        elif args.cmd=='publisher-files':
-            # Test fixtures are explicit and read-only; the normal path fetches
-            # only the exact requested first-party page with bounded redirects.
-            if args.html_file:
-                fixture=Path(args.html_file)
-                if fixture.is_symlink() or fixture.stat().st_size>MAX_HTML_BYTES:raise UpdateError('Fixture invalid or too large')
-                content=fixture.read_text('utf-8')
-            else:
-                official_page_links(args.game,args.page,'') # Validate URL before networking
-                with open_trusted(args.page,host_rule=lambda u:publisher_host(u,'fling'),timeout=8) as resp:
-                    data=resp.read(MAX_HTML_BYTES+1)
-                if len(data)>MAX_HTML_BYTES:raise UpdateError('Publisher page too large')
-                content=data.decode('utf-8','replace')
-            result=official_page_links(args.game,args.page,content)
-            if args.plain:
-                print('PAGE\t'+result['page'])
-                for row in result['releases']:
-                    print('FILE\t'+row['name']+'\t'+row['published']+'\t'+row['official_link'])
-                print('NOTICE\t'+result['warning'])
-            else:print(json.dumps(result))
         elif args.cmd=='official-url':print(provider_url(args.provider,args.game))
         elif args.cmd=='discover':
             results=discover(args.game) if args.provider=='fling' else provider_report(args.provider,args.game).get('matches',[])

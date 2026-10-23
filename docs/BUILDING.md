@@ -1,45 +1,13 @@
-# Building and testing
+# Build and test GameWeld 0.7.0 stable source snapshot
 
-## Supported development host
+This snapshot is kept for source-tag correspondence; current development and CI live on `main`.
 
-Linux x86_64 with Python 3, GCC, Git and GTK3 runtime libraries. Some optional Cargo workspaces have additional GTK4/libadwaita requirements; the released AppImage UI currently builds from `crates/wand-ui/appimage-gtk3/gameweld-native-040.c`.
-
-On Debian/Ubuntu development hosts:
+The original stable packager requires an independently supplied, tested `GameWeld-0.7.0-rc11-x86_64.AppImage` as its runtime baseline. The build is not independently reproducible. Run it on a compatible Ubuntu/Debian x86_64 host with GCC, Python 3 and GTK3 libraries:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y build-essential python3 libgtk-3-dev
+./MAKE-APPIMAGE.sh /absolute/path/GameWeld-0.7.0-rc11-x86_64.AppImage
 ```
 
-On CachyOS/Arch, ensure `base-devel`, `python`, `gtk3` and `git` are installed.
+After building, compare all embedded application helper files against this source checkout and perform GTK startup and live launcher handoff checks. The stable binary was previously tested with 8 live game/trainer launch scenarios, but any redistribution changes require retesting.
 
-## Offline checks
-
-```bash
-./scripts/ci-check.sh
-```
-
-The checks use local fixtures and do not install trainers.
-
-## AppImage packaging
-
-The **0.8.0 Dev 1 packaging process is incremental**: it extracts a verified 0.7.0 AppImage, compiles GameWeld's GTK UI, replaces 14 GameWeld libexec helpers, and repacks the runtime. The 0.7.0 AppImage must be supplied separately.
-
-```bash
-sha256sum GameWeld-0.7.0-x86_64.AppImage
-# Must equal the pinned value in docs/BASELINE-SHA256.txt.
-chmod +x GameWeld-0.7.0-x86_64.AppImage
-./MAKE-APPIMAGE.sh "$(realpath GameWeld-0.7.0-x86_64.AppImage)" "$(pwd)/build/GameWeld-0.8.0-dev1-x86_64.AppImage"
-```
-
-The current packager uses the Ubuntu/Debian-style GTK3 shared-library paths (`/lib/x86_64-linux-gnu`). Builds on CachyOS can use an Ubuntu CI runner/container for packaging even when the resulting AppImage is tested on CachyOS.
-
-**Not a clean-room reproducible build yet:** binaries/assets inherited from the stable AppImage are outside this source checkout. The bootstrap runtime is pinned by SHA256, and release candidates should include a matching source tree and a validation report. Never claim bit-for-bit reproducibility without checking it.
-
-## Release gates
-
-- Offline suites and static source checks pass.
-- AppImage extracts and launches in an isolated X display.
-- Packaged helper checksums match the release source.
-- No third-party trainer packages or user-specific state files are included.
-- Real Steam/Heroic/Lutris handoff tests are recorded before stable promotion.
+Do not publish a binary/tag until artwork, the converted native trainer, and runtime provenance have been reviewed and approved. The tested stable AppImage SHA256 is `8e1906a488de83f51378ed593c75f643c9640ef5d23e503aa3dab78941b1756a`.

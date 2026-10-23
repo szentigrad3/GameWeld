@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only GameWeld 0.8.0 Dev 1 upgrade and release-gate preflight.
+"""Read-only GameWeld 0.7.0 Stable upgrade and release-gate preflight.
 
 Checks only GameWeld's own settings, cached records and assignment metadata.
 Does not execute trainers, contact publishers, change settings, or prune mappings.
@@ -178,7 +178,7 @@ def scan():
         except OSError:
             issues.append('Cannot enumerate staged trainer receipts')
     evidence['staging']={'receipts_seen':receipts,'integrity_checked':False}
-    return {'schema':1,'app':'GameWeld','version':'0.8.0-dev1','read_only':True,
+    return {'schema':1,'app':'GameWeld','version':'0.7.0','read_only':True,
             'generated_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
             'status':'REVIEW' if issues else 'READY_FOR_FIELD_TEST',
             'issues':sorted(set(issues)),'checks':evidence,
@@ -189,7 +189,7 @@ def scan():
 
 def report_markdown(s):
     a=s['checks']['assignments']; m=s['checks']['monitor_cache'];p=s['checks']['monitor_preferences']
-    lines=['# GameWeld 0.8.0 Dev 1 — Stability & Field Release Gates','',f'Generated (UTC): {s["generated_utc"]}',
+    lines=['# GameWeld 0.7.0 Stable — Stability & Field Release Gates','',f'Generated (UTC): {s["generated_utc"]}',
            f'Result: **{s["status"]}**','', '## Existing configuration (read-only)',
            f'- Assignments: {a["assignments"]}; missing paths: {a["missing_targets"]} across {a["unique_missing_paths"]} distinct targets; duplicate keys: {a["duplicate_keys"]}; invalid rows: {a["invalid_rows"]}; symlink paths: {a["symlink_targets"]}',
            f'- Automatic update preferences: {p["status"]}; daily limit: {p["budget"] if p["budget"] is not None else "not configured (default 12)"}',

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-BASE_APPIMAGE="${1:?Usage: build-gameweld-0.8.0-dev1-appimage.sh BASE_STABLE.APPIMAGE [OUT]}"
-OUT="${2:-$ROOT/GameWeld-0.8.0-dev1-x86_64.AppImage}"
-WORK="$(mktemp -d -t gameweld-080-dev1-XXXXXX)"
+BASE_APPIMAGE="${1:?Usage: build-gameweld-0.7.0-appimage.sh BASE_RC11.APPIMAGE [OUT]}"
+OUT="${2:-$ROOT/GameWeld-0.7.0-x86_64.AppImage}"
+WORK="$(mktemp -d -t gameweld-070-stable-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 ( cd "$WORK"; "$BASE_APPIMAGE" --appimage-extract >/dev/null )
 APPDIR="$WORK/squashfs-root"
@@ -39,13 +39,13 @@ mkdir -p "$APPDIR/usr/share/gameweld" "$APPDIR/usr/share/doc/gameweld" "$APPDIR/
 # Stable runtime ships current release guidance, not the earlier candidate/test doc archive.
 find "$APPDIR/usr/share/doc/gameweld" -maxdepth 1 -type f \
   \( -name 'RELEASE-NOTES-*' -o -name 'SIGNED-CATALOGS-*' \) -delete
-cp "$ROOT/docs/RELEASE-NOTES-0.8.0-dev1.md" "$APPDIR/usr/share/doc/gameweld/RELEASE-NOTES-0.8.0-dev1.md"
-cp "$ROOT/docs/SIGNED-CATALOGS-0.7.0-rc6.md" "$APPDIR/usr/share/doc/gameweld/SIGNED-CATALOGS-0.8.0-dev1.md"
+cp "$ROOT/docs/RELEASE-NOTES-0.7.0.md" "$APPDIR/usr/share/doc/gameweld/RELEASE-NOTES-0.7.0.md"
+cp "$ROOT/docs/SIGNED-CATALOGS-0.7.0-rc6.md" "$APPDIR/usr/share/doc/gameweld/SIGNED-CATALOGS-0.7.0.md"
 cat > "$APPDIR/usr/share/gameweld/RELEASE.txt" <<'TXT'
-GameWeld 0.8.0 Dev 1 — First-party FLiNG file-link review
-Development build on 0.7.0 Stable. No automatic trainer downloads or unverified installs. Launcher helpers preserved.
+GameWeld 0.7.0 Stable — Tested Launcher and Trainer Foundation
+Stable promotion of RC11. User-confirmed game/trainer launches and clean assignment preflight. Read-only launch checklist, selection-safe updates, approved staging and rollback. No unattended installs. Launcher helpers preserved.
 TXT
-sed -i 's/^X-AppImage-Version=.*/X-AppImage-Version=0.8.0-dev1/' "$APPDIR/gameweld.desktop"
+sed -i 's/^X-AppImage-Version=.*/X-AppImage-Version=0.7.0/' "$APPDIR/gameweld.desktop"
 cp "$APPDIR/gameweld.desktop" "$APPDIR/usr/share/applications/gameweld.desktop"
 python3 "$ROOT/scripts/mksquash-minimal.py" "$APPDIR" "$WORK/root.squashfs"
 OFFSET="$("$BASE_APPIMAGE" --appimage-offset)"
