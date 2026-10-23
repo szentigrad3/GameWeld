@@ -63,6 +63,20 @@ bash scripts/pc2-test6-aio-report.sh
 
 The read-only report is written to `build/pc2-source/pc2-test6-aio-report.txt`; it checks discovery and fail-closed health. No paths are printed. Passing this check does not validate live game/trainer launches; those remain PC1-only.
 
+## PC2 Test 6 result and Test 7 runtime evidence
+
+The maintainer's Test 6 CachyOS report (23 October 2026) passed: **122 installed Steam manifests**, one registered Proton tool with an executable, `legacy_metadata_missing` because `WAND-HYBRID.json` was absent, all trust/health flags **false**, mutation endpoints HTTP 501. This is expected for an older or independently installed tool; no reinstall is indicated.
+
+Test 7 adds a separately invoked, **read-only** `GET /api/runtime-integrity` endpoint. It checks *only known GE-Proton file layouts* for `x86_64-windows/crypt32.dll` and `i386-windows/crypt32.dll`; when present and regular, it calculates SHA256 fingerprints of files no larger than 64 MiB. It does not execute Proton, download missing files, scan arbitrary directory trees, follow symlinked runtime paths, compare to untrusted expected hashes, or change anything. Missing DLLs in those layouts are **not proof of a broken installation**—a different runtime layout may exist. No hash is claimed to be verified against a trusted reference. Trainer health and readiness remain **unverified**.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test7-aio-report.sh
+```
+
+A text report is saved to `build/pc2-source/pc2-test7-aio-report.txt` without installation paths. It can include DLL fingerprints, which identify file contents, but not user account data. Avoid attaching raw Proton files. Keep PC1 for live game launches.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
