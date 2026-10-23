@@ -114,3 +114,27 @@ func TestMetadataConditionRejectsSymlink(t *testing.T) {
     state, ok := metadataCondition(path)
     if ok || state != "not_regular" { t.Fatalf("symlink followed: %v %v",state,ok) }
 }
+
+func TestLegacyMetadataMissingIsNotBrokenOrHealthy(t *testing.T) {
+    lib, dir := fixtureCompatibility(t)
+    if err := os.Remove(filepath.Join(dir,"WAND-HYBRID.json")); err != nil { t.Fatal(err) }
+    r := inspectCompatibility([]string{lib})
+    if r.State != "legacy_metadata_missing" || r.Verified || len(r.Candidates) != 1 {
+        t.Fatalf("expected legacy unverified state: %+v",r)
+    }
+    c := r.Candidates[0]
+    if c.MetadataState != "missing" || c.HasMetadata || !c.HasProton || !c.HasManifest {
+        t.Fatalf("invalid legacy evidence %+v", c)
+    }
+    t.Setenv("HOME",t.TempDir())
+    t.Setenv("STEAM_ROOT",lib)
+    code, payload := req(t,"GET","/api/status")
+    if code != 200 { t.Fatal(code) }
+    status, ok := payload.Data.(map[string]any)
+    if !ok || status["wand_installed"] != false || status["wand_healthy"] != false || status["base_compatible"] != false {
+        t.Fatalf("status prematurely enabled provider: %#v", status)
+    }
+    if status["wand_tool"] != dir {
+        t.Fatalf("legacy tool not discovered: %#v", status["wand_tool"])
+    }
+}
