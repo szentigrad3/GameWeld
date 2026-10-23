@@ -370,7 +370,8 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         game_dir.mkdir()
         self.assertEqual(self.cmd("patch", "--install-dir", str(self.client),
                                   "--confirm").returncode, 0)
-        with patch.dict(os.environ, {"GAMEWELD_TEST_CAPTURE": str(capture)}):
+        with patch.dict(os.environ, {"GAMEWELD_TEST_CAPTURE": str(capture),
+                                    "XDG_STATE_HOME": str(self.root / "state")}):
             with self.assertRaisesRegex(ValueError, "Steam game installation directory"):
                 bridge.launch_wand_in_live_game(
                     self.client, self.helper, "2353250", "", proc)
@@ -383,6 +384,55 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         # Nothing about the request certifies a trainer is attached.
         self.assertEqual((self.client / "resources/app.asar").read_bytes(),
                          b"PATCHED-FIXTURE")
+
+    def test_live_gpu_off_retry_passes_chromium_flags_and_captures_proton_log(self):
+        from unittest.mock import patch
+        import stat
+        proc, prefix, proton = self.make_live_proton_fixture()
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        capture = self.root / "software-render-args.txt"
+        proton.write_text(
+            '#!/bin/sh\n'
+            'printf "%s\\n" "$@" > "$GAMEWELD_TEST_CAPTURE"\n'
+            'echo "fake Proton stderr: renderer unavailable" >&2\n'
+            'exit 0\n', encoding="utf-8"
+        )
+        self.assertEqual(
+            self.cmd("patch", "--install-dir", str(self.client),
+                     "--confirm").returncode, 0
+        )
+        state = self.root / "private-state"
+        with patch.dict(os.environ, {
+            "XDG_STATE_HOME": str(state),
+            "GAMEWELD_TEST_CAPTURE": str(capture),
+        }):
+            bridge.launch_wand_in_live_game(
+                self.client, self.helper, "2353250", str(game_dir),
+                proc, software_render=True)
+        argv = capture.read_text().splitlines()
+        self.assertEqual(argv[0], "runinprefix")
+        self.assertEqual(argv[1], str(self.client / "WeMod.exe"))
+        self.assertIn("--disable-gpu", argv)
+        self.assertIn("--disable-gpu-compositing", argv)
+        self.assertIn("--enable-logging=stderr", argv)
+        log = state / "gameweld" / "wand-live-2353250.log"
+        self.assertTrue(log.is_file())
+        self.assertIn("software rendering", log.read_text())
+        self.assertIn("fake Proton stderr: renderer unavailable", log.read_text())
+        self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+
+    def test_software_render_only_allowed_for_confirmed_live_launch(self):
+        status = self.cmd("status", "--software-render", "--appid", "2353250")
+        self.assertNotEqual(status.returncode, 0)
+        self.assertIn("--software-render is only supported", status.stdout)
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        denied = self.cmd("live-launch", "--software-render",
+                          "--game-provider", "steam", "--appid", "2353250",
+                          "--game-dir", str(game_dir), "--install-dir", str(self.client))
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn("requires explicit --confirm", denied.stdout)
 
     def test_live_launch_cli_fails_closed_without_confirmation_or_process(self):
         game = self.root / "Astrometica"
