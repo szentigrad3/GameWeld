@@ -50,6 +50,15 @@ jobs:
           test -f build/pc2-source/dev-AppDir/usr/libexec/gameweld-trainer-library.py
           mkdir -p "$RUNNER_TEMP/pc2-empty-home"
           python3 build/pc2-source/dev-AppDir/usr/libexec/gameweld-wand-discovery.py --home "$RUNNER_TEMP/pc2-empty-home" --tsv | grep '^STATUS'
+      - name: Check PC2 Test 4 AIO report
+        run: |
+          bash -n scripts/pc2-test4-aio-report.sh
+          bash scripts/pc2-test4-aio-report.sh
+          grep -q '^Result: PASS        run: |
+          bash -n scripts/gameweld-wand-enhancer.sh
+          env -u WAND_ENHANCER_EXE bash scripts/gameweld-wand-enhancer.sh --status
+ build/pc2-source/pc2-test4-aio-report.txt
+          grep -q '^Compatibility verified: false' build/pc2-source/pc2-test4-aio-report.txt
       - name: Wand Enhancer integration smoke (no Wine or patch execution)
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
