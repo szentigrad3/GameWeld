@@ -2663,7 +2663,6 @@ static GtkWidget *build_home(void){
     GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);
     if(pc2_discovery_only()){
         GtkWidget*safe=button("Launch Steam game only (opt-in)","primary-action");
-        gtk_widget_set_tooltip_text(safe,"Launch the selected installed Steam game only after explicit opt-in and Yes confirmation; no Wand or trainer is started.");
         gtk_widget_set_sensitive(safe,pc2_steam_launch_allowed());
         g_signal_connect_data(safe,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);
         pack(copy,safe,0);
@@ -2671,7 +2670,6 @@ static GtkWidget *build_home(void){
         g_signal_connect_data(observe,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);
         pack(copy,observe,0);
         GtkWidget*wand_check=button("Check Wand Patch (no game launch)","action");
-        gtk_widget_set_tooltip_text(wand_check,"Read-only patch and runtime inspection. This does NOT launch Steam, the game, Wand, or a trainer.");
         g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         pack(copy,wand_check,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
