@@ -580,6 +580,7 @@ static int pc2_steam_launch_allowed(void);
 static int bounded_child_output(pid_t pid,int fd,char *output,size_t capacity,int seconds);
 static void on_pc2_wemod_verify_selected(GtkButton*,void*);
 static void on_pc2_wemod_live_launch(GtkButton*,void*);
+static void on_pc2_wemod_live_render(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
@@ -614,7 +615,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2676,6 +2677,9 @@ static GtkWidget *build_home(void){
         GtkWidget*live_wand=button("Launch Wand in Running Steam Game (opt-in)","action");
         g_signal_connect_data(live_wand,"clicked",(GCallback)on_pc2_wemod_live_launch,NULL,NULL,0);
         pack(copy,live_wand,0);
+        GtkWidget*retry_wand=button("Retry Wand (GPU Off, opt-in)","action");
+        g_signal_connect_data(retry_wand,"clicked",(GCallback)on_pc2_wemod_live_render,NULL,NULL,0);
+        pack(copy,retry_wand,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
             "Step 1: Launch Steam game only (Yes confirmation). Step 2: Check Wand Patch. No trainer is started.":
             "Game launch is disabled. Restart with --enable-steam-game-launch, then use Launch Steam game only (opt-in); patch checks never launch games.","muted");
@@ -3892,7 +3896,7 @@ static gboolean pc2_wemod_done(void *data){
     const char*txt=j->output[0]?j->output:(j->success?"Completed.":"Command failed.");
     size_t n=strlen(txt);
     if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,n>1400?txt+n-1400:txt);
-    log_line("WeMod Enhancer [%s] %s: %.1000s",j->action,j->success?"OK":"FAILED",txt);
+    log_line("WeMod Enhancer [%s] %s: %.1000s",j->action,j->success?(!strcmp(j->action,"live-launch")||!strcmp(j->action,"live-render")?"HANDOFF SENT (window not verified)":"OK"):"FAILED",txt);
     free(j);
     return FALSE;
 }
@@ -3906,10 +3910,12 @@ static void *pc2_wemod_worker(void *data){
     if(pid==0){
         close(pipefd[0]);dup2(pipefd[1],STDOUT_FILENO);dup2(pipefd[1],STDERR_FILENO);close(pipefd[1]);
         const char*argv[32];int n=0;
-        argv[n++]="python3";argv[n++]=pc2_wemod_helper();argv[n++]=j->action;
+        argv[n++]="python3";argv[n++]=pc2_wemod_helper();
+        argv[n++]=!strcmp(j->action,"live-render")?"live-launch":j->action;
+        if(!strcmp(j->action,"live-render"))argv[n++]="--software-render";
         if(j->install[0]){argv[n++]="--install-dir";argv[n++]=j->install;}
         if(j->wine_prefix[0]){argv[n++]="--wine-prefix";argv[n++]=j->wine_prefix;}
-        if(!strcmp(j->action,"game-test")||!strcmp(j->action,"live-launch")){
+        if(!strcmp(j->action,"game-test")||!strcmp(j->action,"live-launch")||!strcmp(j->action,"live-render")){
             argv[n++]="--game-provider";argv[n++]=j->game_provider;
             argv[n++]="--appid";argv[n++]=j->appid;
             argv[n++]="--game-name";argv[n++]=j->game_name;
@@ -3919,7 +3925,7 @@ static void *pc2_wemod_worker(void *data){
         }
         if(!strcmp(j->action,"install")||!strcmp(j->action,"patch")||
            !strcmp(j->action,"restore")||!strcmp(j->action,"launch-test")||
-           !strcmp(j->action,"live-launch"))
+           !strcmp(j->action,"live-launch")||!strcmp(j->action,"live-render"))
             argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char*const*)argv);_exit(127);
@@ -3941,7 +3947,7 @@ static void pc2_wemod_action(const char*action){
         gtk_entry_get_text((GtkEntry*)pc2_wemod_install_entry):"";
     if(!strcmp(action,"patch")||!strcmp(action,"restore")||
        !strcmp(action,"install")||!strcmp(action,"launch-test")||
-       !strcmp(action,"live-launch")){
+       !strcmp(action,"live-launch")||!strcmp(action,"live-render")){
         const char*message=!strcmp(action,"patch")?
             "Install WeMod Enhancer from the pinned upstream Linux release if necessary, then PATCH the selected WeMod client?\\n\\n"
             "The upstream patch modifies WeMod's application files, subscription display, update behavior and integrity handling. "
@@ -3954,6 +3960,11 @@ static void pc2_wemod_action(const char*action){
             "Launch the selected patched Wand client in its EXISTING Wine prefix?\\n\\n"
             "This only tests whether Wand opens. It requests native-first version.dll loading; "
             "it does NOT start a selected game, join its Proton session, or prove trainer attachment.":
+            !strcmp(action,"live-render")?
+            "Retry Wand with GPU rendering disabled using the running Steam game's exact Proton/prefix?\\n\\n"
+            "CLOSE the existing blank Wand window first. Astrometica must still be running. "
+            "Only the new Wand child gets --disable-gpu and --disable-gpu-compositing. "
+            "A startup log is saved in GameWeld's private state. This may modify the game's Wine prefix state; no Steam settings are changed.":
             !strcmp(action,"live-launch")?
             "Launch patched Wand with the ALREADY RUNNING Steam game's exact Proton runtime/prefix?\\n\\n"
             "Requires an observed Windows .exe game process and verified patch files. This may change Wine state inside the game's prefix. "
@@ -3972,7 +3983,7 @@ static void pc2_wemod_action(const char*action){
     int selected_prefix=wand_detected_combo?gtk_combo_box_get_active((GtkComboBox*)wand_detected_combo):-1;
     if(selected_prefix>=0&&selected_prefix<wand_detected_count)
         snprintf(j->wine_prefix,sizeof j->wine_prefix,"%s",wand_detected[selected_prefix].prefix);
-    if(!strcmp(action,"game-test")||!strcmp(action,"live-launch")){
+    if(!strcmp(action,"game-test")||!strcmp(action,"live-launch")||!strcmp(action,"live-render")){
         if(G.selected<0||G.selected>=G.game_count){
             log_line("Wand game test requires a game selected in Overview or Library.");
             if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,"Select the game you want to test in Overview or Library first.");
@@ -4025,6 +4036,7 @@ static void pc2_wemod_action(const char*action){
             "Inspecting patched Wand files and selected game's runtime (read-only)...":
         !strcmp(action,"launch-test")?"Requesting Wand test launch with existing Wine prefix...":
         !strcmp(action,"live-launch")?"Checking the running game's exact Proton runtime before Wand handoff...":
+        !strcmp(action,"live-render")?"Retrying Wand with GPU off in the game's live Proton session...":
         "Running upstream WeMod Enhancer. Keep the WeMod client closed during this operation.");
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_wemod_worker,j)==0)pthread_detach(thread);
@@ -4037,6 +4049,7 @@ static void on_pc2_wemod_restore(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_a
 static void on_pc2_wemod_verify_selected(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("game-test");}
 static void on_pc2_wemod_launch_test(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("launch-test");}
 static void on_pc2_wemod_live_launch(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("live-launch");}
+static void on_pc2_wemod_live_render(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("live-render");}
 static void on_pc2_wemod_choose(GtkButton*b,void*d){
     (void)b;(void)d;
     GtkWidget*dialog=gtk_file_chooser_dialog_new("Choose WeMod folder containing WeMod.exe",
@@ -4090,12 +4103,14 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         GtkWidget*verify=button("Verify Wand Patch + Game (no launch)","primary-action");
         GtkWidget*launch_test=button("Launch Patched Wand (Smoke Test)","action");
         GtkWidget*live_launch=button("Launch Wand in Running Steam Game (opt-in)","action");
+        GtkWidget*live_render=button("Retry Wand (GPU Off, opt-in)","action");
         g_signal_connect_data(verify,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         g_signal_connect_data(launch_test,"clicked",(GCallback)on_pc2_wemod_launch_test,NULL,NULL,0);
         g_signal_connect_data(live_launch,"clicked",(GCallback)on_pc2_wemod_live_launch,NULL,NULL,0);
+        g_signal_connect_data(live_render,"clicked",(GCallback)on_pc2_wemod_live_render,NULL,NULL,0);
         pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
-        pack(eh,live_launch,0);
-        GtkWidget*note=label("Verification only checks patch files and observed game runtime; it NEVER starts a game. To start a Steam game, enable the separate opt-in launch button and confirm Yes. Smoke Test starts Wand only; trainer attachment remains unverified.","muted");
+        pack(eh,live_launch,0);pack(eh,live_render,0);
+        GtkWidget*note=label("Verification checks patch files only and never launches a game. After starting a game in Steam, the opt-in live actions can start Wand in its session. If Wand is white, CLOSE its window before choosing GPU Off retry. A startup log will be saved. Trainer attachment is unverified.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
