@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,7 @@ type compatibilityCandidate struct {
 	HasProton   bool   `json:"has_proton"`
 	HasManifest bool   `json:"has_manifest"`
 	HasMetadata bool   `json:"has_metadata"`
+	MetadataState string `json:"metadata_state"`
 }
 
 type compatibilityReport struct {
@@ -42,6 +44,29 @@ func regularSmall(path string) []byte {
 	return b
 }
 
+// metadataCondition inspects only local metadata and never writes, follows a
+// download URL, or executes an installed Proton runner. Never expose file bytes.
+func metadataCondition(path string) (string, bool) {
+	st, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) { return "missing", false }
+	if err != nil { return "unreadable", false }
+	if !st.Mode().IsRegular() { return "not_regular", false }
+	if st.Size() == 0 { return "empty", false }
+	if st.Size() > pc2CompatMaxMeta { return "too_large", false }
+	raw, err := os.ReadFile(path)
+	if err != nil { return "unreadable", false }
+	var metadata struct {
+		Schema int `json:"schema"`
+		ToolID string `json:"tool_id"`
+		BaseProton string `json:"base_proton"`
+	}
+	if json.Unmarshal(raw, &metadata) != nil { return "invalid_json", false }
+	if metadata.Schema != 1 { return "invalid_schema", false }
+	if metadata.ToolID != pc2CompatToolID { return "unexpected_tool_id", false }
+	if strings.TrimSpace(metadata.BaseProton) == "" { return "missing_base_proton", false }
+	return "valid_metadata_only", true
+}
+
 func inspectCompatibility(libraries []string) compatibilityReport {
 	result := compatibilityReport{
 		Mode: "read_only", ToolID: pc2CompatToolID,
@@ -63,14 +88,7 @@ func inspectCompatibility(libraries []string) compatibilityReport {
 		candidate.HasProton = err == nil && p.Mode().IsRegular() && p.Mode()&0111 != 0
 		manifest := regularSmall(filepath.Join(path, "compatibilitytool.vdf"))
 		candidate.HasManifest = strings.Contains(string(manifest), `"`+pc2CompatToolID+`"`)
-		raw := regularSmall(filepath.Join(path, "WAND-HYBRID.json"))
-		var metadata struct {
-			Schema     int    `json:"schema"`
-			ToolID     string `json:"tool_id"`
-			BaseProton string `json:"base_proton"`
-		}
-		candidate.HasMetadata = json.Unmarshal(raw, &metadata) == nil &&
-			metadata.Schema == 1 && metadata.ToolID == pc2CompatToolID && metadata.BaseProton != ""
+		candidate.MetadataState, candidate.HasMetadata = metadataCondition(filepath.Join(path, "WAND-HYBRID.json"))
 		if candidate.HasProton && candidate.HasManifest && candidate.HasMetadata {
 			candidate.State = "detected_unverified"
 		}
