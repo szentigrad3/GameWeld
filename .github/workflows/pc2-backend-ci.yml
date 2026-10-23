@@ -84,6 +84,13 @@ jobs:
           bash -n scripts/pc2-test9-aio-report.sh
           bash scripts/pc2-test9-aio-report.sh
           test -s build/pc2-source/pc2-test9-aio-report.txt
+      - name: Test 10 safe Steam game-only launch gate
+        run: |
+          bash -n scripts/pc2-test10-aio-report.sh
+          bash scripts/pc2-test10-aio-report.sh
+          test -s build/pc2-source/pc2-test10-aio-report.txt
+          grep -Fq 'Steam game launched: false' build/pc2-source/pc2-test10-aio-report.txt
+          grep -Fq 'Inherited opt-in environment: ignored' build/pc2-source/pc2-test10-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
