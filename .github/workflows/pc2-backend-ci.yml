@@ -79,6 +79,19 @@ jobs:
           test -s build/pc2-source/pc2-test8-aio-report.txt
           grep -q 'Result: PASS' build/pc2-source/pc2-test8-aio-report.txt
           grep -q 'Trusted integrity verified: false' build/pc2-source/pc2-test8-aio-report.txt
+      - name: Test 9 Steam launch preview (no action)
+        run: |
+          bash -n scripts/pc2-test9-aio-report.sh
+          bash scripts/pc2-test9-aio-report.sh
+          test -s build/pc2-source/pc2-test9-aio-report.txt
+          grep -q '^Game launched: false        run: |
+          bash -n scripts/gameweld-wand-enhancer.sh
+          env -u WAND_ENHANCER_EXE bash scripts/gameweld-wand-enhancer.sh --status
+ build/pc2-source/pc2-test9-aio-report.txt
+          grep -q '^Result: PASS        run: |
+          bash -n scripts/gameweld-wand-enhancer.sh
+          env -u WAND_ENHANCER_EXE bash scripts/gameweld-wand-enhancer.sh --status
+ build/pc2-source/pc2-test9-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
