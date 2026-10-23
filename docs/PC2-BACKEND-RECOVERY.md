@@ -15,6 +15,8 @@ bash scripts/run-pc2-source-frontend.sh
 
 This builds a small, source-controlled Go executable named `wand-native-backend` and the GTK C frontend into `build/pc2-source/` (ignored by Git). The frontend launches the backend using `WAND_NATIVE_BACKEND`. **No ZIP is needed.**
 
+The source launcher now builds the GTK frontend with `GAMEWELD_PC2_DISCOVERY_ONLY=1` to make the discovery-only UI visibly identifiable and intercept legacy launch/setup/configuration button clicks **before** their handlers. In this mode it also refuses `--cleanup-steam-hooks`, skips automatic legacy Steam-wrapper replacement, and does not start trainer-library scans or update-monitor background jobs. Use the previous PC1 AppImage for real game/trainer launches. These are additional UI guards, not proof that every legacy callback or external command is fully isolated.
+
 The backend is **read-only** for this phase. It implements the GTK startup handshake, `GET /api/status`, `GET /api/job`, `GET /api/verify`, `GET /api/health`, and explicit HTTP 501 failures for `POST /api/install` and `POST /api/set-game`. It discovers installed Steam games from VDF manifests. Heroic/Lutris discovery remains frontend-script-owned. It cannot install Wand, stage a provider, set Proton, repair a prefix or hand off to a trainer. **This limitation applies to the Go backend, not every legacy GTK UI callback**: some local Settings/Trainer Library controls still operate directly on files. During a PC2 smoke test, use game discovery and UI navigation only; do not click install, patch, backup, restore or launch controls. Those actions must not be interpreted as tested or working simply because the GUI opens.
 
 Do **not** merge this backend into the working `release/0.7.0-pc1` branch or distribute a PC2 AppImage until full behaviour and test parity exist.
@@ -55,8 +57,9 @@ bash scripts/gameweld-wand-enhancer.sh --launch
 
 ### Validation checklist before PC2 promotion
 
-- [ ] Go tests/race checks pass in GitHub Actions and on CachyOS.
-- [ ] Experimental GTK frontend launches from this source backend and displays real Steam game metadata accurately.
+- [x] Go tests and GTK source frontend compilation passed on CachyOS; CI Go race/static/build checks have passed. (See workflow runs.)
+- [x] Maintainer confirmed source GTK frontend startup and correct Steam, Heroic and Lutris game display on CachyOS. This is a **user-reported visual check**; no per-provider logs were collected.
+- [ ] Re-test the compiled discovery-only UI guards and verify they prevent legacy actions without interfering with read-only navigation.
 - [ ] No mutating action is presented as available; Steam/Heroic/Lutris launches stay on the validated PC1 AppImage.
 - [ ] User-built Wand-Enhancer detection and explicit invocation tested in an **isolated** Wine prefix. If not working, the optional extension remains disabled without preventing GameWeld startup.
 - [ ] A future independently built PC2 AppImage has its own hash, standalone tests, licensing provenance, release notes and separate tag; PC1 test results must not transfer to it.
