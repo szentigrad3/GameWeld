@@ -51,6 +51,13 @@ jobs:
           bash -n scripts/pc2-test4-aio-report.sh
           bash scripts/pc2-test4-aio-report.sh
           test -s build/pc2-source/pc2-test4-aio-report.txt
+      - name: Test 5 metadata cause diagnostics
+        run: |
+          bash -n scripts/pc2-test5-aio-report.sh
+          bash scripts/pc2-test5-aio-report.sh
+          test -s build/pc2-source/pc2-test5-aio-report.txt
+          grep -q 'Result: PASS' build/pc2-source/pc2-test5-aio-report.txt
+          grep -q 'Compatibility verified: false' build/pc2-source/pc2-test5-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
