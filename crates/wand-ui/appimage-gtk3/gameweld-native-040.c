@@ -3591,6 +3591,48 @@ static GtkWidget *build_trainer_library(void){
 static GtkWidget *build_setup(void){GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,14);margins(p,20);gtk_container_add(outer,p);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("SETUP","page-kicker"),0);pack(ht,label("Compatibility & runtime","workspace-title"),0);pack(ht,label("Compatibility Engine v2 models trainer requirements while GameWeld keeps runtime ownership launcher-native and leaves your normal Proton installations untouched.","page-subtitle"),0);pack(p,ht,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*left=box(GTK_ORIENTATION_VERTICAL,10);GtkWidget*right=box(GTK_ORIENTATION_VERTICAL,10);GtkWidget*c=box(GTK_ORIENTATION_VERTICAL,8);style(c,"panel");pack(c,label("CORE STATUS","section-kicker"),0);G.setup_status=label("Checking…","metric-value");pack(c,G.setup_status,0);G.setup_detail=label("Checking compatibility…","muted");gtk_label_set_line_wrap((GtkLabel*)G.setup_detail,TRUE);pack(c,G.setup_detail,0);GtkWidget*row=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*i=button("Install / repair","primary-action");GtkWidget*v=button("Verify","action");g_signal_connect_data(i,"clicked",(GCallback)on_setup,NULL,NULL,0);g_signal_connect_data(v,"clicked",(GCallback)on_verify,NULL,NULL,0);pack(row,i,0);pack(row,v,0);pack(c,row,0);pack(left,c,0);GtkWidget*safety=box(GTK_ORIENTATION_VERTICAL,7);style(safety,"panel-soft");pack(safety,label("ISOLATED BY DESIGN","section-kicker"),0);GtkWidget*sd=label("Compatibility changes stay inside GameWeld's managed tool. Normal Steam Proton and Heroic runner configuration remain yours.","muted");gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(safety,sd,0);pack(left,safety,0);GtkWidget*what=box(GTK_ORIENTATION_VERTICAL,8);style(what,"panel");pack(what,label("WHAT GAMEWELD MANAGES","section-kicker"),0);pack(what,label("• Steam and Proton-GE detection\n• Isolated GameWeld Steam compatibility tool\n• Proven crypt32 compatibility payload\n• Runtime verification before launch\n• Compatibility Engine v2 trainer recipes\n• No replacement of your normal Proton-GE installs","muted"),0);pack(right,what,0);GtkWidget*next=box(GTK_ORIENTATION_VERTICAL,8);style(next,"panel-soft");pack(next,label("WHEN TO USE THIS PAGE","section-kicker"),0);GtkWidget*nd=label("Use Repair only when Diagnostics reports a compatibility problem or after changing major runtime packages. Otherwise leave a working launch path alone.","muted");gtk_label_set_line_wrap((GtkLabel*)nd,TRUE);pack(next,nd,0);pack(right,next,0);pack(cols,left,1);pack(cols,right,1);pack(p,cols,1);return outer;}
 static GtkWidget *build_diag(void){GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,14);margins(p,20);gtk_container_add(outer,p);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("SUPPORT","page-kicker"),0);pack(ht,label("Diagnostics & support","workspace-title"),0);pack(ht,label("Inspect only the selected game's launch path and export a privacy-scoped bundle when you need help.","page-subtitle"),0);pack(p,ht,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*health=box(GTK_ORIENTATION_VERTICAL,9);style(health,"panel");pack(health,label("TRAINER HEALTH","section-kicker"),0);GtkWidget*h=button("Run selected-game health check","primary-action");g_signal_connect_data(h,"clicked",(GCallback)on_health,NULL,NULL,0);pack(health,h,0);G.health_detail=label("Launch the selected game with its configured trainer provider, then run this check to inspect trainer and command health.","muted");gtk_label_set_line_wrap((GtkLabel*)G.health_detail,TRUE);pack(health,G.health_detail,0);pack(cols,health,1);GtkWidget*support=box(GTK_ORIENTATION_VERTICAL,9);style(support,"panel");pack(support,label("SUPPORT BUNDLE","section-kicker"),0);GtkWidget*sd=label("Exports resolved launcher/runtime/prefix metadata, trainer diagnostics, matching Trainer Library rows and selected-app logs. Trainer EXE bytes, browser data and unrelated logs are excluded.","muted");gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(support,sd,0);GtkWidget*sb=button("Export selected support bundle","primary-action");g_signal_connect_data(sb,"clicked",(GCallback)on_export_support_bundle,NULL,NULL,0);pack(support,sb,0);G.support_bundle_status=label("Saved to Downloads when created.","good");gtk_label_set_line_wrap((GtkLabel*)G.support_bundle_status,TRUE);pack(support,G.support_bundle_status,0);pack(cols,support,1);pack(p,cols,0);GtkWidget*scope=box(GTK_ORIENTATION_VERTICAL,8);style(scope,"panel-soft");pack(scope,label("PRIVACY SCOPE","section-kicker"),0);pack(scope,label("Support exports are selected-game scoped. GameWeld does not include a global environment dump, browser data, trainer binaries or unrelated game logs.","muted"),0);pack(p,scope,0);return outer;}
 
+/* Preserve an explicitly chosen existing Wand client across PC2 UI sessions.
+ * This file contains only the selected client/prefix paths, never credentials. */
+static void pc2_wand_choice_path(char *out,size_t cap){
+    const char*xdg=getenv("XDG_CONFIG_HOME"),*home=getenv("HOME");
+    if(xdg&&*xdg&&xdg[0]=='/')snprintf(out,cap,"%s/gameweld/wand-selected-client.tsv",xdg);
+    else snprintf(out,cap,"%s/.config/gameweld/wand-selected-client.tsv",home&&home[0]=='/'?home:"/tmp");
+}
+static int pc2_wand_choice_clean(const char *v){
+    if(!v||v[0]!='/')return 0;
+    for(const char*p=v;*p;p++)if(*p=='\\t'||*p=='\\n'||*p=='\\r')return 0;
+    return 1;
+}
+static void pc2_save_wand_choice(const char*prefix,const char*install){
+    if(!pc2_wand_choice_clean(prefix)||!pc2_wand_choice_clean(install))return;
+    char path[4096],dir[4096];pc2_wand_choice_path(path,sizeof path);
+    snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');
+    if(!slash)return;*slash=0;
+    if(g_mkdir_with_parents(dir,0700)!=0)return;
+    int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC|O_NOFOLLOW,0600);
+    if(fd<0)return;
+    struct stat st;
+    if(fstat(fd,&st)==0&&S_ISREG(st.st_mode))
+        dprintf(fd,"%s\\t%s\\n",prefix,install);
+    close(fd);
+}
+static int pc2_load_wand_choice(char *prefix,size_t pcap,char *install,size_t icap){
+    char path[4096];pc2_wand_choice_path(path,sizeof path);
+    FILE*f=fopen(path,"r");if(!f)return 0;
+    char line[4096];int ok=0;
+    if(fgets(line,sizeof line,f)){
+        line[strcspn(line,"\\r\\n")]=0;
+        char*tab=strchr(line,'\\t');
+        if(tab){*tab++=0;
+            if(pc2_wand_choice_clean(line)&&pc2_wand_choice_clean(tab)){
+                snprintf(prefix,pcap,"%s",line);
+                snprintf(install,icap,"%s",tab);
+                ok=1;
+            }
+        }
+    }
+    fclose(f);return ok;
+}
 /* The integrated PC2 WeMod Enhancer can adopt an unambiguous install from the
   * existing Wand/WeMod discovery without changing the user's manual choice. */
 static GtkWidget *pc2_wemod_install_entry=NULL;
@@ -3613,6 +3655,7 @@ static void wand_detect_changed(GtkComboBox *cb,gpointer data){
     if(pc2_wemod_install_entry&&it->install[0]&&!gtk_entry_get_text((GtkEntry*)pc2_wemod_install_entry)[0])
         gtk_entry_set_text((GtkEntry*)pc2_wemod_install_entry,it->install);
     wand_detect_updating=0;
+    pc2_save_wand_choice(it->prefix,it->install);
     if(G.wand_patcher_status){char msg[420];snprintf(msg,sizeof msg,"Detected %s (%s). Ready to inspect; no files changed.",it->product,it->version);set_label(G.wand_patcher_status,msg);}
 }
 static void wand_detect_manual_prefix(GtkEditable *editable,gpointer unused){
@@ -3629,6 +3672,8 @@ static gboolean wand_detect_finished(void *data){
     char previous_prefix[2048]={0},previous_install[2048]={0};
     if(G.wand_patcher_prefix_entry)snprintf(previous_prefix,sizeof previous_prefix,"%s",gtk_entry_get_text((GtkEntry*)G.wand_patcher_prefix_entry));
     if(G.wand_patcher_install_entry)snprintf(previous_install,sizeof previous_install,"%s",gtk_entry_get_text((GtkEntry*)G.wand_patcher_install_entry));
+    if(!previous_prefix[0]&&!previous_install[0])
+        pc2_load_wand_choice(previous_prefix,sizeof previous_prefix,previous_install,sizeof previous_install);
     wand_detect_updating=1;
     gtk_combo_box_text_remove_all((GtkComboBoxText*)wand_detected_combo);
     wand_detected_count=0;
