@@ -145,6 +145,29 @@ PC2's guarded source frontend now:
 
 Testing the UI remains a separate manual field gate. The **Test 10 AIO**, despite passing, did not execute a game; the launch requires deliberate opt-in, selection of an installed standard Steam game and a Yes confirmation. Keep using PC1 for trainer/session operations.
 
+## PC2 Test 10 live Steam game launch: confirmed; Test 11 observation
+
+Maintainer live field result (23 October 2026): **AdVenture Capitalist successfully launched** from the source-built GameWeld PC2 Overview using the explicit Steam game-only opt-in. This validates the manual Steam handoff, not the process/Proton ownership or trainer integration. No PC2 trainer action was exercised. The reliable PC1 release remains preserved.
+
+Test 11 implements an additional **read-only, explicitly requested** Steam session observation:
+
+- `GET /api/steam-session?appid=<id>` only accepts a valid installed standard Steam appmanifest ID. POST returns 405; unknown/uninstalled IDs return 404; install/mapping APIs remain HTTP 501.
+- Scans same-user Linux `/proc` entries, bounded to 8192 PIDs and 32 returned observations, and searches NUL-separated environment variables for **exact** `SteamAppId`, `SteamGameId` or `STEAM_COMPAT_APP_ID` matches. No other users' process environment is inspected.
+- Returns `associated_processes_observed`, `no_process_evidence`, or `unavailable`. The `game_running_confirmed` flag is **always false**: an associated Steam helper or wine process does **not** independently prove the game's executable identity, prefix or session ownership. No PID is signalled, launched, stopped, or changed. The AIO report omits PID/process-name details.
+- The GTK Overview and Library have **Check Steam session (read-only)**, available without the game-launch opt-in flag. Results appear in Activity. It only observes; it never enables a trainer.
+
+Validation:
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test11-aio-report.sh
+# Optional UI check while the Steam game is running:
+bash scripts/run-pc2-source-frontend.sh
+```
+
+The report is saved at `build/pc2-source/pc2-test11-aio-report.txt`. AIO PASS confirms the scanner/API contracts only; for game-specific process association, the selected game must be running while inspection occurs. The first real session-observation field test is still pending.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
