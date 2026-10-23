@@ -268,6 +268,24 @@ bash scripts/run-pc2-source-frontend.sh
 
 Under **Settings → WeMod Enhancer — Patch / Restore**, select the desired client in **Existing Wand / WeMod client installations**, then use **Patch WeMod**. If no installation is recognized, choose the actual installed client version directory containing `resources/app.asar` (not the GE-Proton tool directory). Upstream Patch/Restore still requires confirmation and closes no processes; **close the Wand/WeMod client yourself** beforehand. CI fixture checks cover both Wand and WeMod forms and ambiguous discovery; a real local patch still needs field validation.
 
+## PC2 — Test patched Wand for the selected game
+
+Following the maintainer's successful GameWeld-integrated e-gleba WeMod Enhancer patch on a real **Wand app-12.55.0** installation, PC2 now exposes direct checks rather than expecting a successful patch command to imply in-game trainer compatibility.
+
+**GUI:** Select the game you intend to play in **Overview** or **Library**. In Overview, click **Test Wand for Selected Game**, or in **Settings → WeMod Enhancer — Patch / Restore**, click **Verify Wand Patch + Game**. These checks are **read-only**. The bridge compares the active `resources/app.asar` to the preserved original `resources/app.asar.backup`, and compares the installed client `version.dll` SHA256 to the trusted, pinned upstream Enhancer DLL installed in GameWeld's per-user tools directory. A pass is **patch-file evidence**, not proof the client launched, the DLL loaded in Wine, the user's account obtained a subscription, the selected game's trainer exists, or that it attached correctly. No automatic patch or Proton repair occurs during checking.
+
+For standard Steam games, PC2 also queries the existing read-only source-backend session endpoints to distinguish **native Linux ELF actually observed**, **Windows process-name association only**, or **runtime unknown**. It reports the selected app ID, installed-game directory, detected prefix match or mismatch when resolvable, and whether a Windows Wand trainer is ruled out for a native Linux executable. **AdVenture Capitalist, Steam 346900, was observed as a native Linux game; its native build is not a Windows Proton trainer target.** For any Windows game, no claim of ready in-game trainer support is made until client/game runtime handoff and functionality are verified.
+
+For a separate client-only launch test, use **Settings → Launch Patched Wand (Smoke Test)**. Confirm Yes. This requires the selected Wand app to have patch files verified, an **existing scanned Wine prefix**, a local `Wand.exe` / `WeMod.exe`, and `wine` on PATH. It starts only that client via Wine in the selected prefix, supplying the upstream-required `WINEDLLOVERRIDES=version=n,b` for native-first DLL loading. The command does **not** start a game, run a trainer, share a Steam Proton prefix by assumption, write Steam launch options, install compatibility tools, or verify the runtime DLL was actually loaded. If the selected `app-N.N.N` folder lacks a directly launchable EXE, it fails closed and asks the user to start Wand via its existing launcher.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/run-pc2-source-frontend.sh
+```
+
+The source adapter supports read-only CLI `verify --install-dir <selected client>` and `game-test --install-dir <selected client> --game-provider steam --appid <id> --game-name <name> ...`; the GUI supplies arguments from the selected installed game, so no manual command is necessary. `launch-test` requires `--confirm --wine-prefix <existing prefix>`. CI tests are fully disposable fixtures; a successful GitHub build does not establish a real-game Wand session. PC1 remains untouched.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
