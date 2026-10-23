@@ -1,19 +1,29 @@
-# GameWeld 0.7.0 — Stable source snapshot
+# GameWeld 0.7.0 — Publication Candidate 1 (PC1)
 
-This directory is a curated snapshot of GameWeld 0.7.0 stable source files, reconstructed from the tested stable source archive and the GitHub source tree. It is **not yet a published tag**, and it has not been approved for public binary redistribution.
+This branch is a **release-review source snapshot**, not the published 0.7.0 stable release. Current 0.8.0 development continues on [main](https://github.com/szentigrad3/GameWeld/tree/main).
 
-For current development, see https://github.com/szentigrad3/GameWeld (`main` tracks 0.8.0 development). The verified stable AppImage SHA256 is `8e1906a488de83f51378ed593c75f643c9640ef5d23e503aa3dab78941b1756a`.
+PC1 starts from the SHA256-pinned GameWeld 0.7.0 stable AppImage and removes bundled game reference artwork and the converted Resonance native trainer. It also disables the corresponding native-table launch profiles. Regular Steam, Heroic, Lutris and local trainer launch paths are retained.
 
-## Build
+The maintainer reported that PC1 works on CachyOS. Individual Steam, Heroic and Lutris handoffs have **not** been separately reconfirmed for PC1. The original 0.7.0 stable build had earlier live launch validation.
 
-The historical stable packager requires the tested 0.7.0 RC11 AppImage as its runtime input. It is **not a source-complete, independently reproducible build**.
+## Build and offline checks
+
+On Linux x86_64 with GCC, GTK3 development libraries and Python 3:
 
 ```bash
-./MAKE-APPIMAGE.sh /absolute/path/GameWeld-0.7.0-rc11-x86_64.AppImage
+./scripts/ci-check.sh
+./scripts/build-gameweld-0.7.0-pc1-appimage.sh /absolute/path/GameWeld-0.7.0-x86_64.AppImage /absolute/path/GameWeld-0.7.0-pc1-x86_64.AppImage
 ```
 
-The snapshot deliberately excludes game-specific reference images and redistributable prebuilt trainer executables. The existing binary does still contain reference artwork and a game-specific native trainer. Resolve the license/provenance review in the live repository before tagging/releasing the binary. See `docs/RELEASE-AUDIT-0.7.0.md` after the release audit PR is merged.
+The source input is pinned, and this build **repackages an earlier verified GameWeld AppImage**. It is not independently reproducible or source-complete. The input stable AppImage SHA256 is `8e1906a488de83f51378ed593c75f643c9640ef5d23e503aa3dab78941b1756a`.
 
-## Source and rights
+## Publication status
 
-GameWeld-owned source carries the MIT license, but this does not automatically license any derived third-party material or runtime binaries. Check `THIRD-PARTY.md` and `docs/PUBLICATION-REVIEW.md` before distribution.
+- Source branch: `release/0.7.0-pc1`
+- This branch is **not** the `v0.7.0` tag.
+- No GitHub binary release has been approved or published from this branch.
+- GameWeld branding, remaining inherited runtime binaries and third-party notices still require rights/provenance review.
+- Inspect [PC1 release notes](docs/RELEASE-NOTES-0.7.0-pc1.md), [build instructions](docs/BUILDING.md) and [release gates](docs/RELEASING.md).
+- Track the publication process in [issue #4](https://github.com/szentigrad3/GameWeld/issues/4) and the licensing review in [issue #5](https://github.com/szentigrad3/GameWeld/issues/5).
+
+GameWeld does not bundle third-party trainer packages for automated execution, and a link on a publisher's page is not proof of an authenticated or safe executable.
