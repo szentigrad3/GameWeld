@@ -402,5 +402,63 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertNotEqual(bad_id.returncode, 0, bad_id.stdout)
 
 
+    def test_live_launch_reuses_only_uniquely_patched_client_among_three(self):
+        """Regression: game-test resolves app-12.55.0, live-launch must too.
+
+        This is entirely mocked: no real Steam, Wine, Wand or game is started.
+        Patch/restore still never infer a writable target from multiple clients.
+        """
+        import contextlib
+        from unittest.mock import patch
+        other_clients = []
+        for version in ("app-11.0.0", "app-13.0.0"):
+            folder = self.root / version
+            (folder / "resources").mkdir(parents=True)
+            (folder / "resources/app.asar").write_bytes(b"UNPATCHED")
+            other_clients.append(folder)
+        result = self.cmd("patch", "--install-dir", str(self.client), "--confirm")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        candidates = [other_clients[0], self.client, other_clients[1]]
+        app_dir = self.root / "Astrometica"
+        app_dir.mkdir()
+        arguments = [
+            "gameweld-wemod-enhancer.py", "live-launch", "--confirm",
+            "--game-provider", "steam", "--appid", "2353250",
+            "--game-dir", str(app_dir),
+        ]
+        output = io.StringIO()
+        with patch.dict(os.environ, self.environment):
+            with patch.object(bridge, "available_clients", return_value=candidates):
+                with patch.object(bridge, "launch_wand_in_live_game") as launch:
+                    with patch.object(sys, "argv", arguments):
+                        with contextlib.redirect_stdout(output):
+                            self.assertEqual(bridge.main(), 0)
+                    launch.assert_called_once_with(
+                        self.client, self.helper, "2353250", str(app_dir))
+                    self.assertIn("only client with matching, verified", output.getvalue())
+                    # A GUI click without consent never gets as far as launching.
+                    with patch.object(sys, "argv",
+                                      [x for x in arguments if x != "--confirm"]):
+                        with self.assertRaisesRegex(ValueError, "explicit --confirm"):
+                            bridge.main()
+                    self.assertEqual(launch.call_count, 1)
+                    # Two genuinely patched clients must fail closed.
+                    second = other_clients[1]
+                    (second / "resources/app.asar.backup").write_bytes(b"ORIGINAL")
+                    (second / "version.dll").write_bytes(
+                        (self.helper / "bin/version.dll").read_bytes())
+                    with patch.object(sys, "argv", arguments):
+                        with self.assertRaisesRegex(ValueError, "more than one patched"):
+                            bridge.main()
+                    self.assertEqual(launch.call_count, 1)
+                    # Patch and Restore may not silently select a target.
+                    with patch.object(sys, "argv",
+                                      ["gameweld-wemod-enhancer.py", "restore", "--confirm"]):
+                        with self.assertRaisesRegex(ValueError, "No unique"):
+                            bridge.main()
+                    self.assertEqual(launch.call_count, 1)
+        self.assertEqual((other_clients[0] / "resources/app.asar").read_bytes(), b"UNPATCHED")
+
+
 if __name__ == "__main__":
     unittest.main()
