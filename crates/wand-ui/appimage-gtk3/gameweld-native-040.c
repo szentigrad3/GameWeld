@@ -3600,7 +3600,7 @@ static void pc2_wand_choice_path(char *out,size_t cap){
 }
 static int pc2_wand_choice_clean(const char *v){
     if(!v||v[0]!='/')return 0;
-    for(const char*p=v;*p;p++)if(*p=='\\t'||*p=='\\n'||*p=='\\r')return 0;
+    for(const char*p=v;*p;p++)if(*p=='\t'||*p=='\n'||*p=='\r')return 0;
     return 1;
 }
 static void pc2_save_wand_choice(const char*prefix,const char*install){
@@ -3613,7 +3613,7 @@ static void pc2_save_wand_choice(const char*prefix,const char*install){
     if(fd<0)return;
     struct stat st;
     if(fstat(fd,&st)==0&&S_ISREG(st.st_mode))
-        dprintf(fd,"%s\\t%s\\n",prefix,install);
+        dprintf(fd,"%s\t%s\n",prefix,install);
     close(fd);
 }
 static int pc2_load_wand_choice(char *prefix,size_t pcap,char *install,size_t icap){
@@ -3621,8 +3621,8 @@ static int pc2_load_wand_choice(char *prefix,size_t pcap,char *install,size_t ic
     FILE*f=fopen(path,"r");if(!f)return 0;
     char line[4096];int ok=0;
     if(fgets(line,sizeof line,f)){
-        line[strcspn(line,"\\r\\n")]=0;
-        char*tab=strchr(line,'\\t');
+        line[strcspn(line,"\r\n")]=0;
+        char*tab=strchr(line,'\t');
         if(tab){*tab++=0;
             if(pc2_wand_choice_clean(line)&&pc2_wand_choice_clean(tab)){
                 snprintf(prefix,pcap,"%s",line);
