@@ -138,7 +138,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         commands.mkdir()
         capture = self.root / "wine-env.txt"
         wine = commands / "wine"
-        wine.write_text("#!/bin/sh\\nprintf '%s\\\\n' \\\"$WINEDLLOVERRIDES\\\" > \\\"$GAMEWELD_TEST_CAPTURE\\\"\\n", encoding="utf-8")
+        wine.write_text('#!/bin/sh\nprintf "%s\\n" "$WINEDLLOVERRIDES" > "$GAMEWELD_TEST_CAPTURE"\n', encoding="utf-8")
         wine.chmod(0o755)
         env = self.environment.copy()
         env["PATH"] = str(commands) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
