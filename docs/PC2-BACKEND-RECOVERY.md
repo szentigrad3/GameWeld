@@ -288,7 +288,7 @@ The source adapter supports read-only CLI `verify --install-dir <selected client
 
 ## Astrometica screenshot: Test Wand selection reset fix
 
-Maintainer's 23 October 2026 PC2 Overview screenshot showed **Astrometica (Steam App ID 2533250)** selected, but Activity reported `WeMod Enhancer [game-test] FAILED: Choose exactly one existing Wand/WeMod app-version folder`. The game's selection was correct; the earlier selected **Wand app-12.55.0** installation in the regular Wine prefix had not been retained after reopening GameWeld, and GameWeld's scanner reported multiple existing Wand/WeMod clients. The failure was **before any game-specific trainer readiness check**, not evidence that the game or patched Wand was broken.
+Maintainer's 23 October 2026 PC2 Overview screenshot showed **Astrometica (Steam App ID 2353250)** selected, but Activity reported `WeMod Enhancer [game-test] FAILED: Choose exactly one existing Wand/WeMod app-version folder`. The game's selection was correct; the earlier selected **Wand app-12.55.0** installation in the regular Wine prefix had not been retained after reopening GameWeld, and GameWeld's scanner reported multiple existing Wand/WeMod clients. The failure was **before any game-specific trainer readiness check**, not evidence that the game or patched Wand was broken.
 
 Two non-mutating selection fixes:
 
@@ -296,6 +296,25 @@ Two non-mutating selection fixes:
 - The GTK **existing Wand installation** picker persists an explicitly selected exact Wine-prefix/app-version path pair in `${XDG_CONFIG_HOME:-~/.config}/gameweld/wand-selected-client.tsv`. On subsequent startups, a fresh read-only scan restores the choice only if the same exact prefix and install folder still exist; it otherwise asks for another selection. This file contains local paths only, never login data, and is independent from PC1 compatibility settings. The existing Steam/Proton environment and Wand client files are unchanged.
 
 To test: `git pull --ff-only`, start PC2 through `scripts/run-pc2-source-frontend.sh`, select Astrometica, click **Test Wand for Selected Game**. If multiple fully patched versions exist, go to Settings and explicitly select the desired Wand app; this explicit choice will be remembered. A clean game-test can attest to patch-file evidence and observed game runtime only. It does not yet validate a live Wand trainer attached to Astrometica. **PC2's old trainer launch controls remain disabled** and the Windows game launch is separately opt-in.
+
+## Astrometica: Steam handoff requested but no game started (Test 15)
+
+Maintainer's 23 October 2026 screenshot shows **Astrometica**, Steam App ID **2353250**, with the integrated Wand **app-12.55.0** ASAR backup, changed active ASAR and proxy DLL all passing the upstream patch-file check. The Steam installed directory was found, while the game runtime remained unknown because it had not started. The Activity panel logged **only** `PC2 Steam game-only handoff requested`. The maintainer confirmed **the game did not launch**.
+
+This exposes a genuine source-PC2 observability bug: the GTK handler called `spawn_detached("steam","-applaunch",appid)` and **immediately logged a handoff request** without checking whether the Steam executable was found, the command failed, Steam was starting, or an associated game process appeared. The App ID is not the problem: Astrometica's official Steam app ID is 2353250.
+
+**Test 15** replaces the fire-and-forget call with an asynchronous, checked, argument-only `gameweld-steam-handoff.py` helper. It preserves explicit `--enable-steam-game-launch` startup opt-in, a per-game Yes/No confirmation, the source backend's installed-app/URI validation, and fully blocked trainer/compatibility mutations. The helper looks up `steam` in the inherited PATH, invokes `steam -applaunch 2353250` (for the selected ID, not hard-coded), reads the command's exit status where available and samples only same-user Linux `/proc` for exact app-ID environment association. It reports **FAILED**, **STEAM_ASSOCIATION_OBSERVED**, or **UNCONFIRMED**. A successful Steam command exit **does not** certify game start. A process association does **not** authenticate the actual executable or trainer. If Steam stays open, the helper does not kill the live Steam command; it reports an unconfirmed result. Its bounded background worker logs results to Activity without freezing the GUI.
+
+Reproduce and diagnose:
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test15-aio-report.sh 2353250    # Safe: no real game launch
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+```
+
+In Overview, select Astrometica and confirm the **Launch Steam game only (opt-in)** action. Activity now provides a status instead of a misleading unconditional handoff message. If the command is reported as unconfirmed, distinguish a GameWeld-only issue from a Steam/Proton or game problem by closing GameWeld and testing **`steam -applaunch 2353250`** in a terminal, keeping Steam compatibility settings unchanged. If it fails outside GameWeld too, inspect Steam's game status or Proton logs instead of assuming the Wand patch has damaged anything. A real successful Astrometica startup, Wand runtime DLL loading, or attached in-game trainer has **not** yet been confirmed. PC1 remains the stable release.
 
 ## Wand-Enhancer: optional upstream extension
 
