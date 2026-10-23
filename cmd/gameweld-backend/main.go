@@ -156,9 +156,14 @@ func router() http.Handler {
         inv := steamInventory()
         compatibility := inspectCompatibility(inv.Libraries)
         toolPath := ""
-        if compatibility.State == "detected_unverified" {
+        // Report a discovered path even for legacy installs without sidecar.
+        // The healthy/compatible flags remain false until runtime verification.
+        if compatibility.State == "detected_unverified" || compatibility.State == "legacy_metadata_missing" {
             for _, candidate := range compatibility.Candidates {
-                if candidate.State == "detected_unverified" { toolPath = candidate.Path; break }
+                if candidate.State == "detected_unverified" || candidate.State == "legacy_metadata_missing" {
+                    toolPath = candidate.Path
+                    break
+                }
             }
         }
         response(w,200,map[string]any{
