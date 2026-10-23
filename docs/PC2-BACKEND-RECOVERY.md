@@ -201,6 +201,30 @@ bash scripts/pc2-test13-aio-report.sh 346900
 
 The path-redacted report is saved to `build/pc2-source/pc2-test13-aio-report.txt`. It includes process role labels but omits PIDs and full paths. CI without the target game installed validates Go fixtures and report contracts; only a real running-game field report can characterize the actual four associated processes.
 
+## Test 13 live field result and Test 14 native Linux executable evidence
+
+The maintainer's Test 13 CachyOS report (23 October 2026) **passed** for AdVenture Capitalist, Steam App ID `346900`. Steam process environment matches remained **4 / 4 / 4** across three observations. The four associated processes were:
+
+- `reaper` — `steam_helper` (`STEAM_COMPAT_DATA_PATH` key present; `WINEPREFIX` absent)
+- `srt-bwrap` — Steam container helper, classified `other_associated`
+- `pv-adverb` — Steam runtime helper, classified `other_associated`
+- `adventure-capit` — executable basename `adventure-capitalist.x86`, classified `other_associated`
+
+**Key architecture finding:** this specific game appears to run as a **native Linux executable inside Steam's runtime**, not a Windows `.exe` through Wine/Proton. The presence of `STEAM_COMPAT_DATA_PATH` for an associated process does *not* imply that the game runs under Proton. The Test 13 process role labels were only name heuristics; game executable and session ownership were not verified. Do not assume a Proton prefix or attempt Windows trainer handoff.
+
+Test 14 introduces **GET `/api/steam-native-executable?appid=<installed Steam app ID>`**, an additional read-only corroboration. For same-user, exact-app-ID-associated processes, it reads `/proc/PID/exe`'s symlink, resolves the installed game directory from Steam appmanifest, checks that the canonical executable path is *within* that directory, and reads only the first five bytes of the executable for the Linux ELF signature and ELF32/ELF64 class. A result of `native_elf_inside_install_directory` is **corroborating native process evidence**, not a publisher signature, trustworthy hash, proof of game identity in all cases, or trainer attach authorization. Steam runtime mount namespaces may prevent host-side path reconciliation; a path-unavailable/outside result alone is not proof the game isn't running.
+
+This endpoint and its AIO report never return full paths, PIDs, Steam/Wine prefixes or executable contents. They never start/stop a process, modify Steam/Proton or enable trainer handoff. Both `game_executable_verified` and `trainer_handoff_enabled` remain **false**.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+# With AdVenture Capitalist already running:
+bash scripts/pc2-test14-aio-report.sh 346900
+```
+
+Output: `build/pc2-source/pc2-test14-aio-report.txt`. The CI fixture tests exercise positive native ELF32/ELF64 evidence, escaped install-directory paths, non-ELF executables, incorrect app-ID associations and safety failures. Passing CI does not replace the first CachyOS field run. Continue using PC1 for normal trainer operations; PC2's Steam game-only launch is user opt-in.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
