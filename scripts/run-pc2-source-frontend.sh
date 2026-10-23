@@ -7,7 +7,29 @@ for tool in go gcc pkg-config; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 1; }
 done
 pkg-config --exists gtk+-3.0 || { echo "Missing GTK3 development libraries" >&2; exit 1; }
-mkdir -p "$OUT"
+# The legacy GTK frontend resolves its helper paths relative to APPDIR.
+# A source checkout has helpers in scripts/, not at the repository root.
+# Build a private, unbundled development AppDir with links to those sources.
+# This avoids copying inherited PC1 binaries or modifying installed games.
+APPDIR_DEV="$OUT/dev-AppDir"
+LIBEXEC="$APPDIR_DEV/usr/libexec"
+mkdir -p "$LIBEXEC"
+for helper in "$ROOT"/scripts/gameweld-*.py "$ROOT"/scripts/gameweld-*.sh \
+              "$ROOT"/scripts/gameforge-*.sh "$ROOT"/scripts/wand-*.sh; do
+  [[ -f "$helper" ]] || continue
+  ln -sfn -- "$helper" "$LIBEXEC/${helper##*/}"
+done
+for required in gameweld-wand-discovery.py gameweld-wand-compat-audit.py \
+                gameweld-trainer-library.py gameweld-wand-patcher.py \
+                gameweld-steam-shortcuts.py gameweld-heroic-provider.py \
+                gameweld-lutris-provider.py; do
+  [[ -f "$LIBEXEC/$required" ]] || { echo "Missing PC2 helper: $required" >&2; exit 1; }
+done
+export APPDIR="$APPDIR_DEV"
+if [[ "${1:-}" == "--check-layout" && "$#" -eq 1 ]]; then
+  printf 'PC2 source helper layout verified: %s\n' "$LIBEXEC"
+  exit 0
+fi
 (
   cd "$ROOT/cmd/gameweld-backend"
   go test ./...
