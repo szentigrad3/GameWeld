@@ -613,7 +613,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Test Wand for Selected Game") && strcmp(s, "Verify Wand Patch + Game") && strcmp(s, "Launch Patched Wand (Smoke Test)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2663,18 +2663,20 @@ static GtkWidget *build_home(void){
     GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);
     if(pc2_discovery_only()){
         GtkWidget*safe=button("Launch Steam game only (opt-in)","primary-action");
+        gtk_widget_set_tooltip_text(safe,"Launch the selected installed Steam game only after explicit opt-in and Yes confirmation; no Wand or trainer is started.");
         gtk_widget_set_sensitive(safe,pc2_steam_launch_allowed());
         g_signal_connect_data(safe,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);
         pack(copy,safe,0);
         GtkWidget*observe=button("Check Steam session (read-only)","action");
         g_signal_connect_data(observe,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);
         pack(copy,observe,0);
-        GtkWidget*wand_check=button("Test Wand for Selected Game","action");
+        GtkWidget*wand_check=button("Check Wand Patch (no game launch)","action");
+        gtk_widget_set_tooltip_text(wand_check,"Read-only patch and runtime inspection. This does NOT launch Steam, the game, Wand, or a trainer.");
         g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         pack(copy,wand_check,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
-            "Steam game only • selected standard Steam title • requires Yes confirmation. No trainer is started.":
-            "Steam game-only launch is OFF. Restart using --enable-steam-game-launch to enable this separate button.","muted");
+            "Step 1: Launch Steam game only (Yes confirmation). Step 2: Check Wand Patch. No trainer is started.":
+            "Game launch is disabled. Restart with --enable-steam-game-launch, then use Launch Steam game only (opt-in); patch checks never launch games.","muted");
         gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
         pack(copy,notice,0);
     }
@@ -3969,6 +3971,7 @@ static void pc2_wemod_action(const char*action){
             free(j);return;
         }
         Game*g=&G.games[G.selected];
+        log_line("Wand patch check is read-only: it does NOT launch the game or trainer. Launch Steam game only (opt-in) is a separate action.");
         snprintf(j->game_name,sizeof j->game_name,"%s",g->name);
         snprintf(j->game_provider,sizeof j->game_provider,"%s",
             game_is_steam_shortcut(g)?"other":game_is_steam(g)?"steam":game_is_heroic(g)?"heroic":game_is_lutris(g)?"lutris":"other");
@@ -4071,12 +4074,12 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         pack(controls,detect,0);pack(controls,install,0);pack(controls,patch,0);
         pack(controls,restore,0);pack(eh,controls,0);
         GtkWidget*testrow=box(GTK_ORIENTATION_HORIZONTAL,7);
-        GtkWidget*verify=button("Verify Wand Patch + Game","primary-action");
+        GtkWidget*verify=button("Verify Wand Patch + Game (no launch)","primary-action");
         GtkWidget*launch_test=button("Launch Patched Wand (Smoke Test)","action");
         g_signal_connect_data(verify,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         g_signal_connect_data(launch_test,"clicked",(GCallback)on_pc2_wemod_launch_test,NULL,NULL,0);
         pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
-        GtkWidget*note=label("Verification checks patched files against the upstream proxy and the currently selected game's observed runtime. Smoke Test opens Wand in its existing Wine prefix only; it does not verify trainer attachment or launch the game.","muted");
+        GtkWidget*note=label("Verification only checks patch files and observed game runtime; it NEVER starts a game. To start a Steam game, enable the separate opt-in launch button and confirm Yes. Smoke Test starts Wand only; trainer attachment remains unverified.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
