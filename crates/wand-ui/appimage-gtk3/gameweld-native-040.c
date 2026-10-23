@@ -611,7 +611,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Wand-Enhancer Source / Build Instructions") && strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)")) pc2_guard_button(w);
+        if (strcmp(s, "Wand-Enhancer Source / Build Instructions") && strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2379,6 +2379,51 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
     log_line("PC2 Steam game-only handoff requested for %.140s (App ID %s). No trainer started. Actual game startup must be confirmed in Steam.",g->name,id);
     if(G.library_detail_status)set_label(G.library_detail_status,"Steam game-only handoff requested; check Steam. No trainer launched by PC2.");
 }
+static void on_pc2_steam_session_check(GtkButton*b,void*d){
+    (void)b;(void)d;
+    if(!pc2_discovery_only())return;
+    if(G.selected<0||G.selected>=G.game_count){
+        log_line("Choose an installed Steam game for session observation.");return;
+    }
+    Game*g=&G.games[G.selected];
+    if(!game_is_steam(g)||game_is_steam_shortcut(g)){
+        log_line("PC2 Steam session observation currently supports standard installed Steam games only.");return;
+    }
+    const char*id=g->appid;
+    if(!id[0]||id[0]=='0'||strlen(id)>10){
+        log_line("Cannot observe session for invalid Steam app ID.");return;
+    }
+    for(const char*q=id;*q;q++)if(!isdigit((unsigned char)*q)){
+        log_line("Cannot observe session for invalid Steam app ID.");return;
+    }
+    char endpoint[160];
+    snprintf(endpoint,sizeof endpoint,"/api/steam-session?appid=%s",id);
+    char*body=NULL;int code=0;
+    if(http_request("GET",endpoint,NULL,&body,&code)<0||code!=200||!body){
+        log_line("Read-only Steam session observation unavailable for %s (HTTP %d).",g->name,code);
+        free(body);return;
+    }
+    char mode[64]={0},state[100]={0},reply_id[64]={0};
+    json_string(body,"mode",mode,sizeof mode);
+    json_string(body,"state",state,sizeof state);
+    json_string(body,"appid",reply_id,sizeof reply_id);
+    int confirmed=json_bool(body,"game_running_confirmed",1);
+    free(body);
+    if(strcmp(mode,"read_only")||strcmp(reply_id,id)||confirmed){
+        log_line("Unexpected Steam session API response; no claim about game state.");return;
+    }
+    if(!strcmp(state,"associated_processes_observed")){
+        log_line("Steam app-ID %s: associated process environment observed; executable/session ownership is NOT verified.",id);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            "Steam-associated process observed, but game executable/ownership is not verified.");
+    }else if(!strcmp(state,"no_process_evidence")){
+        log_line("Steam app-ID %s: no exact same-user process association detected; game may still be running.",id);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            "No exact Steam process evidence detected; this is not proof the game has stopped.");
+    }else{
+        log_line("Steam session observation is unavailable or unsupported; game state unknown.");
+    }
+}
 static void on_steam_page(GtkButton*b,void*d){(void)b;(void)d;if(G.selected<0||G.selected>=G.game_count)return;Game*g=&G.games[G.selected];if(game_is_steam_shortcut(g)){log_line("Non-Steam shortcuts do not have a Steam store page.");return;}if(game_is_steam(g)){char u[256];snprintf(u,sizeof u,"steam://store/%s",g->appid);spawn_detached("xdg-open",u,NULL);}else if(game_is_lutris(g))log_line("Store-page shortcut is not wired for Lutris entries in 0.6.0 Test 4.");else log_line("Store-page shortcut is not wired for Heroic %s games yet.",g->runner);}
 static void on_game_folder(GtkButton*b,void*d){(void)b;(void)d;if(G.selected<0||G.selected>=G.game_count)return;if(G.games[G.selected].install_dir[0])spawn_detached("xdg-open",G.games[G.selected].install_dir,NULL);}
 static void on_open_selected_trainer_folder(GtkButton*b,void*d){(void)b;(void)d;if(!G.trainer_library_pick_path[0]){log_line("Select a trainer row first.");return;}char dir[2048];snprintf(dir,sizeof dir,"%s",G.trainer_library_pick_path);char *slash=strrchr(dir,'/');if(slash&&slash!=dir)*slash=0;else if(slash==dir)slash[1]=0;else snprintf(dir,sizeof dir,".");spawn_detached("xdg-open",dir,NULL);log_line("Opened trainer folder: %s",dir);}
@@ -2545,6 +2590,9 @@ static GtkWidget *build_home(void){
         gtk_widget_set_sensitive(safe,pc2_steam_launch_allowed());
         g_signal_connect_data(safe,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);
         pack(copy,safe,0);
+        GtkWidget*observe=button("Check Steam session (read-only)","action");
+        g_signal_connect_data(observe,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);
+        pack(copy,observe,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
             "Steam game only • selected standard Steam title • requires Yes confirmation. No trainer is started.":
             "Steam game-only launch is OFF. Restart using --enable-steam-game-launch to enable this separate button.","muted");
@@ -2580,7 +2628,7 @@ static GtkWidget *build_library(void){
     GtkWidget*body=box(GTK_ORIENTATION_HORIZONTAL,14);
     GtkWidget*listpanel=box(GTK_ORIENTATION_VERTICAL,8);style(listpanel,"panel");pack(listpanel,label("GAMES","section-kicker"),0);GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_vexpand(sc,TRUE);G.game_list=gtk_list_box_new();g_signal_connect_data(G.game_list,"row-selected",(GCallback)selected_changed,NULL,NULL,0);
     for(int i=0;i<G.game_count;i++){GtkWidget*r=gtk_list_box_row_new();style(r,"library-row");G.game_rows[i]=r;GtkWidget*rb=box(GTK_ORIENTATION_HORIZONTAL,11);margins(rb,7);GtkWidget*thumb=gtk_image_new();style(thumb,"game-thumb");char art[2048]={0};if(!resolve_game_art(&G.games[i],1,art,sizeof art))resolve_game_art(&G.games[i],0,art,sizeof art);set_image_path(thumb,art[0]?art:NULL,52,70);pack(rb,thumb,0);GtkWidget*txt=box(GTK_ORIENTATION_VERTICAL,3);pack(txt,label(G.games[i].name,"game-row-title"),0);char x[384];if(game_is_steam_shortcut(&G.games[i]))snprintf(x,sizeof x,"Steam shortcut • %s",G.games[i].appid);else if(game_is_steam(&G.games[i]))snprintf(x,sizeof x,"Steam • %s",G.games[i].appid);else if(game_is_lutris(&G.games[i]))snprintf(x,sizeof x,"Lutris • %s",G.games[i].runner[0]?G.games[i].runner:"wine");else snprintf(x,sizeof x,"Heroic • %s",G.games[i].runner);pack(txt,label(x,"muted"),0);pack(rb,txt,1);GtkWidget*installed=label(game_is_lutris(&G.games[i])?"Discovery":"Ready",game_is_lutris(&G.games[i])?"muted":"good");gtk_widget_set_name(installed,"status-pill");pack(rb,installed,0);gtk_container_add(r,rb);gtk_list_box_insert((GtkListBox*)G.game_list,r,-1);}gtk_container_add(sc,G.game_list);pack(listpanel,sc,1);pack(body,listpanel,1);
-    GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());g_signal_connect_data(lb1,"clicked",(GCallback)on_play,NULL,NULL,0);g_signal_connect_data(lbct,"clicked",(GCallback)on_launch_with_cheat_table,NULL,NULL,0);g_signal_connect_data(lbw,"clicked",(GCallback)on_launch_with_wemod,NULL,NULL,0);g_signal_connect_data(lba,"clicked",(GCallback)on_launch_with_aurora,NULL,NULL,0);g_signal_connect_data(lbc,"clicked",(GCallback)on_launch_with_cheat_evolution,NULL,NULL,0);g_signal_connect_data(lbx,"clicked",(GCallback)on_launch_custom_trainer,NULL,NULL,0);g_signal_connect_data(lb2,"clicked",(GCallback)on_play_normal,NULL,NULL,0);g_signal_connect_data(lb3,"clicked",(GCallback)on_game_folder,NULL,NULL,0);g_signal_connect_data(preview,"clicked",(GCallback)on_steam_launch_preview,NULL,NULL,0);g_signal_connect_data(steam_only,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);pack(inspect,lb1,0);pack(inspect,lbct,0);pack(inspect,lbw,0);pack(inspect,lba,0);pack(inspect,lbc,0);pack(inspect,lbx,0);pack(inspect,lb2,0);pack(inspect,lb3,0);pack(inspect,preview,0);pack(inspect,steam_only,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("TIP","section-kicker"),0);GtkWidget*tip=label("Use the search dropdown above to choose All games, Steam, Steam shortcuts, Heroic, Lutris, or Trainers. Lutris launch integration is intentionally disabled in Test 1; trainer searches jump directly to Trainer Library.","muted");gtk_label_set_line_wrap((GtkLabel*)tip,TRUE);pack(inspect,tip,0);pack(body,inspect,0);pack(p,body,1);return p;
+    GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());GtkWidget*session_check=button("Check Steam session (read-only)","action");g_signal_connect_data(lb1,"clicked",(GCallback)on_play,NULL,NULL,0);g_signal_connect_data(lbct,"clicked",(GCallback)on_launch_with_cheat_table,NULL,NULL,0);g_signal_connect_data(lbw,"clicked",(GCallback)on_launch_with_wemod,NULL,NULL,0);g_signal_connect_data(lba,"clicked",(GCallback)on_launch_with_aurora,NULL,NULL,0);g_signal_connect_data(lbc,"clicked",(GCallback)on_launch_with_cheat_evolution,NULL,NULL,0);g_signal_connect_data(lbx,"clicked",(GCallback)on_launch_custom_trainer,NULL,NULL,0);g_signal_connect_data(lb2,"clicked",(GCallback)on_play_normal,NULL,NULL,0);g_signal_connect_data(lb3,"clicked",(GCallback)on_game_folder,NULL,NULL,0);g_signal_connect_data(preview,"clicked",(GCallback)on_steam_launch_preview,NULL,NULL,0);g_signal_connect_data(steam_only,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);g_signal_connect_data(session_check,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);pack(inspect,lb1,0);pack(inspect,lbct,0);pack(inspect,lbw,0);pack(inspect,lba,0);pack(inspect,lbc,0);pack(inspect,lbx,0);pack(inspect,lb2,0);pack(inspect,lb3,0);pack(inspect,preview,0);pack(inspect,steam_only,0);pack(inspect,session_check,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("TIP","section-kicker"),0);GtkWidget*tip=label("Use the search dropdown above to choose All games, Steam, Steam shortcuts, Heroic, Lutris, or Trainers. Lutris launch integration is intentionally disabled in Test 1; trainer searches jump directly to Trainer Library.","muted");gtk_label_set_line_wrap((GtkLabel*)tip,TRUE);pack(inspect,tip,0);pack(body,inspect,0);pack(p,body,1);return p;
 }
 
 
