@@ -575,6 +575,9 @@ static GtkWidget *label(const char *s, const char *cls) {
     GtkWidget *w = gtk_label_new(s); gtk_label_set_xalign((GtkLabel*)w, 0.0f);
     if (cls) style(w, cls); return w;
 }
+/* Defined below with the explicit opt-in game-only Steam handler. */
+static int pc2_steam_launch_allowed(void);
+
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
  * become active again when refresh_ui() changes button sensitivity. */
