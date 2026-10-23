@@ -153,6 +153,12 @@ jobs:
           test -s build/pc2-source/pc2-test16-aio-report.txt
           grep -Fq 'Result: PASS' build/pc2-source/pc2-test16-aio-report.txt
           grep -Fq 'Real game or Wand launched: false' build/pc2-source/pc2-test16-aio-report.txt
+      - name: Test 17 GPU-off Wand white-window recovery (no real game)
+        run: |
+          bash -n scripts/pc2-test17-aio-report.sh
+          bash scripts/pc2-test17-aio-report.sh
+          grep -Fq 'Result: PASS' build/pc2-source/pc2-test17-aio-report.txt
+          grep -Fq 'Real game or Wand started by test: false' build/pc2-source/pc2-test17-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
