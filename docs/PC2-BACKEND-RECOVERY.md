@@ -414,3 +414,27 @@ Maintainer Activity on 24 October 2026 reported **three installations across 157
 Corrected on the PC2 source branch: an explicitly confirmed `live-launch` may reuse `resolve_read_only_client`'s **exactly one verified patched client** decision. Multiple patched clients still fail closed; the user must choose the exact app-version in Settings. Explicit `--install-dir` choices are honored, including deliberate blocking if the chosen client is unpatched. Patch/Restore actions still **never** auto-pick among multiple installations. The GTK Activity message also now differentiates real `live-launch` attempts from read-only `game-test`. Fixture regression checks ensure the three-client case works without starting a real game, Wine, Proton or Wand.
 
 Re-run `bash scripts/pc2-test16-aio-report.sh`, start the source GUI with `--enable-steam-game-launch`, and with Astrometica already open click **Launch Wand in Running Steam Game (opt-in)**. The next message should either identify the selected uniquely patched client, then show a precise live Proton or EXE issue, or record `Live Wand Proton runinprefix request: SENT`. A successful request still does not demonstrate visible Wand, actual DLL loading or trainer attachment. Do **not** alter the previously corrected Steam launch command line.
+
+
+## PC2 Test 17 — blank Wand window after live Proton handoff
+
+On 24 October 2026 the maintainer tested Astrometica (Steam 2353250) and uniquely patched Wand app-12.55.0. The original live launch reported Proton runinprefix request SENT and a top-level Wand window appeared, but its Electron contents were entirely white. The handoff does not demonstrate initialized UI or functional trainer attachment.
+
+Test 17 adds **Retry Wand (GPU Off, opt-in)** to Overview and integrated Settings. Close the existing white Wand window normally before retrying and leave the selected game running. The per-action confirmation uses the exact validated live Proton executable and game prefix; only the child Wand invocation gains `--disable-gpu`, `--disable-gpu-compositing` and `--enable-logging=stderr`. No Steam launch options, Proton installation, patches, registry, caches, Chromium sandbox or game settings are changed. A single-instance Wand process may intercept a retry, so avoid leaving an old instance active.
+
+The helper saves Proton/Wand stdout and stderr in `${XDG_STATE_HOME:-$HOME/.local/state}/gameweld/wand-live-2353250.log`. This private file is created with mode 0600, truncated on a confirmed re-launch, and may contain local paths or account/session information. Review and redact such details before sharing. GameWeld's handoff state is never promoted to an assertion that Electron rendered successfully.
+
+Commands:
+
+```bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+bash scripts/pc2-test17-aio-report.sh
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+# With Astrometica running and the blank Wand window closed:
+# use GUI: Retry Wand (GPU Off, opt-in)
+tail -n 100 "${XDG_STATE_HOME:-$HOME/.local/state}/gameweld/wand-live-2353250.log"
+```
+
+If the window remains white, diagnose logged Chromium renderer, GPU, dependency, authentication or ASAR errors; do not delete the existing compatibility prefix or Wand profile without explicit backup and separate troubleshooting. Test 17 AIO uses fake Proton and GTK compilation checks, not real rendering.
