@@ -526,7 +526,7 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
                     except (OSError, ValueError):
                         continue
                 steamroot = env.get("STEAM_COMPAT_CLIENT_INSTALL_PATH", "")
-                matching.append((int(entry.name), prefix, game_candidate, tool, steamroot))
+                matching.append((int(entry.name), prefix, game_candidate, tool, steamroot, env.get("STEAM_COMPAT_TOOL_PATHS", "")))
             except (OSError, UnicodeError, ValueError):
                 continue
     if not matching:
@@ -541,6 +541,9 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
     if len(tools) != 1:
         raise ValueError("Cannot identify ONE exact Proton executable from the live game's environment")
     roots = {row[4] for row in matching if row[4]}
+    live_tools = {row[5] for row in matching if row[5]}
+    if len(live_tools) != 1:
+        raise ValueError("Conflicting live Steam runtime tool environment; refusing handoff")
     if len(roots) != 1 or not Path(next(iter(roots))).is_dir():
         raise ValueError("Cannot identify the live Steam client root; no Wand handoff attempted")
     result: dict[str, object] = {
@@ -548,13 +551,15 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
         "game_pid": candidates[0][0],
         "proton": Path(next(iter(tools))),
         "steamroot": Path(next(iter(roots))),
+        "tool_paths": next(iter(live_tools)),
         "process_count": len(matching),
     }
     return result
 
 
 def launch_wand_in_live_game(folder: Path, helper: Path,
-                             appid: str, game_dir: str) -> None:
+                             appid: str, game_dir: str,
+                             proc_root: Path = Path("/proc")) -> None:
     """Opt-in external client launch using the running game's exact Proton.
 
     Never runs a random Wine binary against an active Steam Proton prefix.
@@ -576,15 +581,17 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
             "Selected app-version contains patch files but no direct Wand.exe/WeMod.exe; "
             "use its existing launcher. No Steam/Proton settings were changed."
         )
-    session = live_steam_proton_session(appid)
+    session = live_steam_proton_session(appid, proc_root)
     print("Exact Steam App ID association: FOUND", flush=True)
     print("Windows executable candidate: OBSERVED (not authenticated)", flush=True)
     print("Live Proton executable: FOUND", flush=True)
     print("Live Proton prefix: FOUND (shared with running game)", flush=True)
     # A request is allowed only while the observed Windows process still exists.
-    if not Path("/proc", str(session["game_pid"])).is_dir():
+    if not (proc_root / str(session["game_pid"])).is_dir():
         raise ValueError("The observed game process exited before Wand could start")
     environment = os.environ.copy()
+    environment.pop("WINEPREFIX", None)  # Proton owns the exact game prefix.
+    environment["STEAM_COMPAT_TOOL_PATHS"] = str(session["tool_paths"])
     environment["STEAM_COMPAT_DATA_PATH"] = str(session["compat"])
     environment["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = str(session["steamroot"])
     environment["SteamAppId"] = appid
