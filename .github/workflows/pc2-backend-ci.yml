@@ -97,6 +97,13 @@ jobs:
           bash scripts/pc2-test11-aio-report.sh
           test -s build/pc2-source/pc2-test11-aio-report.txt
           grep -Fq 'Game running confirmed: false' build/pc2-source/pc2-test11-aio-report.txt
+      - name: Test 12 targeted Steam session report
+        run: |
+          bash -n scripts/pc2-test12-aio-report.sh
+          bash scripts/pc2-test12-aio-report.sh 346900
+          test -s build/pc2-source/pc2-test12-aio-report.txt
+          grep -Fq 'Target Steam app ID: 346900' build/pc2-source/pc2-test12-aio-report.txt
+          grep -Fq 'Game running confirmed: false' build/pc2-source/pc2-test12-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
