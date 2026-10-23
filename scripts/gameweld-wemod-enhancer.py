@@ -605,7 +605,8 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     if software_render:
         # Official Wand troubleshooting recommends --disable-gpu for blank
         # Electron windows. Never use --no-sandbox or change global settings.
-        command.extend(("--disable-gpu", "--disable-gpu-compositing"))
+        command.extend(("--disable-gpu", "--disable-gpu-compositing",
+                        "--enable-logging=stderr"))
     # Capture only the explicitly confirmed client session. Do not change
     # Steam's launch options, Wine registry, caches, or existing game prefixes.
     state_home = os.environ.get("XDG_STATE_HOME")
@@ -620,6 +621,7 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     # only when they fit; next launch truncates this app-scoped log.
     descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     try:
+        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(
                 ("GameWeld PC2 Wand live handoff: App ID " + appid + "\n"
