@@ -343,10 +343,11 @@ def verify_patch_files(folder: Path, helper: Path) -> tuple[bool, list[str]]:
 
 
 def resolve_read_only_client(candidates: list[Path], helper: Path) -> tuple[Path | None, str]:
-    """Only read-only checks may infer one uniquely patched Wand installation.
+    """Select an unambiguous client for inspection or confirmed live launch.
 
-    Modifying Patch and Restore still require a user-selected unique client.
-    Inference requires BOTH an original ASAR backup and matching pinned proxy.
+    Auto-inference is ONLY for verify, game-test, and an explicitly confirmed
+    live-launch. Patch and Restore remain strictly selection-only. Inference
+    requires original ASAR backup plus exactly matching pinned DLL proxy.
     """
     if len(candidates) == 1:
         return candidates[0], "one existing client installation"
@@ -620,7 +621,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("status", "install", "patch", "restore", "verify", "game-test", "launch-test", "live-launch"))
     parser.add_argument("--install-dir", help="Folder containing WeMod.exe and resources/app.asar")
-    parser.add_argument("--confirm", action="store_true", help="Required for download/patch/restore")
+    parser.add_argument("--confirm", action="store_true", help="Required for install/patch/restore and launch actions")
     parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
     parser.add_argument("--appid", default="")
     parser.add_argument("--game-name", default="")
@@ -660,6 +661,17 @@ def main() -> int:
     if args.action == "install":
         install_helper()
         return 0
+    if args.action == "live-launch":
+        # The user already confirmed a real launch. Match the same uniquely
+        # patched client that game-test could safely identify, never one of
+        # three installs picked arbitrarily. Patch/Restore never use this.
+        folder, reason = resolve_read_only_client(candidates, installed_helper_dir())
+        if folder is None:
+            raise ValueError(
+                "Live Wand launch blocked: " + reason +
+                ". Choose the exact patched app-version in Settings."
+            )
+        print("Selected Wand client: " + folder.name + " (" + reason + ")", flush=True)
     if folder is None:
         raise ValueError("No unique Wand/WeMod client selected. Choose the app-version folder with resources/app.asar; this is distinct from the Proton compatibility tool.")
     if args.action == "launch-test":
