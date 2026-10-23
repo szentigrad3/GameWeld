@@ -184,6 +184,23 @@ bash scripts/pc2-test12-aio-report.sh 346900
 
 Output: `build/pc2-source/pc2-test12-aio-report.txt`. An argument for another valid Steam app ID is supported. CI environments lacking the specified Steam manifest report the target check as **SKIPPED** while validating the API and fail-closed contract. Even with matches, session/trainer parity is still not validated; maintain the PC1 baseline.
 
+## PC2 Test 12 live field result and Test 13 process-role evidence
+
+Maintainer's uploaded Test 12 report (23 October 2026): **PASS**, installed Steam App ID **346900** (AdVenture Capitalist) found among 122 Steam manifests, and **4 / 4 / 4** exact same-user Steam app-ID process associations across three short read-only snapshots. No process scan truncation. The result supports consistent association while the game was running, **not** the identity of the main game executable or Wine/Proton session owner. User separately confirmed a successful live Steam game-only launch. PC1 remains the working trainer release.
+
+Test 13 adds **GET `/api/steam-process-roles?appid=<installed Steam app ID>`** and `scripts/pc2-test13-aio-report.sh` to classify associated processes as `steam_helper`, `wine_runtime`, `windows_executable_candidate`, or `other_associated`. The backend reads only same-user `/proc` environment metadata, the short `comm` name, and the executable symlink's **basename**, never the executable bytes or its full path. Its report includes whether `STEAM_COMPAT_DATA_PATH` and `WINEPREFIX` keys are present, never their values or actual directories. The number of inspected processes and returned role observations remains bounded by the existing read-only Test 11 scanner.
+
+**Role labels are heuristics only**, not a certified game executable, verified prefix owner, attach target, or evidence of successful trainer functionality. A Windows `.exe` process name alone is insufficient for trainer handoff. No launch, signal, Steam configuration write, Proton change or trainer action is performed. `game_executable_verified`, `prefix_ownership_verified` and `trainer_handoff_enabled` always remain false. POST and unknown app IDs fail closed.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+# Leave AdVenture Capitalist running before collecting process evidence:
+bash scripts/pc2-test13-aio-report.sh 346900
+```
+
+The path-redacted report is saved to `build/pc2-source/pc2-test13-aio-report.txt`. It includes process role labels but omits PIDs and full paths. CI without the target game installed validates Go fixtures and report contracts; only a real running-game field report can characterize the actual four associated processes.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
