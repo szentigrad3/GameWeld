@@ -14,6 +14,8 @@ for f in \
   echo "== $f =="
   python3 "$f"
 done
+echo "== scripts/test-audit-appimage-files.py =="
+python3 scripts/test-audit-appimage-files.py
 if command -v gcc >/dev/null 2>&1; then
   gcc -fsyntax-only -pthread crates/wand-ui/appimage-gtk3/gameweld-native-040.c
 fi
