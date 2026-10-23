@@ -21,6 +21,19 @@ The backend is **read-only** for this phase. It implements the GTK startup hands
 
 Do **not** merge this backend into the working `release/0.7.0-pc1` branch or distribute a PC2 AppImage until full behaviour and test parity exist.
 
+## PC2 Test 3 result and Test 4 diagnostics
+
+Maintainer-provided Test 3 report (23 October 2026): **PASS**, **122 installed Steam manifests**, **one Wand Proton candidate**, inspector state **`incomplete`**, `verified=false`, and both backend mutation endpoints return HTTP 501. This is a read-only field check, **not** proof of compatibility tool health.
+
+To identify the incomplete candidate's exact missing indicators without exposing home-directory paths or changing compatibility files, run:
+
+```bash
+git pull --ff-only
+bash scripts/pc2-test4-aio-report.sh
+```
+
+Report: `build/pc2-source/pc2-test4-aio-report.txt`. Per candidate it records whether `proton` is executable, a tool entry exists in `compatibilitytool.vdf`, and `WAND-HYBRID.json` has valid schema/tool/base metadata. It does **not** validate DLL hashes, compare installed bytes, prove game/trainer health or run a repair. **Do not reinstall** the tool simply because the inspector marks metadata incomplete. Continue using the working PC1 build for game/trainer operations.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
