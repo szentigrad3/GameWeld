@@ -286,6 +286,17 @@ bash scripts/run-pc2-source-frontend.sh
 
 The source adapter supports read-only CLI `verify --install-dir <selected client>` and `game-test --install-dir <selected client> --game-provider steam --appid <id> --game-name <name> ...`; the GUI supplies arguments from the selected installed game, so no manual command is necessary. `launch-test` requires `--confirm --wine-prefix <existing prefix>`. CI tests are fully disposable fixtures; a successful GitHub build does not establish a real-game Wand session. PC1 remains untouched.
 
+## Astrometica screenshot: Test Wand selection reset fix
+
+Maintainer's 23 October 2026 PC2 Overview screenshot showed **Astrometica (Steam App ID 2533250)** selected, but Activity reported `WeMod Enhancer [game-test] FAILED: Choose exactly one existing Wand/WeMod app-version folder`. The game's selection was correct; the earlier selected **Wand app-12.55.0** installation in the regular Wine prefix had not been retained after reopening GameWeld, and GameWeld's scanner reported multiple existing Wand/WeMod clients. The failure was **before any game-specific trainer readiness check**, not evidence that the game or patched Wand was broken.
+
+Two non-mutating selection fixes:
+
+- The separate upstream bridge's read-only `verify` and `game-test` commands may now automatically use an **unambiguously patched** client if multiple clients exist. It requires one and only one app-version with an original ASAR backup, an ASAR different from its backup, and an installed Enhancer `version.dll` byte-identical to the pinned upstream reference. It fails closed if zero/multiple clients meet the standard. Automatic inference is **never** applied to the modifying `patch` or `restore` commands.
+- The GTK **existing Wand installation** picker persists an explicitly selected exact Wine-prefix/app-version path pair in `${XDG_CONFIG_HOME:-~/.config}/gameweld/wand-selected-client.tsv`. On subsequent startups, a fresh read-only scan restores the choice only if the same exact prefix and install folder still exist; it otherwise asks for another selection. This file contains local paths only, never login data, and is independent from PC1 compatibility settings. The existing Steam/Proton environment and Wand client files are unchanged.
+
+To test: `git pull --ff-only`, start PC2 through `scripts/run-pc2-source-frontend.sh`, select Astrometica, click **Test Wand for Selected Game**. If multiple fully patched versions exist, go to Settings and explicitly select the desired Wand app; this explicit choice will be remembered. A clean game-test can attest to patch-file evidence and observed game runtime only. It does not yet validate a live Wand trainer attached to Astrometica. **PC2's old trainer launch controls remain disabled** and the Windows game launch is separately opt-in.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
