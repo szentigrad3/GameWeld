@@ -34,6 +34,20 @@ bash scripts/pc2-test4-aio-report.sh
 
 Report: `build/pc2-source/pc2-test4-aio-report.txt`. Per candidate it records whether `proton` is executable, a tool entry exists in `compatibilitytool.vdf`, and `WAND-HYBRID.json` has valid schema/tool/base metadata. It does **not** validate DLL hashes, compare installed bytes, prove game/trainer health or run a repair. **Do not reinstall** the tool simply because the inspector marks metadata incomplete. Continue using the working PC1 build for game/trainer operations.
 
+## PC2 Test 4 field result and Test 5 diagnostics
+
+Maintainer's uploaded Test 4 AIO report (23 October 2026): `PASS`, 122 Steam manifests, one existing tool candidate, `has_proton=true`, `has_manifest=true`, `has_metadata=false`. The result is **incomplete metadata**, not proof that Proton itself is damaged or the trainer incompatible. No automatic reinstall is authorized.
+
+The source inspector now classifies `WAND-HYBRID.json` precisely as `missing`, `empty`, `too_large`, `unreadable`, `not_regular`, `invalid_json`, `invalid_schema`, `unexpected_tool_id`, `missing_base_proton` or `valid_metadata_only`; none of these outcomes claims verified DLL hashes or trainer functionality.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test5-aio-report.sh
+```
+
+The read-only, path-redacted result is written to `build/pc2-source/pc2-test5-aio-report.txt`. This check does not delete or repair installed files. Keep PC1 as the working game/trainer version.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
