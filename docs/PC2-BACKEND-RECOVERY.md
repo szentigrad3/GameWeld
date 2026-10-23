@@ -113,6 +113,25 @@ bash scripts/run-pc2-source-frontend.sh
 
 The AIO creates `build/pc2-source/pc2-test9-aio-report.txt` and checks that malformed or unknown IDs cannot produce a launch plan, a valid installed Steam manifest generates the expected preview URI, and mutation endpoints still fail closed. CI without installed Steam uses the backend's fixture-backed unit tests. **A successful URI preview is not a live launch, trainer readiness, Proton health, or release approval.** The source frontend remains guarded, and PC1 is the live gaming baseline.
 
+## PC2 Test 9 field result and Test 10 opt-in Steam game-only handoff
+
+The maintainer's Test 9 AIO report (23 October 2026) **passed** against **122 Steam manifests**, including an installed-game `steam://rungameid/<id>` preview, malformed/unknown app ID rejection, and confirmations that no Steam game, trainer or configuration change was initiated. **That AIO does not prove the preview button works in the GUI**, or that a game successfully launches.
+
+Test 10 introduces a **separate game-only opt-in** in the GTK Library inspector without unlocking inherited legacy launch or trainer buttons. By default, the new `Launch Steam game only (opt-in)` control is disabled. A shell environment value alone is insufficient for the normal source launcher. When explicitly requested at startup, the control becomes available:
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test10-aio-report.sh
+# Default / safe UI:  bash scripts/run-pc2-source-frontend.sh
+# Only when deliberately testing a real game:
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+```
+
+Under that opt-in mode only, selecting an ordinary **installed Steam game** and clicking the game-only button requests the backend GET preview, checks provider / exact app ID / exact URI / read-only mode, then opens a **Yes/No confirmation dialog**. Only a Yes asks the local `steam -applaunch <appid>` executable to handle the selected game. Neither the backend nor the UI starts trainers, modifies Steam LaunchOptions, chooses a Proton version, or calls legacy play handlers. Steam itself may naturally update content. Heroic, Lutris and non-Steam shortcuts remain unsupported by the new opt-in path. The GUI reports only that a **handoff was requested**, not that Steam/game startup succeeded. No confirmed live launch has yet been reported.
+
+The Test 10 AIO script performs all offline and safe gate probes **without opening the UI or starting Steam**; the test checks normal default disabled, inherited environment disabled, explicit gate enabled, and Test 9 preview regressions. Output: `build/pc2-source/pc2-test10-aio-report.txt`. If the tester wants to verify a real launch, they must deliberately supply the opt-in flag and confirm in the UI. Continue using validated PC1 for normal trainer operations.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
