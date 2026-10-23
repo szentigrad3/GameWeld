@@ -591,9 +591,18 @@ static void pc2_block_action(GtkButton *b, void *unused) {
     g_signal_stop_emission_by_name(b, "clicked");
     fprintf(stderr, "PC2 discovery-only: action blocked. Use PC1 for launch/setup.\\n");
 }
+/* Prevent refresh_ui() or another legacy callback from visually re-enabling
+ * a blocked widget. GTK notifies again on FALSE; unchanged setters are inert. */
+static void pc2_guard_sensitivity(void *widget, void *property, void *unused) {
+    (void)property; (void)unused;
+    if(pc2_discovery_only())gtk_widget_set_sensitive((GtkWidget*)widget,FALSE);
+}
 static void pc2_guard_button(GtkWidget *w) {
-    if (pc2_discovery_only())
+    if (pc2_discovery_only()) {
         g_signal_connect_data(w, "clicked", (GCallback)pc2_block_action, NULL, NULL, 0);
+        g_signal_connect_data(w, "notify::sensitive", (GCallback)pc2_guard_sensitivity, NULL, NULL, 0);
+        gtk_widget_set_sensitive(w,FALSE);
+    }
 }
 static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
@@ -1915,6 +1924,17 @@ static void refresh_ui(void) {
         else set_label(G.play_subtitle,has_native?"Built-in Resonance trainer • no Cheat Engine • unlimited local profile":(use_ct?"Launch game + Cheat Engine table (local / unlimited)":(has_local?"Launch game + your local trainer (local / unlimited)":((g&&game_is_steam_shortcut(g))?"Launch through the shortcut’s Steam rungameid; assigned trainers use the validated live Proton session":((g&&!game_is_steam(g))?"Launch with Heroic using its configured Wine/Proton runner":(g?"Launch through Steam with the configured trainer provider":"Select a game to see its configured launch path"))))));
     }
     if(G.play_button)gtk_widget_set_sensitive(G.play_button,managed_state==0&&game_launch_enabled(g));
+    if(pc2_discovery_only()){
+        set_label(G.wand_ready,"Unverified");
+        set_label(G.compat_ready,"Not verified");
+        set_label(G.play_title,"TRAINER LAUNCH DISABLED");
+        set_label(G.play_subtitle,"PC2 test build: legacy trainer and Play Normally actions are blocked. Use the separate Steam game-only opt-in button.");
+        if(G.overview_launch_hint)set_label(G.overview_launch_hint,
+            pc2_steam_launch_allowed()?
+            "PC2 SOURCE TEST • Trainer/manager buttons disabled. For a standard Steam game, use the separate Steam game-only opt-in button and confirm Yes.":
+            "PC2 SOURCE TEST • Trainer/manager buttons disabled. Restart with --enable-steam-game-launch to test a game-only Steam handoff.");
+        if(G.right_proton)set_label(G.right_proton,"Proton health: not verified in PC2\nNo repair indicated by missing optional metadata.");
+    }
     if(G.native_profile_status){
         if(!g)set_label(G.native_profile_status,"Select a game first.");
         else if(!game_is_steam(g))set_label(G.native_profile_status,"Native converted-table profiles are currently available for selected Steam titles only.");
@@ -2509,14 +2529,26 @@ static GtkWidget *build_home(void){
     GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");
     GtkWidget*page=box(GTK_ORIENTATION_VERTICAL,14);gtk_widget_set_name(page,"page");margins(page,20);gtk_container_add(outer,page);
 
-    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("OVERVIEW","page-kicker"),0);pack(ht,label("Your game, runtime and trainer in one place","workspace-title"),0);pack(ht,label("GameWeld keeps launcher-native sessions intact and gives every game one Launch With surface for trainers and manager providers.","page-subtitle"),0);pack(head,ht,1);GtkWidget*online=label("●  Services ready","good");gtk_widget_set_name(online,"status-pill");pack(head,online,0);pack(page,head,0);
+    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("OVERVIEW","page-kicker"),0);pack(ht,label("Your game, runtime and trainer in one place","workspace-title"),0);pack(ht,label(pc2_discovery_only()?"PC2 SOURCE TEST • Steam / Heroic / Lutris discovery. Legacy trainer controls remain disabled; game-only Steam launch requires explicit opt-in.":"GameWeld keeps launcher-native sessions intact and gives every game one Launch With surface for trainers and manager providers.","page-subtitle"),0);pack(head,ht,1);GtkWidget*online=label(pc2_discovery_only()?"●  Library discovery active":"●  Services ready","good");gtk_widget_set_name(online,"status-pill");pack(head,online,0);pack(page,head,0);
 
     GtkWidget*spot=box(GTK_ORIENTATION_HORIZONTAL,16);gtk_widget_set_name(spot,"spotlight");
     GtkWidget*copy=box(GTK_ORIENTATION_VERTICAL,12);gtk_widget_set_name(copy,"spotlight-copy");gtk_widget_set_size_request(copy,390,-1);
     pack(copy,label("CURRENT GAME","eyebrow"),0);
     GtkWidget*idrow=box(GTK_ORIENTATION_HORIZONTAL,13);GtkWidget*cover=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(cover,"cover-frame");G.cover_image=gtk_image_new();gtk_widget_set_size_request(G.cover_image,155,220);pack(cover,G.cover_image,0);pack(idrow,cover,0);
     GtkWidget*ids=box(GTK_ORIENTATION_VERTICAL,7);G.hero_name=label("Select a game",NULL);gtk_widget_set_name(G.hero_name,"game-title");gtk_label_set_line_wrap((GtkLabel*)G.hero_name,TRUE);pack(ids,G.hero_name,0);G.hero_meta=label("Steam / Heroic • App ID —",NULL);gtk_widget_set_name(G.hero_meta,"meta");gtk_label_set_line_wrap((GtkLabel*)G.hero_meta,TRUE);pack(ids,G.hero_meta,0);pack(ids,meta_chip("LOCAL / SINGLE PLAYER"),0);G.game_detected_detail=label("Choose a game from Library to review its trainer, runtime and exact launch path before starting the session.","muted");gtk_label_set_line_wrap((GtkLabel*)G.game_detected_detail,TRUE);pack(ids,G.game_detected_detail,1);pack(idrow,ids,1);pack(copy,idrow,1);
-    GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);pack(spot,copy,0);
+    GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);
+    if(pc2_discovery_only()){
+        GtkWidget*safe=button("Launch Steam game only (opt-in)","primary-action");
+        gtk_widget_set_sensitive(safe,pc2_steam_launch_allowed());
+        g_signal_connect_data(safe,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);
+        pack(copy,safe,0);
+        GtkWidget*notice=label(pc2_steam_launch_allowed()?
+            "Steam game only • selected standard Steam title • requires Yes confirmation. No trainer is started.":
+            "Steam game-only launch is OFF. Restart using --enable-steam-game-launch to enable this separate button.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
+        pack(copy,notice,0);
+    }
+    pack(spot,copy,0);
     GtkWidget*art=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(art,"hero-art");G.hero_image=gtk_image_new();gtk_widget_set_size_request(G.hero_image,520,300);pack(art,G.hero_image,1);pack(spot,art,1);pack(page,spot,0);
 
     GtkWidget*launchwith=box(GTK_ORIENTATION_VERTICAL,10);style(launchwith,"panel");
