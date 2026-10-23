@@ -23,6 +23,8 @@ func TestHTTPContract(t *testing.T) {
     for _,test:=range []struct{method,path string;code int;ok bool}{
         {"GET","/api/status",200,true},
         {"GET","/api/compatibility",200,true},
+        {"GET","/api/runtime-integrity",200,true},
+        {"POST","/api/runtime-integrity",405,false},
         {"POST","/api/compatibility",405,false},
         {"GET","/api/job",200,true},
         {"GET","/api/verify",409,false},
