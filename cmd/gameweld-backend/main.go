@@ -199,6 +199,16 @@ func router() http.Handler {
         }
         response(w,200,inspectSteamSession("/proc",appid),"")
     })
+    mux.HandleFunc("/api/steam-process-roles",func(w http.ResponseWriter,r *http.Request){
+        if !method(w,r,"GET") {return}
+        appid:=r.URL.Query().Get("appid")
+        inv:=steamInventory()
+        if _,ok:=steamLaunchPlan(inv.Games,appid);!ok{
+            response(w,404,nil,"No installed Steam manifest matches that app ID; process-role observation unavailable")
+            return
+        }
+        response(w,200,inspectSteamProcessRoles("/proc",appid),"")
+    })
     mux.HandleFunc("/api/job",func(w http.ResponseWriter,r *http.Request){
         if !method(w,r,"GET") { return }
         response(w,200,map[string]any{"running":false,"action":"","message":"","progress":0,
