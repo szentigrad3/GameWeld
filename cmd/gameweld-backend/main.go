@@ -209,6 +209,20 @@ func router() http.Handler {
         }
         response(w,200,inspectSteamProcessRoles("/proc",appid),"")
     })
+    mux.HandleFunc("/api/steam-native-executable",func(w http.ResponseWriter,r *http.Request){
+        if !method(w,r,"GET") {return}
+        appid:=r.URL.Query().Get("appid")
+        inv:=steamInventory()
+        if _,ok:=steamLaunchPlan(inv.Games,appid);!ok{
+            response(w,404,nil,"Installed Steam game with valid manifest not found")
+            return
+        }
+        installDir:=""
+        for _,g:=range inv.Games {
+            if g.AppID==appid {installDir=g.InstallDir;break}
+        }
+        response(w,200,inspectNativeSteamExecutable("/proc",appid,installDir),"")
+    })
     mux.HandleFunc("/api/job",func(w http.ResponseWriter,r *http.Request){
         if !method(w,r,"GET") { return }
         response(w,200,map[string]any{"running":false,"action":"","message":"","progress":0,
