@@ -577,6 +577,7 @@ static GtkWidget *label(const char *s, const char *cls) {
 }
 /* Defined below with the explicit opt-in game-only Steam handler. */
 static int pc2_steam_launch_allowed(void);
+static int bounded_child_output(pid_t pid,int fd,char *output,size_t capacity,int seconds);
 static void on_pc2_wemod_verify_selected(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
