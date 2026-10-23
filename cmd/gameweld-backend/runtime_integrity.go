@@ -54,8 +54,21 @@ func locateDLL(tool,arch string) string {
     // Avoid walking arbitrary trees or following directory symlinks.
     libnames:=[]string{"lib64","lib","lib32"}
     for _,lib:=range libnames {
-        p:=filepath.Join(tool,"files",lib,"wine",arch+"-windows","crypt32.dll")
-        if st,err:=os.Lstat(p);err==nil && st!=nil {
+        files:=filepath.Join(tool,"files")
+        libdir:=filepath.Join(files,lib)
+        wine:=filepath.Join(libdir,"wine")
+        archdir:=filepath.Join(wine,arch+"-windows")
+        // Never traverse symlinked parent directories to hash unrelated files.
+        safe:=true
+        for _,parent:=range []string{tool,files,libdir,wine,archdir} {
+            st,err:=os.Lstat(parent)
+            if err!=nil || !st.IsDir() || st.Mode()&os.ModeSymlink!=0 {
+                safe=false;break
+            }
+        }
+        if !safe {continue}
+        p:=filepath.Join(archdir,"crypt32.dll")
+        if _,err:=os.Lstat(p);err==nil {
             return p
         }
     }
