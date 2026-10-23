@@ -3666,13 +3666,13 @@ static gboolean wand_detect_finished(void *data){
     gtk_combo_box_set_active((GtkComboBox*)wand_detected_combo,choice);
     wand_detect_updating=0;
     if(choice>=0){
-        set_label(G.wand_patcher_status,matching>=0?"Previous Wand selection preserved by exact prefix and install path. No files changed.":"Wand found automatically. Ready for Smart Prepare. No files changed.");
+        set_label(G.wand_patcher_status,matching>=0?"Previous client selection preserved; choose Patch WeMod when ready. No files changed.":"Found one existing Wand/WeMod client; choose Patch WeMod when ready. No files changed.");
     }else if(previous_prefix[0]&&previous_install[0]){
-        set_label(G.wand_patcher_status,"Previously selected Wand installation was not found. GameWeld cleared it for safety; choose an installation before any backup or restore.");
+        set_label(G.wand_patcher_status,"Previous client selection could not be confirmed. Choose the correct app-version folder before patching or restoring.");
     }else if(wand_detected_count){
         set_label(G.wand_patcher_status,"Multiple Wand/WeMod installs found. Select the correct one above before proceeding; no files changed.");
     }else{
-        set_label(G.wand_patcher_status,"No Wand installation found. Install Wand, retry scan, or open Advanced for manual paths.");
+        set_label(G.wand_patcher_status,"No existing Wand/WeMod client detected. Choose the app-version folder manually, or use PC1 to install/configure Wand. PC2 does not reinstall Proton.");
     }
     log_line("Wand auto-detection: %d installations in %d Wine prefixes; truncated=%d.",total,scanned,truncated);
 done:
@@ -3902,7 +3902,7 @@ static void pc2_wemod_action(const char*action){
     if(pthread_create(&thread,NULL,pc2_wemod_worker,j)==0)pthread_detach(thread);
     else {pc2_wemod_busy=0;free(j);if(pc2_wemod_status)set_label(pc2_wemod_status,"Could not start helper thread.");}
 }
-static void on_pc2_wemod_detect(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("status");}
+static void on_pc2_wemod_detect(GtkButton*b,void*d){(void)b;(void)d;wand_detect_start();}
 static void on_pc2_wemod_install(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("install");}
 static void on_pc2_wemod_patch(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("patch");}
 static void on_pc2_wemod_restore(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("restore");}
@@ -3925,13 +3925,22 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
     GtkWidget*cc=box(GTK_ORIENTATION_VERTICAL,8);style(cc,"card");pack(cc,label("Managed Cheat Engine Provider (.CT)","card-title"),0);GtkWidget*cd=label("GameWeld uses the official Cheat Engine Linux package as the native bridge and a shared Windows CE companion in windowsbin. Steam handoff joins the verified Proton session; Heroic handoff waits for the real game process and asks Heroic to launch Windows CE as an alternate executable using that game's configured Wine/Proton runner. Install the bridge and Windows companion once. Cheat Engine itself is not bundled inside GameWeld.","muted");gtk_label_set_line_wrap((GtkLabel*)cd,TRUE);pack(cc,cd,0);G.cheat_engine_installer_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.cheat_engine_installer_entry,"Official CheatEngineLinux771.zip or Windows CE installer/ZIP");pack(cc,G.cheat_engine_installer_entry,0);G.cheat_engine_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.cheat_engine_entry,"Managed native Linux CE appears here after install");pack(cc,G.cheat_engine_entry,0);G.cheat_table_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.cheat_table_entry,"No .CT table configured for selected game");pack(cc,G.cheat_table_entry,0);GtkWidget*cr0=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*ceauto=button("Download + Install Linux CE","action");GtkWidget*cedl=button("Open Official Linux ZIP","action");GtkWidget*cewin=button("Open Official Windows CE","action");GtkWidget*cei=button("Choose CE Package","action");g_signal_connect_data(ceauto,"clicked",(GCallback)on_download_install_managed_cheat_engine,NULL,NULL,0);g_signal_connect_data(cedl,"clicked",(GCallback)on_open_cheat_engine_download,NULL,NULL,0);g_signal_connect_data(cewin,"clicked",(GCallback)on_open_cheat_engine_windows_download,NULL,NULL,0);g_signal_connect_data(cei,"clicked",(GCallback)on_choose_cheat_engine_installer,NULL,NULL,0);pack(cr0,ceauto,0);pack(cr0,cedl,0);pack(cr0,cewin,0);pack(cr0,cei,0);pack(cc,cr0,0);GtkWidget*cr1=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*ceinstall=button("Install Selected Package","action");GtkWidget*ced=button("Detect / Refresh CE","action");GtkWidget*cce=button("Choose Existing CE","action");GtkWidget*cct=button("Choose .CT Table","action");g_signal_connect_data(ceinstall,"clicked",(GCallback)on_install_managed_cheat_engine,NULL,NULL,0);g_signal_connect_data(ced,"clicked",(GCallback)on_detect_managed_cheat_engine,NULL,NULL,0);g_signal_connect_data(cce,"clicked",(GCallback)on_choose_cheat_engine,NULL,NULL,0);g_signal_connect_data(cct,"clicked",(GCallback)on_choose_cheat_table,NULL,NULL,0);pack(cr1,ceinstall,0);pack(cr1,ced,0);pack(cr1,cce,0);pack(cr1,cct,0);pack(cc,cr1,0);GtkWidget*cr2=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*cte=button("Clear External CE","action");GtkWidget*ctt=button("Clear Table","action");g_signal_connect_data(cte,"clicked",(GCallback)on_clear_cheat_engine,NULL,NULL,0);g_signal_connect_data(ctt,"clicked",(GCallback)on_clear_cheat_table,NULL,NULL,0);pack(cr2,cte,0);pack(cr2,ctt,0);pack(cc,cr2,0);G.cheat_table_status=label("Select a game first.","good");gtk_label_set_line_wrap((GtkLabel*)G.cheat_table_status,TRUE);pack(cc,G.cheat_table_status,0);pack(right,cc,0);
     if(pc2_discovery_only()){
         GtkWidget*eh=box(GTK_ORIENTATION_VERTICAL,10);style(eh,"card");
-        pack(eh,label("WeMod Enhancer — Integrated Linux Patcher","card-title"),0);
-        GtkWidget*info=label("Uses e-gleba/wemod_enhancer's upstream Python/C Linux release directly inside GameWeld. Detect your installed WeMod, then Patch or Restore it here. Patch automatically installs the verified upstream helper if missing. The original WeMod app.asar is backed up before modification; no separate patcher GUI is needed.","muted");
+        pack(eh,label("WeMod Enhancer — Patch / Restore","card-title"),0);
+        GtkWidget*info=label("GameWeld already has a Wand / WeMod installation scanner. Select the correct existing client below; multiple installed versions are never chosen automatically. WeMod Enhancer is a separate upstream patcher, NOT a new Wand or Proton install. Patch/Restore uses your selected client's original-file backup.","muted");
         gtk_label_set_line_wrap((GtkLabel*)info,TRUE);pack(eh,info,0);
+        pack(eh,label("EXISTING WAND / WEMOD CLIENT INSTALLATIONS","section-kicker"),0);
+        wand_detected_combo=gtk_combo_box_text_new();
+        gtk_combo_box_text_append_text((GtkComboBoxText*)wand_detected_combo,"Searching existing Steam, Heroic, Lutris and Wine prefixes...");
+        gtk_combo_box_set_active((GtkComboBox*)wand_detected_combo,0);
+        g_signal_connect_data(wand_detected_combo,"changed",(GCallback)wand_detect_changed,NULL,NULL,0);
+        pack(eh,wand_detected_combo,0);
         pc2_wemod_install_entry=gtk_entry_new();
         gtk_entry_set_placeholder_text((GtkEntry*)pc2_wemod_install_entry,
-            "Optional: WeMod folder containing WeMod.exe (auto-detects ~/wemod-launcher/wemod_data/wemod_bin)");
+            "Selected Wand/WeMod app-version folder containing resources/app.asar");
         pack(eh,pc2_wemod_install_entry,0);
+        /* Reuse the read-only PC1 discovery model, not the retired patcher UI. */
+        G.wand_patcher_prefix_entry=gtk_entry_new();
+        G.wand_patcher_install_entry=pc2_wemod_install_entry;
         GtkWidget*choose=button("WeMod Enhancer: Choose Folder","action");
         g_signal_connect_data(choose,"clicked",(GCallback)on_pc2_wemod_choose,NULL,NULL,0);
         pack(eh,choose,0);
@@ -3946,43 +3955,13 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         g_signal_connect_data(restore,"clicked",(GCallback)on_pc2_wemod_restore,NULL,NULL,0);
         pack(controls,detect,0);pack(controls,install,0);pack(controls,patch,0);
         pack(controls,restore,0);pack(eh,controls,0);
-        pc2_wemod_status=label("Ready. Select Detect first; all actions use explicit confirmation.","muted");
+        pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
+        G.wand_patcher_status=pc2_wemod_status;
         pack(eh,pc2_wemod_status,0);
         pack(right,eh,0);
+        wand_detect_start();
     }
-    GtkWidget*wc=box(GTK_ORIENTATION_VERTICAL,9);style(wc,"card");
-    pack(wc,label("Wand / WeMod Patcher (experimental)","card-title"),0);
-    GtkWidget*wi=label("Integrates optionally with k1tbyte/Wand-Enhancer 2.1.1.0 using a user-built WandEnhancer.exe. GameWeld can inspect a selected Wine prefix, create an independent original-file snapshot and restore it. Launching the upstream Windows WPF/.NET 4.8 patcher through Wine is experimental and may not work. No patcher binary, license patch, or executable downloader is bundled.","muted");gtk_label_set_line_wrap((GtkLabel*)wi,TRUE);pack(wc,wi,0);
-    pack(wc,label("INSTALLED WAND / WEMOD","section-kicker"),0);
-    wand_detected_combo=gtk_combo_box_text_new();
-    gtk_combo_box_text_append_text((GtkComboBoxText*)wand_detected_combo,"Searching installed Wand/WeMod…");
-    gtk_combo_box_set_active((GtkComboBox*)wand_detected_combo,0);
-    g_signal_connect_data(wand_detected_combo,"changed",(GCallback)wand_detect_changed,NULL,NULL,0);
-    pack(wc,wand_detected_combo,0);
-    GtkWidget *wscan=button("Find Wand automatically / Scan again","primary-action");
-    g_signal_connect_data(wscan,"clicked",(GCallback)on_wand_detect,NULL,NULL,0);pack(wc,wscan,0);
-    GtkWidget *wadvanced=gtk_expander_new("Manual location (advanced, if Wand was not found)");
-    GtkWidget *wadbox=box(GTK_ORIENTATION_VERTICAL,7);
-    gtk_container_add(wadvanced,wadbox);pack(wc,wadvanced,0);
-    G.wand_patcher_prefix_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.wand_patcher_prefix_entry,"Wand location (filled automatically)");
-    g_signal_connect_data(G.wand_patcher_prefix_entry,"changed",(GCallback)wand_detect_manual_prefix,NULL,NULL,0);
-    pack(wadbox,G.wand_patcher_prefix_entry,0);
-    GtkWidget*wpr=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*wpc=button("Choose Wine prefix…","action");g_signal_connect_data(wpc,"clicked",(GCallback)on_wand_patcher_choose_prefix,NULL,NULL,0);pack(wpr,wpc,0);pack(wadbox,wpr,0);
-    G.wand_patcher_install_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.wand_patcher_install_entry,"Specific Wand/WeMod app-version folder (optional; needed if multiple)");pack(wadbox,G.wand_patcher_install_entry,0);
-    GtkWidget*winstall=button("Choose App Version Folder…","action");g_signal_connect_data(winstall,"clicked",(GCallback)on_wand_patcher_choose_install,NULL,NULL,0);pack(wadbox,winstall,0);
-    G.wand_patcher_exe_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.wand_patcher_exe_entry,"Path to self-built WandEnhancer.exe (optional for audit/backup)");pack(wc,G.wand_patcher_exe_entry,0);
-    GtkWidget*wex=button("Choose WandEnhancer.exe…","action");g_signal_connect_data(wex,"clicked",(GCallback)on_wand_patcher_choose_exe,NULL,NULL,0);pack(wc,wex,0);
-    GtkWidget*wesource=button("Wand-Enhancer Source / Build Instructions","action");g_signal_connect_data(wesource,"clicked",(GCallback)on_wand_enhancer_source,NULL,NULL,0);pack(wc,wesource,0);
-    GtkWidget*wp=button("Smart Prepare Wand — Verify + Backup","primary-action");
-    g_signal_connect_data(wp,"clicked",(GCallback)on_wand_patcher_prepare,NULL,NULL,0);pack(wc,wp,0);
-    GtkWidget*wrow=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*wa=button("Inspect Wand","action");GtkWidget*wb=button("Backup Original","action");GtkWidget*wr=button("Restore Backup","action");GtkWidget*wl=button("Launch External Patcher (Wine)","action");
-    g_signal_connect_data(wa,"clicked",(GCallback)on_wand_patcher_audit,NULL,NULL,0);g_signal_connect_data(wb,"clicked",(GCallback)on_wand_patcher_backup,NULL,NULL,0);g_signal_connect_data(wr,"clicked",(GCallback)on_wand_patcher_restore,NULL,NULL,0);g_signal_connect_data(wl,"clicked",(GCallback)on_wand_patcher_launch,NULL,NULL,0);
-    pack(wrow,wa,0);pack(wrow,wb,0);pack(wrow,wr,0);pack(wc,wrow,0);
-    gtk_button_set_label((GtkButton*)wl,"External Windows patcher needs a validated classic Wine runner (unsupported for Proton)");
-    gtk_widget_set_sensitive(wl,FALSE);pack(wc,wl,0);
-    G.wand_patcher_status=label("Looking for installed Wand automatically…","muted");gtk_label_set_line_wrap((GtkLabel*)G.wand_patcher_status,TRUE);pack(wc,G.wand_patcher_status,0);pack(right,wc,0);
-    wand_detect_start();
     GtkWidget*scard=box(GTK_ORIENTATION_VERTICAL,8);style(scard,"card");pack(scard,label("Steam Direct Launch Cleanup","card-title"),0);GtkWidget*sd=label("Older pre-GameWeld builds could leave the legacy wand-steam-wrap hook in a game's Steam Launch Options. Steam can still invoke that obsolete hook and leave a terminal attached to the game. This cleanup removes only LaunchOptions entries that still reference wand-steam-wrap and creates a timestamped localconfig.vdf backup first.","muted");gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(scard,sd,0);GtkWidget*sbtn=button("Remove Legacy Steam Hooks","action");g_signal_connect_data(sbtn,"clicked",(GCallback)on_clean_legacy_hooks,NULL,NULL,0);pack(scard,sbtn,0);G.steam_cleanup_status=label("After cleanup, restart Steam once before testing direct Play.","good");gtk_label_set_line_wrap((GtkLabel*)G.steam_cleanup_status,TRUE);pack(scard,G.steam_cleanup_status,0);pack(right,scard,0);pack(right,card("Safety","Use native profiles, local trainers and Cheat Engine tables for single-player/offline games. Do not use them in anti-cheat protected or competitive multiplayer modes. No provider bypasses anti-cheat systems.",NULL),0);return outer;}
 static GtkWidget *build_about(void){GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,16);margins(p,24);gtk_container_add(outer,p);GtkWidget*hero=box(GTK_ORIENTATION_VERTICAL,6);gtk_widget_set_halign(hero,GTK_ALIGN_CENTER);GtkWidget*wm=asset_image("gameweld-brand-logo.png",540,180);if(wm){gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}else{wm=label("GameWeld",NULL);gtk_widget_set_name(wm,"section-title");gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}GtkWidget*v=label("0.7.0 PC1 • Game & Trainer Management","page-subtitle");gtk_widget_set_halign(v,GTK_ALIGN_CENTER);pack(hero,v,0);pack(p,hero,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*c1=box(GTK_ORIENTATION_VERTICAL,8);style(c1,"panel");pack(c1,label("WHAT IT DOES","section-kicker"),0);pack(c1,label("Unified Steam, Steam non-Steam shortcut, Heroic and Lutris game discovery\nLutris Test 4 keeps the Test 3 GE-Proton/UMU and classic Wine resolver, launches through Lutris, validates the exact live prefix/runtime owner, and hands assigned/custom local trainers into that same session with no generic fallback\nTrainer Library with conservative automatic matching\nDedicated Aurora / Cheat Evolution manager launch prefixes\nOverview Launch With hub for assigned trainers, Cheat Engine .CT tables, WeMod, Aurora, Cheat Evolution and custom trainer EXEs\nSteam non-Steam Cheat Evolution uses a field-validated restart-free live attach path: configured shortcuts keep Steam rungameid, while unconfigured shortcuts start only the selected resolved Windows target through Steam’s already-running runtime service with STEAM_COMPAT_LAUNCHER_SERVICE=proton injected for that launch. Steam stays open, shortcuts.vdf is never edited, exact App0/service provenance validation rejects unrelated Steam sessions, and the UI now reports restart-free handoff readiness explicitly\nSelected-game launch choices stay visible on Overview; each game can save or reset a one-click default while manager buttons retain explicit launch/close control\nSaved defaults drive the primary Play action; manager defaults now enforce game-first ordering before manager attachment\nSerialized Steam WeMod provider preparation with staging recovery and correct one-shot gate arming\nHeroic WeMod retains verified native .NET 4.8 + DWriteCore preparation, repairs stale GameWeld temporary Wand-runner residue before launch, refreshes the true Heroic game runtime from disk, follows exact launcher-to-game executable handoffs, then attaches Wand through the same live Heroic Wine prefix; readiness rejects Proton/UMU argv wrappers and requires both exact processes to remain live\nSteam shortcut local-trainer handoff now rejects Steam runtime wrappers as fake game PIDs and waits for the final mapped game window to remain stable before starting the trainer, preventing early attachment to black bootstrap surfaces\nLive manager attachment to compatible running game sessions\nCompatibility Engine v2 recipe inspection\nValidated live-session trainer handoff\nManaged Heroic FLiNG compatibility sessions\nPrivacy-scoped diagnostics and support bundles","muted"),0);GtkWidget*c2=box(GTK_ORIENTATION_VERTICAL,8);style(c2,"panel");pack(c2,label("DESIGN PRINCIPLES","section-kicker"),0);pack(c2,label("Game-first navigation\nOne clear primary action per context\nLauncher-native runtime ownership\nVisible readiness before launch\nAdvanced controls kept out of the main workflow","muted"),0);pack(cols,c1,1);pack(cols,c2,1);pack(p,cols,0);GtkWidget*f=label("Open source • MIT • Play more, your way.","muted");gtk_widget_set_halign(f,GTK_ALIGN_CENTER);pack(p,f,0);return outer;}
 
