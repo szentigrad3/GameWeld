@@ -103,6 +103,9 @@ def safe_unpack(archive: Path, destination: Path) -> None:
     with tarfile.open(archive, "r:xz") as src:
         members = src.getmembers()
         for member in members:
+            # Standard tar archives may include a harmless "." root directory.
+            if member.isdir() and member.name in (".", "./"):
+                continue
             name = PurePosixPath(member.name)
             if (
                 name.is_absolute() or not name.parts
@@ -115,6 +118,8 @@ def safe_unpack(archive: Path, destination: Path) -> None:
                 if member.size > MAX_UNPACKED or total > MAX_UNPACKED:
                     raise ValueError("Upstream archive exceeds extracted size limit")
         for member in members:
+            if member.isdir() and member.name in (".", "./"):
+                continue
             name = PurePosixPath(member.name)
             target = destination.joinpath(*name.parts)
             if member.isdir():
