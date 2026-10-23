@@ -2327,6 +2327,65 @@ static int pc2_steam_launch_allowed(void){
     const char*flag=getenv("GAMEWELD_PC2_ENABLE_STEAM_LAUNCH");
     return pc2_discovery_only()&&flag&&!strcmp(flag,"1");
 }
+/* A game-only Steam request must not be logged as successful until we can
+ * inspect the Steam command's result and same-user process association.
+ * This worker is opt-in and never starts any trainer or changes settings. */
+typedef struct {
+    char appid[32],game_name[256],output[4096];
+    int confirmed;
+} PC2SteamLaunchJob;
+static int pc2_steam_launch_busy=0;
+static gboolean pc2_steam_launch_done(gpointer data){
+    PC2SteamLaunchJob*j=(PC2SteamLaunchJob*)data;
+    pc2_steam_launch_busy=0;
+    const char *state=strstr(j->output,"Launch result: FAILED")?"FAILED":
+        strstr(j->output,"Launch result: STEAM_ASSOCIATION_OBSERVED")?"ASSOCIATED PROCESS OBSERVED":
+        "UNCONFIRMED";
+    log_line("PC2 Steam launch [%s] %s (app %s): %.3000s",state,j->game_name,j->appid,
+             j->output[0]?j->output:"No launch-helper result.");
+    if(G.selected>=0&&G.selected<G.game_count&&
+       !strcmp(G.games[G.selected].appid,j->appid)&&G.library_detail_status){
+        set_label(G.library_detail_status,!strcmp(state,"FAILED")?
+            "Steam launch FAILED. Check Activity for the command error.":
+            !strcmp(state,"UNCONFIRMED")?
+            "Steam launch UNCONFIRMED. Check Steam's Downloads/game status and Activity.":
+            "Steam process association observed; game window and trainer still unverified.");
+    }
+    free(j);return FALSE;
+}
+static void *pc2_steam_launch_worker(void *data){
+    PC2SteamLaunchJob*j=(PC2SteamLaunchJob*)data;
+    int pipes[2];if(pipe(pipes)<0){
+        snprintf(j->output,sizeof j->output,"Launch result: FAILED (could not create result pipe)");
+        g_idle_add(pc2_steam_launch_done,j);return NULL;
+    }
+    pid_t pid=fork();
+    if(pid==0){
+        setpgid(0,0);
+        close(pipes[0]);dup2(pipes[1],STDOUT_FILENO);
+        dup2(pipes[1],STDERR_FILENO);close(pipes[1]);
+        clear_desktop_activation_env();
+        char helper[2048];
+        const char*appdir=getenv("APPDIR");
+        if(appdir&&*appdir)
+            snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-steam-handoff.py",appdir);
+        else snprintf(helper,sizeof helper,"gameweld-steam-handoff.py");
+        execlp("python3","python3",helper,"launch","--appid",j->appid,
+               "--confirm",(char*)NULL);
+        _exit(127);
+    }
+    close(pipes[1]);
+    if(pid<0){
+        close(pipes[0]);
+        snprintf(j->output,sizeof j->output,"Launch result: FAILED (could not start helper)");
+    } else {
+        j->confirmed=bounded_child_output(pid,pipes[0],j->output,sizeof j->output,28);
+        if(!j->output[0])snprintf(j->output,sizeof j->output,
+            "Launch result: FAILED (helper exited without reporting a status)");
+    }
+    g_idle_add(pc2_steam_launch_done,j);
+    return NULL;
+}
 static void on_pc2_steam_game_only(GtkButton*b,void*d){
     (void)b;(void)d;
     if(!pc2_steam_launch_allowed()){
@@ -2375,10 +2434,25 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
     if(!pc2_steam_launch_allowed()){
         log_line("PC2 launch opt-in was revoked; nothing launched.");return;
     }
-    /* A direct Steam argv handoff: no shell and no HTTP mutation endpoint. */
-    spawn_detached("steam","-applaunch",id);
-    log_line("PC2 Steam game-only handoff requested for %.140s (App ID %s). No trainer started. Actual game startup must be confirmed in Steam.",g->name,id);
-    if(G.library_detail_status)set_label(G.library_detail_status,"Steam game-only handoff requested; check Steam. No trainer launched by PC2.");
+    if(pc2_steam_launch_busy){
+        log_line("PC2 Steam launch already in progress; no duplicate request sent.");
+        return;
+    }
+    PC2SteamLaunchJob*j=(PC2SteamLaunchJob*)calloc(1,sizeof *j);
+    if(!j){log_line("PC2 Steam launch FAILED: could not allocate helper state.");return;}
+    snprintf(j->appid,sizeof j->appid,"%s",id);
+    snprintf(j->game_name,sizeof j->game_name,"%.240s",g->name);
+    pthread_t thread;
+    pc2_steam_launch_busy=1;
+    if(pthread_create(&thread,NULL,pc2_steam_launch_worker,j)==0){
+        pthread_detach(thread);
+        log_line("PC2 Steam launch check started for %.140s (app %s). Waiting for Steam command result; no trainer requested.",g->name,id);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            "Checking Steam launch response; a command request is not game startup confirmation.");
+    }else{
+        pc2_steam_launch_busy=0;free(j);
+        log_line("PC2 Steam launch FAILED: could not start launch-check worker.");
+    }
 }
 static void on_pc2_steam_session_check(GtkButton*b,void*d){
     (void)b;(void)d;
