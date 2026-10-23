@@ -375,3 +375,34 @@ bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
 ```
 
 If Steam launch remains FAILED or UNCONFIRMED, test the same Steam app through its native CLI (`steam -applaunch 2353250`) outside GameWeld. If both routes fail, collect Steam/Proton startup diagnostics first; do not repatch WeMod or change the game's compatibility settings merely because the patch-file check passed.
+
+
+## PC2 Test 16 — optional live Wand handoff for an already running Steam Windows game
+
+The maintainer confirmed that Astrometica's startup crash came from an incorrect Steam command line on their system and was corrected. **Do not change the working Steam launch options** or repatch Wand just to test live integration.
+
+Test 16 adds **Launch Wand in Running Steam Game (opt-in)** to the Overview and integrated WeMod Settings. This differs from Test 15's **Launch Steam game only** and Test 15's **Check Wand Patch (no game launch)**. The Test 16 button is a real *Wand client launch attempt*, not a read-only inspection or a complete trainer attachment implementation.
+
+After per-action Yes confirmation, the helper:
+
+- requires one explicitly selected existing Wand client app-version folder and matching verified patch files, including the ASAR backup and pinned DLL proxy
+- requires a valid installed standard Steam game ID, an existing game installation directory, and a same-user **live Windows .exe process candidate** with exact Steam app-ID environment association
+- requires exactly one live existing Steam Proton prefix and Proton executable, recovered from that running session's \`STEAM_COMPAT_DATA_PATH\` and \`STEAM_COMPAT_TOOL_PATHS\`; a conflicting/missing runtime **blocks** the handoff
+- starts the selected client EXE through the observed live Proton's \`runinprefix\` with \`WINEDLLOVERRIDES=version=n,b\`, passing the active Steam compatibility environment into that child **only**
+- never changes Steam launch options, installs/repairs Proton, changes another Wand installation, or silently launches a game
+
+This is an experimental same-prefix process launch. It **may change state inside the game's existing Proton/Wine prefix** as any Windows application startup can. It does not certify a visible Wand window, successful DLL load, WeMod login, presence of an Astrometica trainer, or successful in-game attachment. The frontend logs the separate command result. A Windows \`.exe\` process role is heuristic evidence, not a verified signed process identity. No multiplayer/anti-cheat bypass is attempted.
+
+Test:
+
+\`\`\`bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+bash scripts/pc2-test16-aio-report.sh    # runs only disposable fake Steam/Proton/Wand fixtures
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+\`\`\`
+
+In Settings, pick the existing patched **Wand app-12.55.0** installation. Launch **Astrometica** normally in Steam, leave its game process running, then in GameWeld select Astrometica and click **Launch Wand in Running Steam Game (opt-in)** and confirm Yes. Inspect Activity for **Live Wand Proton runinprefix request: SENT** or a specific fail-closed reason. A missing direct Wand.exe in the chosen app-version, missing live Proton path or only Steam helpers is an explicit block, not evidence the trainer is broken. Report: \`build/pc2-source/pc2-test16-aio-report.txt\`.
+
+This is not yet complete trainer functionality; the first real CachyOS field result must establish whether the client opens and whether its trainer can interact with the running game.
