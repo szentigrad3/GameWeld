@@ -22,6 +22,8 @@ func TestHTTPContract(t *testing.T) {
     t.Setenv("HOME",t.TempDir())
     for _,test:=range []struct{method,path string;code int;ok bool}{
         {"GET","/api/status",200,true},
+        {"GET","/api/compatibility",200,true},
+        {"POST","/api/compatibility",405,false},
         {"GET","/api/job",200,true},
         {"GET","/api/verify",409,false},
         {"GET","/api/health?appid=10",200,true},
