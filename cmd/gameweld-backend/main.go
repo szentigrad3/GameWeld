@@ -154,12 +154,24 @@ func router() http.Handler {
     mux.HandleFunc("/api/status", func(w http.ResponseWriter,r *http.Request) {
         if !method(w,r,"GET") { return }
         inv := steamInventory()
+        compatibility := inspectCompatibility(inv.Libraries)
+        toolPath := ""
+        if compatibility.State == "detected_unverified" {
+            for _, candidate := range compatibility.Candidates {
+                if candidate.State == "detected_unverified" { toolPath = candidate.Path; break }
+            }
+        }
         response(w,200,map[string]any{
             "version":version, "steam_roots":inv.Roots, "libraries":inv.Libraries,"games":inv.Games,
             "wand_installed":false,"wand_healthy":false,"base_compatible":false,
-            "base_proton":"","wand_tool":"",
-            "verify_message":"Compatibility setup unavailable in PC2 development backend",
+            "base_proton":"","wand_tool":toolPath,
+            "verify_message":compatibility.Message,
         },"")
+    })
+    mux.HandleFunc("/api/compatibility",func(w http.ResponseWriter,r *http.Request){
+        if !method(w,r,"GET") { return }
+        inv := steamInventory()
+        response(w,200,inspectCompatibility(inv.Libraries),"")
     })
     mux.HandleFunc("/api/job",func(w http.ResponseWriter,r *http.Request){
         if !method(w,r,"GET") { return }
