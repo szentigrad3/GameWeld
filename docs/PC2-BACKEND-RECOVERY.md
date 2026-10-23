@@ -48,6 +48,21 @@ bash scripts/pc2-test5-aio-report.sh
 
 The read-only, path-redacted result is written to `build/pc2-source/pc2-test5-aio-report.txt`. This check does not delete or repair installed files. Keep PC1 as the working game/trainer version.
 
+## PC2 Test 5 field result and Test 6 legacy compatibility handling
+
+Maintainer's 23 October 2026 Test 5 report: **PASS**, 122 Steam manifests, one compatibility candidate with `proton` executable and valid Steam tool registration, and `metadata_state=missing` (`WAND-HYBRID.json` **absent**, not invalid). Health remains **unverified**. Do **not** replace a working Proton installation based on this bookkeeping absence.
+
+PC2 now reports the descriptive state `legacy_metadata_missing` when the registered tool and Proton executable are present but the optional GameWeld sidecar is absent. The frontend receives the detected tool path for diagnostic display, **while all provider health/compatible flags stay false**. This is not a license to patch/install Proton or evidence of working trainer runtime.
+
+Next AIO:
+
+```bash
+git pull --ff-only
+bash scripts/pc2-test6-aio-report.sh
+```
+
+The read-only report is written to `build/pc2-source/pc2-test6-aio-report.txt`; it checks discovery and fail-closed health. No paths are printed. Passing this check does not validate live game/trainer launches; those remain PC1-only.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
