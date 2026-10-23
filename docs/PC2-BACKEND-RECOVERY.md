@@ -358,3 +358,20 @@ bash scripts/gameweld-wand-enhancer.sh --launch
 - [ ] No mutating action is presented as available; Steam/Heroic/Lutris launches stay on the validated PC1 AppImage.
 - [ ] User-built Wand-Enhancer detection and explicit invocation tested in an **isolated** Wine prefix. If not working, the optional extension remains disabled without preventing GameWeld startup.
 - [ ] A future independently built PC2 AppImage has its own hash, standalone tests, licensing provenance, release notes and separate tag; PC1 test results must not transfer to it.
+
+
+## PC2 Test 15 follow-up — distinguish Wand patch inspection from Steam startup
+
+After the 23 October 2026 Astrometica report showed `WeMod Enhancer [game-test] OK` but no game launched, the GTK labels were corrected to remove an ambiguous promise. **Check Wand Patch (no game launch)** on Overview and **Verify Wand Patch + Game (no launch)** in Settings only inspect files and read-only runtime evidence; they do **not** start Steam, Astrometica, Wand or a trainer. The Activity log now explicitly says so when a patch check starts.
+
+The actual launch action remains **Launch Steam game only (opt-in)**. Run the branch's source launcher with the explicit startup flag, select **Astrometica (Steam 2353250)**, click the game-only launch button, and answer Yes. Test 15's asynchronous Steam helper checks the command and same-user app-ID process evidence, then reports **FAILED**, **STEAM_ASSOCIATION_OBSERVED** or **UNCONFIRMED** in Activity. Run the patch check again once the game is actually open to inspect current runtime evidence. None of these statuses proves a WeMod trainer has attached.
+
+```bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+bash scripts/pc2-test15-aio-report.sh 2353250  # non-launching contract test
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+```
+
+If Steam launch remains FAILED or UNCONFIRMED, test the same Steam app through its native CLI (`steam -applaunch 2353250`) outside GameWeld. If both routes fail, collect Steam/Proton startup diagnostics first; do not repatch WeMod or change the game's compatibility settings merely because the patch-file check passed.
