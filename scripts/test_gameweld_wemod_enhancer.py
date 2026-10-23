@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 
 HELPER = Path(__file__).resolve().parent / "gameweld-wemod-enhancer.py"
@@ -152,6 +153,12 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertEqual(permitted.returncode, 0, permitted.stdout+permitted.stderr)
         self.assertIn("Wand Wine smoke-test launch requested", permitted.stdout)
         self.assertIn("Client UI appeared / DLL loaded / login / trainer attach: NOT VERIFIED",permitted.stdout)
+        for _ in range(100):
+            if capture.exists():
+                break
+            time.sleep(0.01)
+        self.assertTrue(capture.exists(), "Fake Wine helper not invoked")
+        self.assertEqual(capture.read_text(encoding="utf-8").strip(), "version=n,b")
 
     def test_missing_wemod_folder_is_not_patched(self):
         response = self.cmd("patch", "--install-dir", str(self.root / "not-found"), "--confirm")
