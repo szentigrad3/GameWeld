@@ -178,6 +178,11 @@ func router() http.Handler {
         inv := steamInventory()
         response(w,200,inspectCompatibility(inv.Libraries),"")
     })
+    mux.HandleFunc("/api/runtime-integrity",func(w http.ResponseWriter,r *http.Request){
+        if !method(w,r,"GET") { return }
+        inv:=steamInventory()
+        response(w,200,inspectRuntime(inv.Libraries),"")
+    })
     mux.HandleFunc("/api/job",func(w http.ResponseWriter,r *http.Request){
         if !method(w,r,"GET") { return }
         response(w,200,map[string]any{"running":false,"action":"","message":"","progress":0,
