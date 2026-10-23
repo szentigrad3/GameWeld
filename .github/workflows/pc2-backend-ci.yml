@@ -118,6 +118,13 @@ jobs:
           test -s build/pc2-source/pc2-test14-aio-report.txt
           grep -Fq 'Result: PASS' build/pc2-source/pc2-test14-aio-report.txt
           grep -Fq 'Game running confirmed: false' build/pc2-source/pc2-test14-aio-report.txt
+      - name: Integrated WeMod Enhancer GUI helper fixtures
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_enhancer.py' -v
+          python3 scripts/gameweld-wemod-enhancer.py status
+          python3 -m py_compile scripts/gameweld-wemod-enhancer.py
+          grep -Fq 'WeMod Enhancer: Patch WeMod' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+          grep -Fq 'WeMod Enhancer: Restore Original' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
