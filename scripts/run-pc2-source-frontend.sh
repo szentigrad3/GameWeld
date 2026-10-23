@@ -35,7 +35,7 @@ fi
   go test ./...
   go build -trimpath -o "$OUT/wand-native-backend" .
 )
-gcc -O2 -pipe -pthread \
+gcc -O2 -pipe -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
   "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c" \
   -o "$OUT/gameweld" \
   $(pkg-config --cflags --libs gtk+-3.0)
