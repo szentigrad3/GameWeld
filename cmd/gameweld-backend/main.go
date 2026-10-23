@@ -189,6 +189,16 @@ func router() http.Handler {
         response(w,200,inspectLocalPayloadParity(inv.Libraries),"")
     })
     mux.HandleFunc("/api/launch-preview",steamLaunchPreviewHandler)
+    mux.HandleFunc("/api/steam-session",func(w http.ResponseWriter,r *http.Request){
+        if !method(w,r,"GET") {return}
+        appid:=r.URL.Query().Get("appid")
+        inv:=steamInventory()
+        if _,ok:=steamLaunchPlan(inv.Games,appid);!ok{
+            response(w,404,nil,"No installed Steam manifest matches that app ID; session observation unavailable")
+            return
+        }
+        response(w,200,inspectSteamSession("/proc",appid),"")
+    })
     mux.HandleFunc("/api/job",func(w http.ResponseWriter,r *http.Request){
         if !method(w,r,"GET") { return }
         response(w,200,map[string]any{"running":false,"action":"","message":"","progress":0,
