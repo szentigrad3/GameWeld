@@ -134,7 +134,37 @@ def safe_unpack(archive: Path, destination: Path) -> None:
             # Never preserve untrusted SUID or directory modes.
             target.chmod(0o644)
     if not valid_patcher(destination):
-        raise ValueError("Upstream Linux package lacks bin/wemod_enhancer.py and bin/version.dll")
+        # CPack tarballs can contain a single top-level package directory
+        # (e.g. wemod_enhancer/bin/...) rather than a flat bin/ layout.
+        # Do not guess between multiple candidates or follow archive links.
+        candidates = []
+        for script in destination.rglob("wemod_enhancer.py"):
+            root = script.parent.parent
+            if (
+                root != destination
+                and root.is_relative_to(destination)
+                and valid_patcher(root)
+            ):
+                candidates.append(root)
+        if len(candidates) == 1:
+            nested = candidates[0]
+            items = list(nested.iterdir())
+            if any((destination / item.name).exists() for item in items):
+                raise ValueError("Upstream nested package conflicts with destination")
+            for item in items:
+                item.rename(destination / item.name)
+    if not valid_patcher(destination):
+        seen = sorted(
+            str(path.relative_to(destination))
+            for path in destination.rglob("*")
+            if path.is_file() and (
+                "wemod_enhancer" in path.name or path.name == "version.dll"
+            )
+        )[:12]
+        raise ValueError(
+            "Upstream Linux package lacks the required patcher/DLL layout; "
+            "observed: " + (", ".join(seen) if seen else "(no expected files)")
+        )
 
 
 def install_helper() -> Path:
