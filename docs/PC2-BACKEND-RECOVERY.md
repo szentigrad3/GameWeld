@@ -77,6 +77,25 @@ bash scripts/pc2-test7-aio-report.sh
 
 A text report is saved to `build/pc2-source/pc2-test7-aio-report.txt` without installation paths. It can include DLL fingerprints, which identify file contents, but not user account data. Avoid attaching raw Proton files. Keep PC1 for live game launches.
 
+## PC2 Test 7 field result and Test 8 local payload parity
+
+Both uploaded Test 7 reports (23 October 2026) agree: AIO **PASS**, 122 Steam games, existing `GE-Proton-Wand-SHA256` registered and executable, metadata sidecar absent, and **both** DLL files readable in known GE-Proton layouts. SHA256 fingerprints:
+
+- `x86_64-windows/crypt32.dll`: `685d73c195b8a785799149a2ff43a405f39e96825122cd95f24603dcd5c39b67`
+- `i386-windows/crypt32.dll`: `bec8949d931332ed8f82161d9eb085e56ac279aa3a1ca5b7b5bd149353f28a3a`
+
+Neither fingerprint has yet been compared with a trusted upstream source; **this does not establish authenticity, license status, or live trainer functionality**.
+
+Test 8 adds a **local-only parity comparison**. It looks for payloads at `WAND_PAYLOAD_ROOT` when explicitly set to an absolute directory, or under `${XDG_DATA_HOME:-$HOME/.local/share}/wand-native/payload/crypt32`, as defined in `scripts/wand-proton-manager.sh`. For each architecture it compares installed DLL SHA256 to the local payload file. Report states distinguish `matches_local_payload`, `differs_from_local_payload` and `comparison_unavailable` (including missing payload). It refuses symlinked payload boundaries and does not expose filesystem paths in the AIO report, create files, download assets or mutate the installed tool.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+bash scripts/pc2-test8-aio-report.sh
+```
+
+Result: `build/pc2-source/pc2-test8-aio-report.txt`. A match confirms local byte equality **only**; neither result should be used to automatically repair Proton or enable trainers. The original PC1 remains the known working release; source-built PC2 stays discovery-only.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
