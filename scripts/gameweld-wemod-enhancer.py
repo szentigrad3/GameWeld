@@ -342,6 +342,36 @@ def verify_patch_files(folder: Path, helper: Path) -> tuple[bool, list[str]]:
     return good, messages
 
 
+def resolve_read_only_client(candidates: list[Path], helper: Path) -> tuple[Path | None, str]:
+    """Only read-only checks may infer one uniquely patched Wand installation.
+
+    Modifying Patch and Restore still require a user-selected unique client.
+    Inference requires BOTH an original ASAR backup and matching pinned proxy.
+    """
+    if len(candidates) == 1:
+        return candidates[0], "one existing client installation"
+    if not candidates:
+        return None, "no existing Wand/WeMod client detected"
+    if not valid_patcher(helper):
+        return None, "multiple client installations and upstream patch reference unavailable"
+    verified = []
+    for candidate in candidates[:200]:
+        # Cheap prefilter before hashing potentially large ASAR files.
+        if not (candidate / "resources/app.asar.backup").is_file():
+            continue
+        if not (candidate / "version.dll").is_file():
+            continue
+        if verify_patch_files(candidate, helper)[0]:
+            verified.append(candidate)
+            if len(verified) > 1:
+                break
+    if len(verified) == 1:
+        return verified[0], "only client with matching, verified Enhancer patch files"
+    if len(verified) > 1:
+        return None, "more than one patched Wand/WeMod client; manual selection required"
+    return None, "multiple clients, none uniquely verified as patched; select one manually"
+
+
 def validate_appid(appid: str) -> str:
     if not appid.isascii() or not appid.isdecimal() or str(int(appid)) != appid or not (0 < int(appid) < 2**32):
         raise ValueError("A valid decimal Steam app ID is required for the selected game check")
@@ -452,8 +482,13 @@ def main() -> int:
         print("Status is read-only; no WeMod files have been changed.")
         return 0
     if args.action in ("verify", "game-test"):
+        folder, reason = resolve_read_only_client(candidates, installed_helper_dir())
         if folder is None:
-            raise ValueError("Choose exactly one existing Wand/WeMod app-version folder")
+            raise ValueError(
+                "Cannot identify the patched client: " + reason +
+                ". Open Settings → WeMod Enhancer, select the correct app-version, then retry."
+            )
+        print("Selected Wand client: " + folder.name + " (" + reason + ")")
         healthy, result = verify_patch_files(folder, installed_helper_dir())
         for line in result:
             print(line)
