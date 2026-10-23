@@ -512,6 +512,7 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
                     "services.exe", "explorer.exe", "wineserver", "wineboot.exe",
                     "svchost.exe", "rpcss.exe", "plugplay.exe",
                     "steam.exe", "crashpad.exe", "crashreport.exe",
+                    "wand.exe", "wemod.exe", "update.exe",
                 }
                 game_candidate = comm.endswith(".exe") and comm not in excluded
                 tool = None
@@ -560,7 +561,8 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
 
 def launch_wand_in_live_game(folder: Path, helper: Path,
                              appid: str, game_dir: str,
-                             proc_root: Path = Path("/proc")) -> None:
+                             proc_root: Path = Path("/proc"),
+                             *, software_render: bool = False) -> None:
     """Opt-in external client launch using the running game's exact Proton.
 
     Never runs a random Wine binary against an active Steam Proton prefix.
@@ -600,11 +602,43 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     environment["STEAM_COMPAT_APP_ID"] = appid
     environment["WINEDLLOVERRIDES"] = "version=n,b"
     command = [str(session["proton"]), "runinprefix", str(executable)]
-    child = subprocess.Popen(
-        command, cwd=str(folder), env=environment,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, start_new_session=True
-    )
+    if software_render:
+        # Official Wand troubleshooting recommends --disable-gpu for blank
+        # Electron windows. Never use --no-sandbox or change global settings.
+        command.extend(("--disable-gpu", "--disable-gpu-compositing"))
+    # Capture only the explicitly confirmed client session. Do not change
+    # Steam's launch options, Wine registry, caches, or existing game prefixes.
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if state_home and not Path(state_home).is_absolute():
+        raise ValueError("XDG_STATE_HOME must be an absolute path")
+    state = (Path(state_home) if state_home else Path.home() / ".local/state") / "gameweld"
+    state.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log = state / ("wand-live-" + appid + ".log")
+    if log.is_symlink():
+        raise ValueError("Refusing to write a Wand launch log through a symbolic link")
+    # Avoid an indefinitely growing file. Previous launch logs are retained
+    # only when they fit; next launch truncates this app-scoped log.
+    descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(
+                ("GameWeld PC2 Wand live handoff: App ID " + appid + "\n"
+                 + "Mode: " + ("software rendering" if software_render else "normal") + "\n"
+                 + "Renderer and login status: NOT VERIFIED\n"
+                 + "==== Proton/Wand child output ====\n").encode("utf-8"))
+            stream.flush()
+            child = subprocess.Popen(
+                command, cwd=str(folder), env=environment,
+                stdin=subprocess.DEVNULL, stdout=stream,
+                stderr=subprocess.STDOUT, start_new_session=True
+            )
+    except OSError as exc:
+        raise RuntimeError(
+            "Could not start the verified Proton/Wand child: " + type(exc).__name__
+        ) from exc
+    print("Wand startup mode: " +
+          ("software rendering (--disable-gpu)" if software_render else "normal"), flush=True)
+    print("Wand startup diagnostic log: " + str(log), flush=True)
     # A Proton launcher can exit after handing off to another process; exit 0
     # still does not attest to a visible Wand window or trainer attachment.
     import time
@@ -612,7 +646,7 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     code = child.poll()
     if code is not None and code != 0:
         raise RuntimeError(f"Live Proton handoff command exited with status {code}")
-    print("Live Wand Proton runinprefix request: SENT", flush=True)
+    print("Live Wand Proton runinprefix request: SENT (window contents not verified)", flush=True)
     print("Same running-game Proton/prefix used; no Steam launch options modified.", flush=True)
     print("Wand window, version.dll actual load, login and game trainer attachment: NOT VERIFIED", flush=True)
 
@@ -622,6 +656,7 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "install", "patch", "restore", "verify", "game-test", "launch-test", "live-launch"))
     parser.add_argument("--install-dir", help="Folder containing WeMod.exe and resources/app.asar")
     parser.add_argument("--confirm", action="store_true", help="Required for install/patch/restore and launch actions")
+    parser.add_argument("--software-render", action="store_true", help="Retry live Wand with Electron GPU acceleration disabled")
     parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
     parser.add_argument("--appid", default="")
     parser.add_argument("--game-name", default="")
@@ -630,6 +665,8 @@ def main() -> int:
     parser.add_argument("--wine-prefix", default="")
     parser.add_argument("--runtime-hint", choices=("native", "windows-associated", "unknown"), default="unknown")
     args = parser.parse_args()
+    if args.software_render and args.action != "live-launch":
+        raise ValueError("--software-render is only supported for a confirmed live Wand launch")
     candidates = available_clients(args.install_dir) if args.action != "install" else []
     folder = candidates[0] if len(candidates) == 1 else None
     if args.action == "status":
@@ -681,7 +718,8 @@ def main() -> int:
         if args.game_provider != "steam":
             raise ValueError("Live Wand handoff is limited to a selected standard Steam game")
         launch_wand_in_live_game(folder, installed_helper_dir(),
-                                 args.appid, args.game_dir)
+                                 args.appid, args.game_dir,
+                                 **({"software_render": True} if args.software_render else {}))
         return 0
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
