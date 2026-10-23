@@ -168,6 +168,22 @@ bash scripts/run-pc2-source-frontend.sh
 
 The report is saved at `build/pc2-source/pc2-test11-aio-report.txt`. AIO PASS confirms the scanner/API contracts only; for game-specific process association, the selected game must be running while inspection occurs. The first real session-observation field test is still pending.
 
+## Test 11 CachyOS field report and Test 12 targeted process evidence
+
+Maintainer-uploaded `pc2-test11-aio-report.txt` (23 October 2026): **PASS**, 122 Steam installed manifests, GET session API PASS, **`no_process_evidence` with zero associations**, and all mutation endpoints locked (405 / 501). Test 11 sampled the **first valid Steam manifest in the discovered library**, not necessarily the selected or previously launched game. That result is **not proof AdVenture Capitalist stopped or failed to launch**. The maintainer has separately confirmed that AdVenture Capitalist launched successfully via explicit Steam game-only opt-in.
+
+Test 12 corrects the target-selection blind spot without broadening process rights. It explicitly inspects the standard installed Steam game **App ID `346900`** (AdVenture Capitalist) using three short, read-only observations of the existing endpoint. It does not launch a game, change Steam settings, send signals, attach a trainer, or print PID/process-name/path information in the AIO report. Exact Steam app-ID environment matches are **associations only**, never verified executable identity, prefix ownership or trainer readiness. Absence of matches is not evidence the game is stopped.
+
+```bash
+cd /mnt/other/github/GameWeld
+git pull --ff-only
+# Start AdVenture Capitalist from Steam or the guarded PC2 opt-in UI first.
+# With the game still open, use another terminal:
+bash scripts/pc2-test12-aio-report.sh 346900
+```
+
+Output: `build/pc2-source/pc2-test12-aio-report.txt`. An argument for another valid Steam app ID is supported. CI environments lacking the specified Steam manifest report the target check as **SKIPPED** while validating the API and fail-closed contract. Even with matches, session/trainer parity is still not validated; maintain the PC1 baseline.
+
 ## Wand-Enhancer: optional upstream extension
 
 Upstream: https://github.com/k1tbyte/Wand-Enhancer  
