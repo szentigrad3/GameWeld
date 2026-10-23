@@ -139,6 +139,13 @@ jobs:
           test -f "$TMP_XDG/gameweld/tools/wemod-enhancer/v1.0.7/bin/wemod_enhancer.py"
           test -f "$TMP_XDG/gameweld/tools/wemod-enhancer/v1.0.7/bin/version.dll"
           rm -rf -- "$TMP_XDG"
+      - name: Test 15 checked Steam command without real game launch
+        run: |
+          bash -n scripts/pc2-test15-aio-report.sh
+          bash scripts/pc2-test15-aio-report.sh 2353250
+          test -s build/pc2-source/pc2-test15-aio-report.txt
+          grep -Fq 'Steam command launched by this diagnostic: false' build/pc2-source/pc2-test15-aio-report.txt
+          grep -Fq 'Result: PASS' build/pc2-source/pc2-test15-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
