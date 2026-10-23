@@ -15,7 +15,7 @@ bash scripts/run-pc2-source-frontend.sh
 
 This builds a small, source-controlled Go executable named `wand-native-backend` and the GTK C frontend into `build/pc2-source/` (ignored by Git). The frontend launches the backend using `WAND_NATIVE_BACKEND`. **No ZIP is needed.**
 
-The backend is **read-only** for this phase. It implements the GTK startup handshake, `GET /api/status`, `GET /api/job`, `GET /api/verify`, `GET /api/health`, and explicit HTTP 501 failures for `POST /api/install` and `POST /api/set-game`. It discovers installed Steam games from VDF manifests. Heroic/Lutris discovery remains frontend-script-owned. It cannot install Wand, stage a provider, set Proton, repair a prefix or hand off to a trainer. Those actions must not be interpreted as tested or working simply because the GUI opens.
+The backend is **read-only** for this phase. It implements the GTK startup handshake, `GET /api/status`, `GET /api/job`, `GET /api/verify`, `GET /api/health`, and explicit HTTP 501 failures for `POST /api/install` and `POST /api/set-game`. It discovers installed Steam games from VDF manifests. Heroic/Lutris discovery remains frontend-script-owned. It cannot install Wand, stage a provider, set Proton, repair a prefix or hand off to a trainer. **This limitation applies to the Go backend, not every legacy GTK UI callback**: some local Settings/Trainer Library controls still operate directly on files. During a PC2 smoke test, use game discovery and UI navigation only; do not click install, patch, backup, restore or launch controls. Those actions must not be interpreted as tested or working simply because the GUI opens.
 
 Do **not** merge this backend into the working `release/0.7.0-pc1` branch or distribute a PC2 AppImage until full behaviour and test parity exist.
 
@@ -51,7 +51,7 @@ bash scripts/gameweld-wand-enhancer.sh --launch
 - This helper is **not a native Linux port**. The WPF/.NET Framework 4.8 desktop may not run correctly under Wine/Proton. No working Wine combination is claimed here. Install/repair .NET only by the user's own explicit action; avoid altering the active Steam/WeMod prefix automatically.
 - Do not silently enable the optional remote web panel. Upstream describes unpaired plain HTTP over port 3223; anyone who can reach it may control the active trainer. Enable it only on a trusted LAN/VPN, never directly expose it to the internet.
 - The launcher does **not** implement account/subscription activation, client-integrity bypass, injection patches, custom JS, automatic patching, or automatic downloads. Those are not prerequisites for GameWeld's core Steam/Heroic/Lutris functionality.
-- A future GameWeld GUI button/settings UI can wrap `--status` and `--launch` after live Linux compatibility testing; the current feature branch provides the source integration foundation, not an in-app button.
+- The existing experimental **Settings → Wand / WeMod Patcher** panel now links directly to upstream source/build instructions and accepts a self-built executable. Its **Launch External Patcher** control remains intentionally disabled pending a validated Wine runner. The standalone helper provides an explicit developer-only launch path. This is not yet a validated full in-app integration.
 
 ### Validation checklist before PC2 promotion
 
