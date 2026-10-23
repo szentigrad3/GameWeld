@@ -42,11 +42,15 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
             'directory=Path(sys.argv[sys.argv.index("--install-dir")+1])\n'
             'asar=directory/"resources/app.asar"\n'
             'backup=directory/"resources/app.asar.backup"\n'
+            'dll=directory/"version.dll"\n'
+            'helper_dll=Path(__file__).parent/"version.dll"\n'
             'if operation=="patch":\n'
             '    if not backup.exists():backup.write_bytes(asar.read_bytes())\n'
             '    asar.write_bytes(b"PATCHED-FIXTURE")\n'
+            '    dll.write_bytes(helper_dll.read_bytes())\n'
             'elif operation=="restore":\n'
             '    asar.write_bytes(backup.read_bytes())\n'
+            '    if dll.exists():dll.unlink()\n'
             'else:raise SystemExit(8)\n'
             'print("fake fixture operation:", operation)\n',
             encoding="utf-8",
@@ -83,6 +87,71 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         restored = self.cmd("restore", "--install-dir", str(self.client), "--confirm")
         self.assertEqual(restored.returncode, 0, restored.stdout)
         self.assertEqual(source.read_bytes(), b"ORIGINAL-FIXTURE")
+
+    def test_verify_patch_file_evidence_is_read_only(self):
+        kwargs = ("--install-dir", str(self.client))
+        before = self.cmd("verify", *kwargs)
+        self.assertEqual(before.returncode, 2, before.stdout)
+        self.assertIn("Client patch file check: NOT VERIFIED", before.stdout)
+        self.assertEqual((self.client / "resources/app.asar").read_bytes(), b"ORIGINAL-FIXTURE")
+        self.assertEqual(self.cmd("patch", *kwargs, "--confirm").returncode, 0)
+        verified = self.cmd("verify", *kwargs)
+        self.assertEqual(verified.returncode, 0, verified.stdout)
+        self.assertIn("Client patch file check: PASS", verified.stdout)
+        self.assertIn("Enhancer DLL proxy: MATCHES", verified.stdout)
+        self.assertIn("version=n,b", verified.stdout)
+        self.assertEqual(self.cmd("restore", *kwargs, "--confirm").returncode, 0)
+        restored = self.cmd("verify", *kwargs)
+        self.assertNotEqual(restored.returncode, 0)
+        self.assertIn("Client patch file check: NOT VERIFIED", restored.stdout)
+
+    def test_game_test_native_linux_vs_windows_evidence(self):
+        kwargs = ("--install-dir", str(self.client))
+        patched = self.cmd("patch", *kwargs, "--confirm")
+        self.assertEqual(patched.returncode, 0, patched.stdout)
+        game = self.root / "steamapp"
+        game.mkdir()
+        base = ("game-test", *kwargs,
+                "--appid", "346900", "--game-name", "AdVenture Capitalist",
+                "--game-provider", "steam", "--game-dir", str(game))
+        native = self.cmd(*base, "--runtime-hint", "native")
+        self.assertEqual(native.returncode, 0, native.stdout)
+        self.assertIn("NATIVE LINUX ELF observed", native.stdout)
+        self.assertIn("Windows Wand trainer not ready", native.stdout)
+        self.assertIn("Trainer available for this specific game: NOT VERIFIED", native.stdout)
+        self.assertEqual((self.client / "resources/app.asar").read_bytes(), b"PATCHED-FIXTURE")
+        windows = self.cmd(*base, "--runtime-hint", "windows-associated")
+        self.assertEqual(windows.returncode, 0, windows.stdout)
+        self.assertIn("Windows-process name ASSOCIATED", windows.stdout)
+        self.assertIn("live in-game trainer not yet proven", windows.stdout)
+        invalid = self.cmd("game-test", *kwargs, "--appid", "346900;sh",
+            "--game-provider", "steam")
+        self.assertNotEqual(invalid.returncode, 0)
+
+    def test_wand_smoke_launch_uses_existing_prefix_and_native_override(self):
+        kwargs = ("--install-dir", str(self.client))
+        patched = self.cmd("patch", *kwargs, "--confirm")
+        self.assertEqual(patched.returncode, 0, patched.stdout)
+        fake_prefix = self.root / "existing-prefix"
+        (fake_prefix / "drive_c").mkdir(parents=True)
+        commands = self.root / "bin"
+        commands.mkdir()
+        capture = self.root / "wine-env.txt"
+        wine = commands / "wine"
+        wine.write_text("#!/bin/sh\\nprintf '%s\\\\n' \\\"$WINEDLLOVERRIDES\\\" > \\\"$GAMEWELD_TEST_CAPTURE\\\"\\n", encoding="utf-8")
+        wine.chmod(0o755)
+        env = self.environment.copy()
+        env["PATH"] = str(commands) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
+        env["GAMEWELD_TEST_CAPTURE"] = str(capture)
+        command = [sys.executable, str(HELPER), "launch-test", *kwargs,
+                   "--wine-prefix", str(fake_prefix)]
+        blocked = subprocess.run(command,env=env,text=True,capture_output=True,timeout=20)
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertFalse(capture.exists())
+        permitted = subprocess.run(command+["--confirm"],env=env,text=True,capture_output=True,timeout=20)
+        self.assertEqual(permitted.returncode, 0, permitted.stdout+permitted.stderr)
+        self.assertIn("Wand Wine smoke-test launch requested", permitted.stdout)
+        self.assertIn("Client UI appeared / DLL loaded / login / trainer attach: NOT VERIFIED",permitted.stdout)
 
     def test_missing_wemod_folder_is_not_patched(self):
         response = self.cmd("patch", "--install-dir", str(self.root / "not-found"), "--confirm")
