@@ -577,6 +577,7 @@ static GtkWidget *label(const char *s, const char *cls) {
 }
 /* Defined below with the explicit opt-in game-only Steam handler. */
 static int pc2_steam_launch_allowed(void);
+static void on_pc2_wemod_verify_selected(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
@@ -611,7 +612,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Test Wand for Selected Game") && strcmp(s, "Verify Wand Patch + Game") && strcmp(s, "Launch Patched Wand (Smoke Test)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -3746,7 +3747,12 @@ static void on_wand_detect(GtkButton *b,gpointer d){(void)b;(void)d;wand_detect_
 static GtkWidget *pc2_wemod_status=NULL;
 static GtkWidget *pc2_wemod_helper_status=NULL;
 static int pc2_wemod_busy=0;
-typedef struct {char action[20],install[2048],output[4096];int success;} PC2WeModJob;
+typedef struct {
+    char action[20],install[2048],output[4096];
+    char appid[192],game_name[256],game_provider[32],game_dir[2048];
+    char game_prefix[2048],wine_prefix[2048],runtime_hint[32];
+    int success;
+} PC2WeModJob;
 static const char *pc2_wemod_helper(void){
     static char p[2048];const char *appdir=getenv("APPDIR");
     if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-wemod-enhancer.py",appdir);
@@ -3772,10 +3778,21 @@ static void *pc2_wemod_worker(void *data){
     pid_t pid=fork();
     if(pid==0){
         close(pipefd[0]);dup2(pipefd[1],STDOUT_FILENO);dup2(pipefd[1],STDERR_FILENO);close(pipefd[1]);
-        const char*argv[10];int n=0;
+        const char*argv[32];int n=0;
         argv[n++]="python3";argv[n++]=pc2_wemod_helper();argv[n++]=j->action;
         if(j->install[0]){argv[n++]="--install-dir";argv[n++]=j->install;}
-        if(strcmp(j->action,"status"))argv[n++]="--confirm";
+        if(j->wine_prefix[0]){argv[n++]="--wine-prefix";argv[n++]=j->wine_prefix;}
+        if(!strcmp(j->action,"game-test")){
+            argv[n++]="--game-provider";argv[n++]=j->game_provider;
+            argv[n++]="--appid";argv[n++]=j->appid;
+            argv[n++]="--game-name";argv[n++]=j->game_name;
+            argv[n++]="--game-dir";argv[n++]=j->game_dir;
+            argv[n++]="--game-prefix";argv[n++]=j->game_prefix;
+            argv[n++]="--runtime-hint";argv[n++]=j->runtime_hint;
+        }
+        if(!strcmp(j->action,"install")||!strcmp(j->action,"patch")||
+           !strcmp(j->action,"restore")||!strcmp(j->action,"launch-test"))
+            argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char*const*)argv);_exit(127);
     }
@@ -3794,7 +3811,8 @@ static void pc2_wemod_action(const char*action){
     if(pc2_wemod_busy){log_line("WeMod Enhancer: operation already running.");return;}
     const char*install=pc2_wemod_install_entry?
         gtk_entry_get_text((GtkEntry*)pc2_wemod_install_entry):"";
-    if(strcmp(action,"status")){
+    if(!strcmp(action,"patch")||!strcmp(action,"restore")||
+       !strcmp(action,"install")||!strcmp(action,"launch-test")){
         const char*message=!strcmp(action,"patch")?
             "Install WeMod Enhancer from the pinned upstream Linux release if necessary, then PATCH the selected WeMod client?\\n\\n"
             "The upstream patch modifies WeMod's application files, subscription display, update behavior and integrity handling. "
@@ -3803,6 +3821,10 @@ static void pc2_wemod_action(const char*action){
             !strcmp(action,"restore")?
             "Restore the original WeMod files from the upstream WeMod Enhancer backup?\\n\\n"
             "Close WeMod before continuing. No game or Proton settings are changed.":
+            !strcmp(action,"launch-test")?
+            "Launch the selected patched Wand client in its EXISTING Wine prefix?\\n\\n"
+            "This only tests whether Wand opens. It requests native-first version.dll loading; "
+            "it does NOT start a selected game, join its Proton session, or prove trainer attachment.":
             "Download and install the pinned upstream WeMod Enhancer Linux CLI into GameWeld's private tools directory? "
             "This does not modify WeMod until Patch is selected.";
         GtkWidget*dialog=gtk_message_dialog_new((GtkWindow*)G.window,GTK_DIALOG_MODAL,
@@ -3814,9 +3836,57 @@ static void pc2_wemod_action(const char*action){
     PC2WeModJob*j=calloc(1,sizeof *j);if(!j)return;
     snprintf(j->action,sizeof j->action,"%s",action);
     if(install&&*install)snprintf(j->install,sizeof j->install,"%s",install);
+    int selected_prefix=wand_detected_combo?gtk_combo_box_get_active((GtkComboBox*)wand_detected_combo):-1;
+    if(selected_prefix>=0&&selected_prefix<wand_detected_count)
+        snprintf(j->wine_prefix,sizeof j->wine_prefix,"%s",wand_detected[selected_prefix].prefix);
+    if(!strcmp(action,"game-test")){
+        if(G.selected<0||G.selected>=G.game_count){
+            log_line("Wand game test requires a game selected in Overview or Library.");
+            if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,"Select the game you want to test in Overview or Library first.");
+            free(j);return;
+        }
+        Game*g=&G.games[G.selected];
+        snprintf(j->game_name,sizeof j->game_name,"%s",g->name);
+        snprintf(j->game_provider,sizeof j->game_provider,"%s",
+            game_is_steam_shortcut(g)?"other":game_is_steam(g)?"steam":game_is_heroic(g)?"heroic":game_is_lutris(g)?"lutris":"other");
+        snprintf(j->appid,sizeof j->appid,"%s",g->appid);
+        snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
+        if(g->prefix[0])snprintf(j->game_prefix,sizeof j->game_prefix,"%s",g->prefix);
+        snprintf(j->runtime_hint,sizeof j->runtime_hint,"unknown");
+        if(game_is_steam(g)&&!game_is_steam_shortcut(g)){
+            int valid=j->appid[0]&&j->appid[0]!='0'&&strlen(j->appid)<=10;
+            for(const char*q=j->appid;*q;q++)if(!isdigit((unsigned char)*q))valid=0;
+            if(valid){
+                char endpoint[180],*response=NULL;int code=0;
+                snprintf(endpoint,sizeof endpoint,"/api/steam-native-executable?appid=%s",j->appid);
+                if(http_request("GET",endpoint,NULL,&response,&code)>=0&&code==200&&response){
+                    const char*field=strstr(response,"\"native_elf_candidate_count\"");
+                    if(field){const char*colon=strchr(field,':');if(colon&&strtol(colon+1,NULL,10)>0)
+                        snprintf(j->runtime_hint,sizeof j->runtime_hint,"native");}
+                }
+                free(response);response=NULL;code=0;
+                if(strcmp(j->runtime_hint,"native")){
+                    snprintf(endpoint,sizeof endpoint,"/api/steam-process-roles?appid=%s",j->appid);
+                    if(http_request("GET",endpoint,NULL,&response,&code)>=0&&code==200&&response&&
+                       strstr(response,"windows_executable_candidate"))
+                        snprintf(j->runtime_hint,sizeof j->runtime_hint,"windows-associated");
+                }
+                free(response);
+            }
+        }
+    }
+    if(!strcmp(action,"launch-test")&&!j->wine_prefix[0]){
+        log_line("Wand smoke test: select an existing detected Wine installation; none was selected.");
+        if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,
+            "Select an existing Wand installation from the list; a known Wine prefix is required for this launch.");
+        free(j);return;
+    }
     pc2_wemod_busy=1;
     if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,
-        !strcmp(action,"status")?"Checking the separate WeMod Enhancer helper...":
+        !strcmp(action,"status")?"Checking the WeMod Enhancer helper...":
+        !strcmp(action,"verify")||!strcmp(action,"game-test")?
+            "Inspecting patched Wand files and selected game's runtime (read-only)...":
+        !strcmp(action,"launch-test")?"Requesting Wand test launch with existing Wine prefix...":
         "Running upstream WeMod Enhancer. Keep the WeMod client closed during this operation.");
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_wemod_worker,j)==0)pthread_detach(thread);
@@ -3826,6 +3896,8 @@ static void on_pc2_wemod_detect(GtkButton*b,void*d){(void)b;(void)d;wand_detect_
 static void on_pc2_wemod_install(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("install");}
 static void on_pc2_wemod_patch(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("patch");}
 static void on_pc2_wemod_restore(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("restore");}
+static void on_pc2_wemod_verify_selected(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("game-test");}
+static void on_pc2_wemod_launch_test(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("launch-test");}
 static void on_pc2_wemod_choose(GtkButton*b,void*d){
     (void)b;(void)d;
     GtkWidget*dialog=gtk_file_chooser_dialog_new("Choose WeMod folder containing WeMod.exe",
@@ -3875,6 +3947,14 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         g_signal_connect_data(restore,"clicked",(GCallback)on_pc2_wemod_restore,NULL,NULL,0);
         pack(controls,detect,0);pack(controls,install,0);pack(controls,patch,0);
         pack(controls,restore,0);pack(eh,controls,0);
+        GtkWidget*testrow=box(GTK_ORIENTATION_HORIZONTAL,7);
+        GtkWidget*verify=button("Verify Wand Patch + Game","primary-action");
+        GtkWidget*launch_test=button("Launch Patched Wand (Smoke Test)","action");
+        g_signal_connect_data(verify,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
+        g_signal_connect_data(launch_test,"clicked",(GCallback)on_pc2_wemod_launch_test,NULL,NULL,0);
+        pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
+        GtkWidget*note=label("Verification checks patched files against the upstream proxy and the currently selected game's observed runtime. Smoke Test opens Wand in its existing Wine prefix only; it does not verify trainer attachment or launch the game.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
         G.wand_patcher_status=pc2_wemod_status;
