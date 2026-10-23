@@ -160,6 +160,51 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertTrue(capture.exists(), "Fake Wine helper not invoked")
         self.assertEqual(capture.read_text(encoding="utf-8").strip(), "version=n,b")
 
+    def test_overview_read_only_auto_resolves_unique_patched_client(self):
+        from unittest.mock import patch
+        second = self.root / "app-1.2.3"
+        (second / "resources").mkdir(parents=True)
+        (second / "resources/app.asar").write_bytes(b"UNPATCHED VERSION")
+        clients = [self.client, second]
+        with patch.object(bridge, "discover_existing_clients", return_value=clients):
+            self.assertIsNone(bridge.detect_wemod())
+            response = self.cmd("game-test", "--game-provider", "steam",
+                "--appid", "2533250", "--game-name", "Astrometica")
+            # In the subprocess the real scanner sees no test fixtures.
+            self.assertNotEqual(response.returncode, 0)
+        self.assertEqual(self.cmd("patch", "--install-dir", str(self.client), "--confirm").returncode, 0)
+        resolved, why = bridge.resolve_read_only_client(clients, self.helper)
+        self.assertEqual(resolved, self.client.resolve())
+        self.assertIn("only client", why)
+        untouched = (second / "resources/app.asar").read_bytes()
+        self.assertEqual(untouched, b"UNPATCHED VERSION")
+        # Read-only auto-resolution must never authorize patch/restore on
+        # multiple installations without the user's explicit selection.
+        with patch.object(bridge, "discover_existing_clients", return_value=clients):
+            self.assertIsNone(bridge.detect_wemod())
+
+    def test_auto_resolve_refuses_two_patched_clients(self):
+        one = self.client
+        two = self.root / "app-5.6.7"
+        (two / "resources").mkdir(parents=True)
+        (two / "resources/app.asar").write_bytes(b"FIRST")
+        (two / "resources/app.asar.backup").write_bytes(b"ORIGINAL")
+        (two / "version.dll").write_bytes((self.helper / "bin/version.dll").read_bytes())
+        (one / "resources/app.asar.backup").write_bytes(b"ORIGINAL")
+        (one / "resources/app.asar").write_bytes(b"FIRST")
+        (one / "version.dll").write_bytes((self.helper / "bin/version.dll").read_bytes())
+        resolved, reason = bridge.resolve_read_only_client([one, two], self.helper)
+        self.assertIsNone(resolved)
+        self.assertIn("more than one patched", reason)
+
+    def test_auto_resolve_refuses_multiple_unpatched_clients(self):
+        other = self.root / "app-0.1.2"
+        (other / "resources").mkdir(parents=True)
+        (other / "resources/app.asar").write_bytes(b"VANILLA")
+        resolved, reason = bridge.resolve_read_only_client([self.client, other], self.helper)
+        self.assertIsNone(resolved)
+        self.assertIn("none uniquely verified", reason)
+
     def test_missing_wemod_folder_is_not_patched(self):
         response = self.cmd("patch", "--install-dir", str(self.root / "not-found"), "--confirm")
         self.assertNotEqual(response.returncode, 0)
