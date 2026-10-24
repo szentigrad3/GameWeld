@@ -697,3 +697,16 @@ After updating the PC2 branch, rerun the existing opt-in disposable runtime test
     python3 scripts/pc2-crypt32-validation.py --runtime-probes --confirm --proton /mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton
 
 Do not rerun `--compile-probes`, overwrite the original candidate DLLs or disable GameWeld's release hash gate. If this still fails, read the **newest** session with `python3 scripts/pc2-crypt32-validation.py --diagnose-runtime` and inspect exact program/loader evidence before changing anything else.
+
+
+### Test22 next-stage loader failure — Win32 probes start, crypt32 import not proven
+
+On CachyOS the 24 October 2026 confirmed Test22 after fixing Steam game-shim routing ran `runinprefix` for both architectures in disposable session `isolated-d0254f4eeb22`. The x86_64 log shows the actual PE `x86_64-crypt32-property.exe` module and Windows kernelbase/kernel32/ucrtbase loading. The i386 log similarly loads `i386-crypt32-property.exe` and kernel libraries. Both test processes exited **53**, produced **zero GW_ marker lines**, and their logs did NOT show crypt32.dll being loaded. No certification result is available. A process exit status of 53 may be the low-byte representation of Windows 0xC0000135 (STATUS_DLL_NOT_FOUND), but the earlier logs only had WINEDEBUG=-all,+loaddll and do not by themselves prove which DLL/import failed.
+
+The Test22 script now runs an A/B baseline loader check in each NEW disposable test prefix. After bootstrap but BEFORE copying any newly compiled crypt32 DLLs, it runs both identical probe EXEs through Proton runinprefix using its shipped built-in crypt32=b. The probe prints GW_CRYPT32_MODULE before testing ID107; a baseline failure of the newer certificate property is allowed, because the control's goal is to prove main() was reached. If either probe fails before its first marker, Test22 fails closed and NEVER copies the candidates. With baseline confirmed, the script stages its candidates into ONLY that new prefix, executes both probes with native-only crypt32=n, and requests Wine +module,+loaddll,+seh diagnostic channels. It reports likely err:module, missing imports or Win32 loader failures with concise excerpts. No game launch, installed Steam Proton changes, historic hash bypass, or trainer patch is performed. The new --diagnose-runtime also reads the per-architecture built-in control logs on failure.
+
+Run AFTER git pull --ff-only (no rebuilding/recompilation necessary):
+
+    python3 scripts/pc2-crypt32-validation.py --runtime-probes --confirm --proton /mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton
+
+This command makes a brand-new disposable prefix and leaves previous logs intact. On failure `python3 scripts/pc2-crypt32-validation.py --diagnose-runtime` produces a read-only report of the newest session. A previously linked EXE and an exported DLL are NOT enough evidence of Windows loader compatibility; do not install either DLL until functional API tests pass.
