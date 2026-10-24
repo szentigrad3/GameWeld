@@ -45,6 +45,24 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", text)
         self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", text)
 
+    def test_4k_startup_maximizes_and_restore_size_uses_workarea(self):
+        self.assertIn("static gboolean pc2_startup_fit_monitor(void *unused)", text)
+        self.assertIn("gtk_window_maximize((GtkWindow*)G.window)", text)
+        self.assertIn("g_idle_add(pc2_startup_fit_monitor,NULL)", text)
+        self.assertIn("if(pc2_discovery_only())gtk_window_maximize", text)
+        self.assertIn("int ww=(sw*90)/100;", text)
+        self.assertIn("int wh=(sh*88)/100;", text)
+        self.assertIn("if(ww>maxw)ww=maxw;", text)
+        self.assertIn("if(wh>maxh)wh=maxh;", text)
+
+    def test_4k_does_not_force_old_window_geometry_after_startup(self):
+        self.assertIn("if(gtk_window_is_maximized((GtkWindow*)G.window))", text)
+        self.assertIn("gtk_window_unmaximize((GtkWindow*)G.window)", text)
+        self.assertIn("g_idle_add(force_mockup_geometry,NULL);", text)
+        self.assertIn("g_timeout_add(180,force_mockup_geometry,NULL);", text)
+        self.assertIn("if(pc2_discovery_only()){\n        /* Exactly one startup maximization", text)
+        self.assertIn("/* Preserve the former PC1 window sizing", text)
+
     def test_library_adapts_and_keeps_game_list_readable(self):
         self.assertIn("static void pc2_library_size_allocate(", text)
         self.assertIn("gtk_orientable_set_orientation(body", text)
