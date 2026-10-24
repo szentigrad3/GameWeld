@@ -4185,6 +4185,10 @@ static gboolean pc2_deckcheatz_install_done(void *data){
     int installed=j->ok&&pc2_deckcheatz_find_launcher(launcher,sizeof launcher);
     if(installed){
         log_line("DeckCheatz 1.x managed install: ready (%s). Steam options unchanged.",launcher);
+        if(strstr(j->output,"\"tkinter\": false"))
+            log_line("DeckCheatz warning: Python Tkinter is missing. Install your distribution's Tk package (CachyOS/Arch: tk) before running upstream dialogs.");
+        if(strstr(j->output,"\"venv\": false"))
+            log_line("DeckCheatz warning: Python venv module is missing; upstream may need the distribution's python-venv package.");
         if(G.library_detail_status)set_label(G.library_detail_status,
             "DeckCheatz managed 1.x is installed. You can preview or test the selected game.");
         if(j->resume_mode>=0){
