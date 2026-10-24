@@ -2,8 +2,8 @@
 """Steam-owned GameWeld + WeMod launch experiment (without Steam option edits).
 
 One user click requests Steam to launch its own game, verifies the real Windows
-game task in its exact Steam AppID/prefix, then starts an EXISTING WeMod binary
-in that SAME Proton prefix with "runinprefix". This does not use the
+game task in its exact Steam AppID/prefix, then joins the existing Proton Wine
+server to start an installed WeMod binary without a second Proton bootstrap. This does not use the
 DeckCheatz 1.x direct game-executable launch vector and cannot claim trainer
 attachment merely because WeMod started.
 
@@ -132,6 +132,100 @@ def begin_steam(appid: str) -> None:
         )
 
 
+def active_wine_handoff(plan: dict, game_pid: int,
+                        proc_root: Path = Path("/proc")) -> tuple[list[str], dict[str, str]]:
+    """Join the observed game's active wineserver; do NOT bootstrap Proton twice.
+
+    This follows the existing GameWeld Wand live-session method. Refuse an
+    ambiguous runtime or prefix instead of touching the wrong Wine session.
+    Only the exact game's read-only process environment is used. No launcher
+    settings, registry, prefixes, Steam files or game executable are changed.
+    """
+    prefix = Path(plan["compatdata"]).resolve(strict=True)
+    game_prefix = (prefix / "pfx").resolve(strict=True)
+    proton_root = Path(plan["proton"]).parent.resolve(strict=True)
+    wine = next((p for p in (
+        proton_root / "files/bin/wine",
+        proton_root / "files/bin/wine64",
+        proton_root / "files/lib/wine/x86_64-unix/wine",
+    ) if p.is_file() and os.access(p, os.X_OK)), None)
+    wineserver = next((p for p in (
+        proton_root / "files/bin/wineserver",
+        proton_root / "files/lib/wine/x86_64-unix/wineserver",
+    ) if p.is_file() and os.access(p, os.X_OK)), None)
+    if wine is None or wineserver is None:
+        raise ValueError("Selected Steam Proton runtime lacks Wine/wineserver binaries")
+
+    task = proc_root / str(game_pid)
+    try:
+        if task.stat().st_uid != os.getuid():
+            raise ValueError("Observed game process belongs to another user")
+        raw = (task / "environ").read_bytes()[:262145]
+        if len(raw) > 262144:
+            raise ValueError("Observed game environment is too large")
+    except OSError as exc:
+        raise ValueError("Game process exited before WeMod handoff") from exc
+
+    variables: dict[str, str] = {}
+    for token in raw.split(b"\\0"):
+        key, sep, value = token.partition(b"=")
+        if not sep:
+            continue
+        try:
+            name = key.decode("ascii")
+            if name in {
+                "WINEPREFIX", "WINELOADER", "WINESERVER", "WINEDEBUG",
+                "WINEDLLOVERRIDES", "WINEESYNC", "WINEFSYNC", "WINEARCH",
+                "LD_LIBRARY_PATH", "SteamAppId", "SteamGameId",
+                "STEAM_COMPAT_APP_ID", "STEAM_COMPAT_DATA_PATH",
+                "STEAM_COMPAT_TOOL_PATHS", "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+                "DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+            } or name.startswith(("PROTON_", "DXVK_", "VKD3D_")):
+                variables[name] = value.decode("utf-8")
+        except UnicodeError:
+            continue
+
+    if not any(variables.get(key) == plan["appid"] for key in
+               ("SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID")):
+        raise ValueError("Live process Steam AppID does not match selected game")
+    live_compat = variables.get("STEAM_COMPAT_DATA_PATH", "")
+    live_wineprefix = variables.get("WINEPREFIX", "")
+    if not (
+        (live_compat.startswith("/") and os.path.realpath(live_compat) == str(prefix))
+        or
+        (live_wineprefix.startswith("/") and
+         os.path.realpath(live_wineprefix) == str(game_prefix))
+    ):
+        raise ValueError("Live game's Wine prefix identity is different")
+    live_tools = variables.get("STEAM_COMPAT_TOOL_PATHS", "")
+    if live_tools and str(proton_root) not in {
+        os.path.realpath(value) for value in live_tools.split(":") if value.startswith("/")
+    }:
+        raise ValueError("Selected Proton tool differs from active game's runtime")
+
+    environment = os.environ.copy()
+    for name, value in variables.items():
+        if name not in {"PROTON_USE_X11_EXCLUSIVE"}:
+            environment[name] = value
+    display = environment.get("DISPLAY", "")
+    if not display:
+        raise ValueError("No X11/XWayland DISPLAY for the existing Wine window session")
+    environment["WINEPREFIX"] = str(game_prefix)
+    environment["WINELOADER"] = str(wine)
+    environment["WINESERVER"] = str(wineserver)
+    environment["STEAM_COMPAT_DATA_PATH"] = str(prefix)
+    environment["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = plan["steam_root"]
+    environment["STEAM_COMPAT_TOOL_PATHS"] = str(proton_root)
+    environment["STEAM_COMPAT_APP_ID"] = plan["appid"]
+    environment["SteamAppId"] = plan["appid"]
+    environment["SteamGameId"] = plan["appid"]
+    environment["WINE_GRAPHICS_DRIVER"] = "x11"
+    environment["PROTON_USE_X11_EXCLUSIVE"] = Path(plan["wemod_exe"]).name
+    environment.pop("LD_PRELOAD", None)
+    environment.pop("MANGOHUD", None)
+    return [str(wine), plan["wemod_exe"]], environment
+
+
 def launch(plan: dict, *, observer=None, start_steam=begin_steam,
            spawn=subprocess.Popen, timeout: float = GAME_TIMEOUT,
            log=None, proton_output: Path | None = None) -> dict:
@@ -154,18 +248,13 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
         emit("GAME_PROCESS_UNCONFIRMED: WeMod not started; Steam may still be loading the game")
         return {"state": "GAME_PROCESS_UNCONFIRMED", "trainer_verified": False}
     emit("GAME_PROCESS_IDENTITY_OBSERVED: " + ",".join(map(str, matched)))
-    environment = dict(os.environ)
-    environment.update({
-        "STEAM_COMPAT_DATA_PATH": plan["compatdata"],
-        "STEAM_COMPAT_CLIENT_INSTALL_PATH": plan["steam_root"],
-        "STEAM_COMPAT_TOOL_PATHS": str(Path(plan["proton"]).parent),
-        "STEAM_COMPAT_APP_ID": appid,
-        "SteamAppId": appid,
-        "SteamGameId": appid,
-    })
-    argv = [plan["proton"], "runinprefix", plan["wemod_exe"]]
-    emit("WEMOD_SAME_PREFIX_REQUESTED: existing runtime, no Steam Launch Options edits")
-    # Never discard Proton/WeMod errors in field builds. Only the selected
+    try:
+        argv, environment = active_wine_handoff(plan, matched[0])
+    except (OSError, ValueError) as exc:
+        emit("WEMOD_HANDOFF_BLOCKED: " + str(exc))
+        return {"state": "WEMOD_HANDOFF_BLOCKED", "trainer_verified": False}
+    emit("WEMOD_ACTIVE_WINESERVER_JOIN_REQUESTED: game-owned prefix; no second Proton bootstrap")
+    # Never discard Wine/WeMod errors in field builds. Only the selected
     # helper's stdout/stderr is captured (not the entire Steam/game environment).
     # Each session gets a new owner-only log, not a reusable public /tmp file.
     output_stream = None
