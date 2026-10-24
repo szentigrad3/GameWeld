@@ -118,6 +118,12 @@ jobs:
           test -s build/pc2-source/pc2-test14-aio-report.txt
           grep -Fq 'Result: PASS' build/pc2-source/pc2-test14-aio-report.txt
           grep -Fq 'Game running confirmed: false' build/pc2-source/pc2-test14-aio-report.txt
+      - name: DeckCheatz Proton resolver (read-only safety fixtures)
+        run: |
+          python3 -m py_compile scripts/gameweld-deckcheatz-proton.py
+          python3 scripts/test_gameweld_deckcheatz_proton.py
+          python3 scripts/test_gameweld_deckcheatz_direct.py
+          grep -Fq 'DeckCheatz 1.x — Preview selected game (read-only)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
       - name: Integrated WeMod Enhancer GUI helper fixtures
         run: |
           python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_enhancer.py' -v
