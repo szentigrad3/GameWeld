@@ -80,6 +80,12 @@ SVG
     cp "$APP/gameweld.svg" "$APP/usr/share/icons/hicolor/scalable/apps/gameweld.svg"
     cp "$APP/gameweld.svg" "$APP/.DirIcon"
 
+    # Ship GameWeld's primary notice even in private test packages. This does
+    # not establish rights to redistribute every bundled third-party library.
+    mkdir -p "$APP/usr/share/doc/gameweld"
+    install -m 0644 "$ROOT/LICENSE" "$APP/usr/share/doc/gameweld/LICENSE"
+    install -m 0644 "$ROOT/THIRD-PARTY.md" "$APP/usr/share/doc/gameweld/THIRD-PARTY.md"
+
     echo '=== Bundle host ELF dependencies with linuxdeploy ==='
     run_tool "$LINUXDEPLOY_BIN" \
         --appdir "$APP" \
@@ -127,6 +133,8 @@ APPRUN
         exit 7
     }
     sha256sum "$IMAGE" > "$IMAGE.sha256"
+    echo '=== Read-only extracted package audit ==='
+    bash "$ROOT/scripts/pc2-rc1-package-audit.sh" "$IMAGE"
     echo "Image: $IMAGE"
     echo "SHA256: $IMAGE.sha256"
     echo 'Result: PASS (LOCAL PACKAGING + NON-GUI SMOKE ONLY)'
