@@ -47,7 +47,12 @@ AIO_REPORT="$ROOT/build/pc2-source/deckcheatz-aio-report.txt"
     (cd "$ROOT/cmd/gameweld-backend" && go build -trimpath -o "$OUT/wand-native-backend" .)
     test -s "$OUT/wand-native-backend" || { printf '%s\n' 'FAIL: Go backend binary absent'; exit 6; }
     printf '%s\n' '=== Link complete GTK frontend (do not execute it) ==='
-    gcc -O2 -pipe -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
+    GUI_FLAGS=(-DGAMEWELD_PC2_DISCOVERY_ONLY=1)
+    if [[ "${GAMEWELD_PC2_PUBLIC_UI:-0}" == 1 ]]; then
+        GUI_FLAGS+=(-DGAMEWELD_PC2_PUBLIC_UI=1)
+        echo 'Compiling clean RC1-facing UI; developer-only controls remain excluded from presentation.'
+    fi
+    gcc -O2 -pipe -pthread "${GUI_FLAGS[@]}" \
         "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c" \
         -o "$OUT/gameweld" \
         $(pkg-config --cflags --libs gtk+-3.0)
