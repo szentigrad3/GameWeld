@@ -4148,11 +4148,13 @@ typedef struct {
     int resume_mode; /* -1=install only; 0=preview; 1=experimental test */
     int selected_index;
     int ok;
+    int operation; /* 0=install, 1=check updates, 2=update */
     char helper[4096];
     char output[8192];
 } PC2DeckCheatzInstallJob;
 
 static int pc2_deckcheatz_install_busy=0;
+static GtkWidget *pc2_deckcheatz_update_status=NULL;
 static void pc2_deckcheatz_flow(int experimental_launch);
 
 static int pc2_deckcheatz_find_launcher(char *target,size_t cap){
@@ -4185,6 +4187,45 @@ static gboolean pc2_deckcheatz_install_done(void *data){
     pc2_deckcheatz_install_busy=0;
     char launcher[4096]={0};
     int installed=j->ok&&pc2_deckcheatz_find_launcher(launcher,sizeof launcher);
+    if(j->operation==1){
+        if(j->ok&&strstr(j->output,"\"update_available\": true")){
+            log_line("DeckCheatz managed update available. Close WeMod before updating.");
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Update available. Close WeMod, then choose Update DeckCheatz (opt-in).");
+        }else if(j->ok&&strstr(j->output,"\"result\": \"up_to_date\"")){
+            log_line("DeckCheatz managed installation is up to date.");
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Managed DeckCheatz is up to date.");
+        }else if(j->ok&&strstr(j->output,"\"result\": \"not_managed\"")){
+            log_line("DeckCheatz checkout is user-managed; GameWeld will not overwrite it.");
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "External/unmanaged checkout: update it through its original installation method.");
+        }else {
+            log_line("DeckCheatz update check did not complete: %.700s",j->output);
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Update check failed; see the Activity log.");
+        }
+        free(j);return FALSE;
+    }
+    if(j->operation==2){
+        if(j->ok&&strstr(j->output,"\"result\": \"updated\"")){
+            char rollback[4096]={0};
+            json_string(j->output,"rollback_path",rollback,sizeof rollback);
+            log_line("DeckCheatz update completed; previous checkout retained: %s",
+                     rollback[0]?rollback:"(path recorded in installer)");
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "DeckCheatz updated. The previous checkout was kept as a rollback backup.");
+        }else if(j->ok&&strstr(j->output,"\"result\": \"up_to_date\"")){
+            log_line("DeckCheatz already up to date.");
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Managed DeckCheatz is up to date.");
+        }else{
+            log_line("DeckCheatz update blocked/failed; current checkout preserved: %.700s",j->output);
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Update not applied. Existing checkout preserved; see Activity.");
+        }
+        free(j);return FALSE;
+    }
     if(installed){
         log_line("DeckCheatz 1.x managed install: ready (%s). Steam options unchanged.",launcher);
         if(strstr(j->output,"\"tkinter\": false"))
@@ -4220,7 +4261,12 @@ static void *pc2_deckcheatz_install_worker(void *data){
         close(fd[0]);setsid();
         dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);close(fd[1]);
         clear_desktop_activation_env();
-        execlp("python3","python3",j->helper,"--install","--confirm",(char*)NULL);
+        if(j->operation==1)
+            execlp("python3","python3",j->helper,"--check-update",(char*)NULL);
+        else if(j->operation==2)
+            execlp("python3","python3",j->helper,"--update","--confirm",(char*)NULL);
+        else
+            execlp("python3","python3",j->helper,"--install","--confirm",(char*)NULL);
         _exit(127);
     }
     close(fd[1]);
