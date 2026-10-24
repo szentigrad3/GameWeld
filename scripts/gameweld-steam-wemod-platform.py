@@ -20,7 +20,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import subprocess
 import sys
 import time
@@ -94,7 +93,7 @@ def preflight(appid: str, install: Path, game: Path, compat: Path,
         not (launcher.parent / "src/wemod.py").is_file() or
         actual_launcher != (launcher.parent / "src/wemod.py").resolve(strict=True)):
         raise ValueError("DeckCheatz checkout must be installed before using WeMod")
-    wemod = installed_wemod(actual_launcher, prefix)
+    wemod = installed_wemod(launcher, prefix)
     if wemod is None:
         raise ValueError("No previously installed WeMod.exe/Wand.exe found; use managed DeckCheatz setup")
     if not shutil.which("steam"):
