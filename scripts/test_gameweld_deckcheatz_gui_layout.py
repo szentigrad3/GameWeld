@@ -154,6 +154,21 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('button("WeMod Enhancer: Patch WeMod","primary-action")', text)
         self.assertIn('button("Reset window size","action")', text)
 
+    def test_public_play_with_wemod_has_no_mandatory_file_or_preview_dialog(self):
+        flow = function_body(
+            "static void pc2_deckcheatz_flow(int experimental_launch){",
+            "static void on_pc2_deckcheatz_preview(",
+        )
+        self.assertIn("gameweld-steam-game-exe.py", flow)
+        self.assertIn('if(pc2_public_release_ui()){', flow)
+        self.assertIn('json_string(lookup_output,"selected",exe,sizeof exe)', flow)
+        self.assertIn('if(!pc2_public_release_ui() || !experimental_launch)', flow)
+        self.assertIn('if(!pc2_public_release_ui())consent=gtk_message_dialog_new', flow)
+        self.assertIn('int approved=1;', flow)
+        self.assertIn('Play with WeMod blocked: selected Proton runtime unresolved', flow)
+        self.assertIn('Play with WeMod blocked: Steam installation was not detected', flow)
+        self.assertIn('Play with WeMod blocked: Steam Proton prefix', flow)
+
     def test_launch_preview_and_prefix_consent_remain_separate(self):
         self.assertIn("pc2_deckcheatz_flow(1)", text)
         self.assertIn("pc2_deckcheatz_show_preview(output)", text)
