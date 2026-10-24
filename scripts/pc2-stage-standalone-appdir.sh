@@ -28,7 +28,7 @@ for helper in "$ROOT"/scripts/gameweld-*.py "$ROOT"/scripts/gameweld-*.sh \
 done
 for required in gameweld-deckcheatz-direct.py gameweld-deckcheatz-proton.py \
                 gameweld-deckcheatz-install.py gameweld-steam-game-exe.py \
-                gameweld-platform-session.py \
+                gameweld-platform-session.py gameweld-steam-wemod-platform.py \
                 gameweld-steam-shortcuts.py gameweld-steam-handoff.py \
                 gameweld-heroic-provider.py gameweld-heroic-launch.sh \
                 gameweld-lutris-provider.py gameweld-lutris-session.sh; do
