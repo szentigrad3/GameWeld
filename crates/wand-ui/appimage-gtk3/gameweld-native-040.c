@@ -590,6 +590,7 @@ static void on_pc2_deckcheatz_experimental(GtkButton*,void*);
 static void on_pc2_deckcheatz_install(GtkButton*,void*);
 static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
 static void on_pc2_deckcheatz_update(GtkButton*,void*);
+static void on_pc2_deckcheatz_adopt(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
@@ -624,7 +625,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod — DeckCheatz (experimental)") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Check GameWeld Managed Wand (read-only)") && strcmp(s, "Play Game + Wand (managed Proton, opt-in)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod — DeckCheatz (experimental)") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Check GameWeld Managed Wand (read-only)") && strcmp(s, "Play Game + Wand (managed Proton, opt-in)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4148,7 +4149,7 @@ typedef struct {
     int resume_mode; /* -1=install only; 0=preview; 1=experimental test */
     int selected_index;
     int ok;
-    int operation; /* 0=install, 1=check updates, 2=update */
+    int operation; /* 0=install, 1=check updates, 2=update, 3=adopt */
     char helper[4096];
     char output[8192];
 } PC2DeckCheatzInstallJob;
@@ -4204,6 +4205,18 @@ static gboolean pc2_deckcheatz_install_done(void *data){
             log_line("DeckCheatz update check did not complete: %.700s",j->output);
             if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
                 "Update check failed; see the Activity log.");
+        }
+        free(j);return FALSE;
+    }
+    if(j->operation==3){
+        if(j->ok&&strstr(j->output,"\"result\": \"adopted\"")){
+            log_line("Clean existing DeckCheatz checkout enrolled in GameWeld managed updates. No files replaced.");
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Existing 1.x checkout enrolled. You can now check and apply managed updates.");
+        }else{
+            log_line("DeckCheatz checkout adoption refused; no existing files changed: %.700s",j->output);
+            if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+                "Could not enrol this checkout. See Activity for validation details.");
         }
         free(j);return FALSE;
     }
@@ -4265,6 +4278,8 @@ static void *pc2_deckcheatz_install_worker(void *data){
             execlp("python3","python3",j->helper,"--check-update",(char*)NULL);
         else if(j->operation==2)
             execlp("python3","python3",j->helper,"--update","--confirm",(char*)NULL);
+        else if(j->operation==3)
+            execlp("python3","python3",j->helper,"--adopt","--confirm",(char*)NULL);
         else
             execlp("python3","python3",j->helper,"--install","--confirm",(char*)NULL);
         _exit(127);
