@@ -54,6 +54,9 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("geometry.height*scale", text)
         self.assertIn("gameweld_pc2_window_policy(1280,720,w,h).maximize", text)
         self.assertIn("physical_w >= 3840 && physical_h >= 2160", policy)
+        self.assertIn("PC2 monitor sizing: GTK restored logical size", text)
+        self.assertIn("maximized (UHD)", text)
+        self.assertIn("proportional window", text)
 
     def test_4k_maximizes_but_other_resolutions_remain_windowed(self):
         self.assertIn("static gboolean pc2_startup_fit_monitor(void *unused)", text)
