@@ -56,7 +56,7 @@ def preflight() -> int:
     if not PATCH.is_file():
         blocked("The original Wine SHA256 patch is missing")
     safe_dirs(WORK)
-    required = ("git", "make", "file", "sha256sum")
+    required = ("git", "make", "file", "sha256sum", "autoreconf", "sh")
     optional = ("clang", "gcc", "x86_64-w64-mingw32-gcc",
                 "i686-w64-mingw32-gcc", "bison", "flex", "pkg-config")
     for name in required:
@@ -66,6 +66,8 @@ def preflight() -> int:
               ("FOUND" if shutil.which(name) else "NOT FOUND (configure may require it)"))
     print("This builder does not use sudo, pacman, make install, Proton managers or DLL injection.")
     print("Actual full Wine builds can be resource-intensive and require development packages.")
+    print("An interrupted source build can be resumed with the SAME --build --confirm command.")
+    print("The pinned Wine Git checkout requires autogen.sh to generate configure.")
     print("To opt in: python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm")
     print("New hashes MUST NOT be treated as approved replacements without ABI/behavioral testing.")
     return 0
@@ -74,6 +76,66 @@ def preflight() -> int:
 def run_log(command: list[str], log, *, cwd: Path | None = None) -> None:
     print("Running: " + " ".join(command[:4]), flush=True)
     subprocess.run(command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
+
+
+def ensure_pinned_source(source: Path, log) -> None:
+    """Clone once, or reuse only the exact pinned Wine checkout safely.
+
+    Re-enter after failed bootstrap/configure/make. Never clean/reset any
+    existing source tree and never apply the SHA256 patch twice.
+    """
+    if not source.exists():
+        run_log(["git", "clone", "--filter=blob:none", "--no-checkout",
+                 UPSTREAM, str(source)], log)
+        run_log(["git", "-C", str(source), "fetch", "--depth=1",
+                 "origin", REV], log)
+        run_log(["git", "-C", str(source), "checkout", "--detach", "FETCH_HEAD"], log)
+    elif not (source / ".git").is_dir():
+        blocked("Existing Wine source is not a Git checkout; refusing to overwrite it")
+
+    head = subprocess.check_output(
+        ["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    if head != REV:
+        blocked("Existing Wine checkout revision " + head +
+                " differs from pinned revision " + REV + "; refusing to reset")
+
+    # An interrupted first run has already applied the patch. 'git apply
+    # --reverse --check' is a read-only proof of its exact presence.
+    reverse = subprocess.run(
+        ["git", "-C", str(source), "apply", "--reverse", "--check", str(PATCH)],
+        stdout=log, stderr=subprocess.STDOUT, check=False,
+    )
+    if reverse.returncode == 0:
+        print("Pinned Wine SHA256 patch: already applied; preserving checkout", flush=True)
+    else:
+        run_log(["git", "-C", str(source), "apply", "--check",
+                 str(PATCH)], log)
+        run_log(["git", "-C", str(source), "apply", str(PATCH)], log)
+
+    cert = (source / "dlls/crypt32/cert.c").read_text(encoding="utf-8")
+    if ("case CERT_SHA256_HASH_PROP_ID:" not in cert or
+            "CALG_SHA_256" not in cert):
+        blocked("Patched Wine cert.c does not contain CERT_SHA256_HASH_PROP_ID/CALG_SHA_256")
+
+
+def ensure_configure(source: Path, log) -> None:
+    """Wine Git checkouts ship autogen.sh + configure.ac, not configure.
+
+    Run ONLY the checked-out project's documented ./autogen.sh script.
+    All generated files remain in the isolated Wine source checkout.
+    """
+    configure = source / "configure"
+    if configure.is_file():
+        print("Wine configure: already generated; reusing it", flush=True)
+        return
+    if not (source / "autogen.sh").is_file() or not (source / "configure.ac").is_file():
+        blocked("Pinned Wine Git checkout is missing autogen.sh/configure.ac")
+    if not shutil.which("autoreconf"):
+        blocked("Wine bootstrap needs autoreconf (autoconf); install its build dependency first")
+    print("Wine configure absent: running source autogen.sh (bootstrap only)", flush=True)
+    run_log(["sh", "./autogen.sh"], log, cwd=source)
+    if not configure.is_file():
+        blocked("Wine autogen.sh finished without producing configure; inspect build-output.log")
 
 
 def compile_only(work: Path) -> int:
@@ -86,43 +148,37 @@ def compile_only(work: Path) -> int:
     if not all(shutil.which(name) for name in ("git", "make", "file")):
         blocked("git, make and file are required before a Wine source build")
     safe_dirs(work)
-    if (output / "SHA256SUMS").exists():
-        blocked("Candidate binaries already exist; won't overwrite an unvalidated build.")
-    if build.exists():
-        blocked("Build directory already exists; preserve prior work instead of overwriting.")
-    if source.exists():
-        blocked("Source directory already exists; preserve prior work instead of patching over it.")
+    if output.exists():
+        blocked("Candidate output directory already exists; preserve it instead of overwriting")
+    if source.exists() and not (source / ".git").is_dir():
+        blocked("Source directory exists without Git metadata; refusing overwrite")
+    if build.exists() and not build.is_dir():
+        blocked("Build output path is not a directory")
     work.mkdir(parents=True, exist_ok=True)
+    # Append to the original source checkout/build log on retries. Never
+    # truncate failed-build diagnostics; no rm/reset is performed.
     try:
-        with log_path.open("w", encoding="utf-8") as log:
-            run_log(["git", "clone", "--filter=blob:none", "--no-checkout",
-                     UPSTREAM, str(source)], log)
-            # GE-Proton11-7 predates the default Wine HEAD: fetch this
-            # immutable release commit explicitly rather than hoping it was
-            # included in a shallow/partial default checkout.
-            run_log(["git", "-C", str(source), "fetch", "--depth=1",
-                     "origin", REV], log)
-            run_log(["git", "-C", str(source), "checkout", "--detach", "FETCH_HEAD"], log)
-            head = subprocess.check_output(
-                ["git", "-C", str(source), "rev-parse", "HEAD"],
-                text=True).strip()
-            if head != REV:
-                blocked("Wine source commit is not pinned revision " + REV)
-            run_log(["git", "-C", str(source), "apply", "--check",
-                     str(PATCH)], log)
-            run_log(["git", "-C", str(source), "apply", str(PATCH)], log)
-            cert = (source / "dlls/crypt32/cert.c").read_text(encoding="utf-8")
-            if "case CERT_SHA256_HASH_PROP_ID:" not in cert or "CALG_SHA_256" not in cert:
-                blocked("The applied Wine patch did not add the intended certificate SHA256 behavior")
-            build.mkdir()
-            run_log([str(source / "configure"), "--enable-archs=i386,x86_64"],
-                    log, cwd=build)
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write("\n=== GameWeld Wine pinned source build/resume ===\n")
+            log.flush()
+            ensure_pinned_source(source, log)
+            ensure_configure(source, log)
+            if not build.exists():
+                build.mkdir()
+            if not (build / "Makefile").is_file():
+                run_log([str(source / "configure"), "--enable-archs=i386,x86_64"],
+                        log, cwd=build)
+                if not (build / "Makefile").is_file():
+                    blocked("Wine configure finished without Makefile; inspect build-output.log")
+            else:
+                print("Wine build Makefile already exists; resuming compilation", flush=True)
             jobs = max(1, min(os.cpu_count() or 4, 12))
             run_log(["make", "-j" + str(jobs)], log, cwd=build)
     except (OSError, subprocess.CalledProcessError) as exc:
         blocked("Isolated Wine build failed (" + type(exc).__name__ +
                 "). See " + str(log_path) +
-                ". No installed Proton binaries were touched.")
+                ". Existing checkout, applied patch and build directory are preserved; "
+                "no installed Proton binaries were touched.")
 
     outputs = {}
     for arch, expected in HISTORIC.items():
