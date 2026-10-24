@@ -60,6 +60,11 @@ class SteamOwnedWeModTests(unittest.TestCase):
             side_effect=lambda plan, pid: real_handoff(plan, pid, self.proc))
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Offline fixture: no live X server is available in CI.
+        display_patcher = patch.object(tool, "_x11_display_accessible",
+                                       return_value=True)
+        display_patcher.start()
+        self.addCleanup(display_patcher.stop)
 
     def set_proc_env(self, pid, *, wrong_prefix=False):
         task = self.proc / str(pid)
@@ -77,6 +82,62 @@ class SteamOwnedWeModTests(unittest.TestCase):
         with patch.object(tool.shutil, "which", return_value="/usr/bin/steam"):
             return tool.preflight("2353250", self.install, self.game, self.compat,
                                   self.proton, self.steam, self.launcher)
+
+    def test_x11_prefers_verified_gui_display_and_cookie_as_pair(self):
+        current = {"DISPLAY": ":1", "XAUTHORITY": "/runtime/gui-xauth"}
+        live = {"DISPLAY": ":0", "XAUTHORITY": "/runtime/game-xauth"}
+        observed = []
+        def check(env):
+            observed.append((env.get("DISPLAY"), env.get("XAUTHORITY")))
+            return (env.get("DISPLAY"), env.get("XAUTHORITY")) == (
+                ":1", "/runtime/gui-xauth"
+            )
+        result, origin = tool.authenticated_x11_environment(
+            current, live, probe=check)
+        self.assertEqual(origin, "gameweld")
+        self.assertEqual(result["DISPLAY"], ":1")
+        self.assertEqual(result["XAUTHORITY"], "/runtime/gui-xauth")
+        self.assertEqual(observed, [(":1", "/runtime/gui-xauth")])
+
+    def test_x11_falls_back_to_verified_steam_game_pair(self):
+        current = {"DISPLAY": ":1", "XAUTHORITY": "/runtime/gui-xauth"}
+        live = {"DISPLAY": ":0", "XAUTHORITY": "/runtime/game-xauth"}
+        attempts = []
+        def check(env):
+            pair = (env.get("DISPLAY"), env.get("XAUTHORITY"))
+            attempts.append(pair)
+            return pair == (":0", "/runtime/game-xauth")
+        result, origin = tool.authenticated_x11_environment(
+            current, live, probe=check)
+        self.assertEqual(origin, "steam-game")
+        self.assertEqual(attempts, [
+            (":1", "/runtime/gui-xauth"),
+            (":0", "/runtime/game-xauth"),
+        ])
+        self.assertEqual(result["XAUTHORITY"], "/runtime/game-xauth")
+
+    def test_x11_refuses_unauthorized_or_missing_display(self):
+        current = {"DISPLAY": ":1", "XAUTHORITY": "/bad/gui"}
+        live = {"DISPLAY": ":0", "XAUTHORITY": "/bad/game"}
+        with self.assertRaisesRegex(ValueError, "X11 authorization failed"):
+            tool.authenticated_x11_environment(
+                current, live, probe=lambda env: False)
+        with self.assertRaisesRegex(ValueError, "X11 authorization failed"):
+            tool.authenticated_x11_environment(
+                {}, {}, probe=lambda env: True)
+
+    def test_x11_never_splices_game_display_to_gui_xauthority(self):
+        current = {"DISPLAY": ":1", "XAUTHORITY": "/gui"}
+        live = {"DISPLAY": ":0"}  # Game has no authorization path.
+        seen = []
+        def check(env):
+            seen.append((env.get("DISPLAY"), env.get("XAUTHORITY")))
+            return False
+        with self.assertRaises(ValueError):
+            tool.authenticated_x11_environment(current, live, probe=check)
+        self.assertEqual(seen, [(":1", "/gui"), (":0", None)])
+        self.assertFalse(tool._x11_display_accessible(
+            {"DISPLAY": "untrusted.example.com:0"}))
 
     def test_preflight_existing_installed_runtime(self):
         plan = self.prepare()
