@@ -4234,12 +4234,12 @@ static void pc2_deckcheatz_request_install(int resume_mode){
     }
     GtkWidget*consent=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
-        "GameWeld can automatically download and install DeckCheatz 1.x.\\n\\n"
-        "Download from: https://github.com/DeckCheatz/wemod-launcher.git (main branch)\\n"
-        "Install in your user GameWeld data directory; no sudo needed.\\n"
-        "DeckCheatz is independent AGPL-3.0 software, not bundled with GameWeld.\\n\\n"
+        "GameWeld can automatically download and install DeckCheatz 1.x.\n\n"
+        "Download from: https://github.com/DeckCheatz/wemod-launcher.git (main branch)\n"
+        "Install in your user GameWeld data directory; no sudo needed.\n"
+        "DeckCheatz is independent AGPL-3.0 software, not bundled with GameWeld.\n\n"
         "This only downloads the external launcher; it will NOT start WeMod, "
-        "change Steam Launch Options or modify a game Wine prefix.\\n\\n"
+        "change Steam Launch Options or modify a game Wine prefix.\n\n"
         "Download and install now?");
     int yes=(gtk_dialog_run((GtkDialog*)consent)==GTK_RESPONSE_YES);
     gtk_widget_destroy(consent);
