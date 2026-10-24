@@ -2672,12 +2672,13 @@ static void on_pc2_platform_game_only(GtkButton*b,void*d){
     Game*g=&G.games[G.selected];
     if(game_is_steam_shortcut(g)){
         const char *prefix="steam://rungameid/";
-        if(!g->shortcut_launch_supported ||
-           !g->launch_id[0] || strncmp(g->launch_uri,prefix,strlen(prefix))){
+        /* A native Linux Steam shortcut can launch normally even when it
+         * has no Proton prefix: trainer handoff is NOT requested here. */
+        if(!g->launch_id[0] || strncmp(g->launch_uri,prefix,strlen(prefix))){
             log_line("Play Game blocked: Steam shortcut %s has no validated rungameid.",g->name);return;
         }
         const char*id=g->launch_uri+strlen(prefix);
-        if(strcmp(id,g->launch_id) || !*id || strlen(id)>18){
+        if(strcmp(id,g->launch_id) || !*id || strlen(id)>20){
             log_line("Play Game blocked: shortcut launch URI does not match selected game.");return;
         }
         for(const char*p=id;*p;p++)if(!isdigit((unsigned char)*p)){
