@@ -2681,8 +2681,8 @@ static GtkWidget *build_home(void){
         g_signal_connect_data(retry_wand,"clicked",(GCallback)on_pc2_wemod_live_render,NULL,NULL,0);
         pack(copy,retry_wand,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
-            "Step 1: Launch Steam game only (Yes confirmation). Step 2: Check Wand Patch. No trainer is started.":
-            "Game launch is disabled. Restart with --enable-steam-game-launch, then use Launch Steam game only (opt-in); patch checks never launch games.","muted");
+            "Start the game in Steam, then Launch Wand in Running Steam Game (opt-in). The recovered direct Wine/X11 handoff changes no Steam launch options.":
+            "Game launch is disabled. Start the game in Steam, then use Launch Wand in Running Steam Game (opt-in) to join its existing Proton Wine server.","muted");
         gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
         pack(copy,notice,0);
     }
@@ -3993,7 +3993,7 @@ static void pc2_wemod_action(const char*action){
         if(!strcmp(action,"game-test"))
             log_line("Wand patch check is read-only: it does NOT launch the game or trainer. Launch Steam game only (opt-in) is a separate action.");
         else
-            log_line("Wand live launch requested for selected game %s (Steam app %s). A verified, uniquely patched client will be used; no game launch or trainer attachment is implied.",g->name,g->appid);
+            log_line("Wand live launch requested for selected game %s (Steam app %s). The recovered Wand Native active-wineserver + X11 launch will be used; no game launch or trainer attachment is implied.",g->name,g->appid);
         snprintf(j->game_name,sizeof j->game_name,"%s",g->name);
         snprintf(j->game_provider,sizeof j->game_provider,"%s",
             game_is_steam_shortcut(g)?"other":game_is_steam(g)?"steam":game_is_heroic(g)?"heroic":game_is_lutris(g)?"lutris":"other");
@@ -4110,7 +4110,7 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         g_signal_connect_data(live_render,"clicked",(GCallback)on_pc2_wemod_live_render,NULL,NULL,0);
         pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
         pack(eh,live_launch,0);pack(eh,live_render,0);
-        GtkWidget*note=label("Verification checks patch files only and never launches a game. After starting a game in Steam, the opt-in live actions can start Wand in its session. If Wand is white, CLOSE its window before choosing GPU Off retry. A startup log will be saved. Trainer attachment is unverified.","muted");
+        GtkWidget*note=label("Verification checks patch files only. The default opt-in live launch now restores Wand Native's active-Wineserver and Wand-only X11 path, not a second proton runinprefix. Close any old Wand window before retrying. Trainer attachment remains unverified.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
