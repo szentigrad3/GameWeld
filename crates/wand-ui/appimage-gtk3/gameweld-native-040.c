@@ -4325,6 +4325,54 @@ static void pc2_deckcheatz_request_install(int resume_mode){
 static void on_pc2_deckcheatz_install(GtkButton*b,void*d){
     (void)b;(void)d;pc2_deckcheatz_request_install(-1);
 }
+static void pc2_deckcheatz_request_update(int check_only){
+    if(!pc2_discovery_only())return;
+    if(pc2_deckcheatz_install_busy){
+        log_line("DeckCheatz install/update operation already in progress.");return;
+    }
+    if(!check_only){
+        GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+            "Update the GameWeld-managed DeckCheatz 1.x checkout from upstream?\n\n"
+            "Close WeMod and any running DeckCheatz sessions before updating. "
+            "Existing manually installed checkouts and local changes will not be overwritten.\n\n"
+            "The working checkout is kept as a rollback backup. Steam launch "
+            "options and game Wine prefixes will not be changed by the update.\n\n"
+            "The new upstream version still needs gameplay testing. Continue?");
+        int yes=(gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES);
+        gtk_widget_destroy(dlg);
+        if(!yes){log_line("DeckCheatz managed update cancelled.");return;}
+    }
+    PC2DeckCheatzInstallJob*j=calloc(1,sizeof *j);
+    if(!j){log_line("DeckCheatz updater could not allocate job.");return;}
+    const char*appdir=getenv("APPDIR");
+    if(appdir&&*appdir)
+        snprintf(j->helper,sizeof j->helper,"%s/usr/libexec/gameweld-deckcheatz-install.py",appdir);
+    else snprintf(j->helper,sizeof j->helper,"gameweld-deckcheatz-install.py");
+    j->resume_mode=-1;
+    j->selected_index=G.selected;
+    j->operation=check_only?1:2;
+    pc2_deckcheatz_install_busy=1;
+    log_line("%s",check_only?
+        "Checking official DeckCheatz upstream revision (read-only)...":
+        "Updating managed DeckCheatz after consent; retaining a backup...");
+    if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+        check_only?"Checking official 1.x update status...":
+        "Verifying new checkout while preserving the previous installation...");
+    pthread_t thread;
+    if(pthread_create(&thread,NULL,pc2_deckcheatz_install_worker,j)==0)
+        pthread_detach(thread);
+    else {
+        pc2_deckcheatz_install_busy=0;free(j);
+        log_line("DeckCheatz update worker could not start.");
+    }
+}
+static void on_pc2_deckcheatz_check_update(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_deckcheatz_request_update(1);
+}
+static void on_pc2_deckcheatz_update(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_deckcheatz_request_update(0);
+}
 
 /* DeckCheatz PC2 preview stays strictly read-only. The separately labelled
  * experimental button reuses the same validated plan, displays the preview,
@@ -4636,6 +4684,21 @@ static void on_pc2_wemod_choose(GtkButton*b,void*d){
 }
 static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,14);margins(p,22);gtk_container_add(outer,p);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("PROVIDERS & ADVANCED","page-kicker"),0);pack(ht,label("Settings","workspace-title"),0);pack(ht,label("Provider configuration, compatibility tools and maintenance controls.","page-subtitle"),0);pack(p,ht,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*left=box(GTK_ORIENTATION_VERTICAL,10);GtkWidget*right=box(GTK_ORIENTATION_VERTICAL,10);pack(cols,left,1);pack(cols,right,1);pack(p,cols,1);
     GtkWidget*nc=box(GTK_ORIENTATION_VERTICAL,8);style(nc,"card");pack(nc,label("Native CT Profile (No Cheat Engine)","card-title"),0);GtkWidget*nd=label("GameWeld can directly run converted table logic for supported games without Cheat Engine. Resonance: A Plague Tale Legacy has a built-in conversion of Paul44's v1.1 table with God Mode, Invisible, Resonance Points, FOV and Console controls. The original .CT is not redistributed.","muted");gtk_label_set_line_wrap((GtkLabel*)nd,TRUE);pack(nc,nd,0);GtkWidget*nr=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*nen=button("Enable Native Profile","action");GtkWidget*ndis=button("Disable Native Profile","action");g_signal_connect_data(nen,"clicked",(GCallback)on_enable_native_profile,NULL,NULL,0);g_signal_connect_data(ndis,"clicked",(GCallback)on_disable_native_profile,NULL,NULL,0);pack(nr,nen,0);pack(nr,ndis,0);pack(nc,nr,0);G.native_profile_status=label("Select a game first.","good");gtk_label_set_line_wrap((GtkLabel*)G.native_profile_status,TRUE);pack(nc,G.native_profile_status,0);pack(left,nc,0);
+    if(pc2_discovery_only()){
+        GtkWidget*dc=box(GTK_ORIENTATION_VERTICAL,8);style(dc,"card");
+        pack(dc,label("DeckCheatz 1.x — Managed Updates","card-title"),0);
+        GtkWidget*note=label("Check for upstream 1.x fixes or explicitly update a GameWeld-managed checkout. No background updates. The previous version is retained for rollback and manually installed checkouts are left untouched.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(dc,note,0);
+        GtkWidget*bar=box(GTK_ORIENTATION_HORIZONTAL,8);
+        GtkWidget*check=button("Check DeckCheatz updates","action");
+        GtkWidget*update=button("Update DeckCheatz (opt-in)","action");
+        g_signal_connect_data(check,"clicked",(GCallback)on_pc2_deckcheatz_check_update,NULL,NULL,0);
+        g_signal_connect_data(update,"clicked",(GCallback)on_pc2_deckcheatz_update,NULL,NULL,0);
+        pack(bar,check,1);pack(bar,update,1);pack(dc,bar,0);
+        pc2_deckcheatz_update_status=label("No check performed yet. Existing installs are unchanged.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)pc2_deckcheatz_update_status,TRUE);
+        pack(dc,pc2_deckcheatz_update_status,0);pack(left,dc,0);
+    }
     GtkWidget*lc=box(GTK_ORIENTATION_VERTICAL,8);style(lc,"card");pack(lc,label("Local Trainer Provider (Unlimited)","card-title"),0);GtkWidget*desc=label("GameWeld can discover standalone Windows trainer EXEs automatically or you can choose one manually. Discovery uses standard XDG/Home folders, folders you add, and the install paths reported by Steam/Heroic/Lutris; it never assumes a specific username, /mnt/games, drive layout or distro. Steam uses the proven live Proton-session handoff. Heroic games from Epic, GOG and Amazon stay launcher-native: GameWeld launches through the detected Heroic runner. For local trainers on affected Wine/Proton 11+ builds, GameWeld uses its pinned GE-Proton10-34 + Wine-Wayland compatibility session. Epic/Legendary launches through Heroic's authenticated Legendary backend with an explicit UMU environment; the trainer joins it with UMU runinprefix. GOG/Amazon retain the verified temporary Heroic handshake.","muted");gtk_label_set_line_wrap((GtkLabel*)desc,TRUE);pack(lc,desc,0);G.local_trainer_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.local_trainer_entry,"No local trainer configured");pack(lc,G.local_trainer_entry,0);GtkWidget*lr=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*choose=button("Choose Trainer EXE","action");GtkWidget*scan=button("Scan / Auto-Match Trainers","action");GtkWidget*addfolder=button("Add Trainer Folder","action");GtkWidget*clear=button("Clear Trainer","action");g_signal_connect_data(choose,"clicked",(GCallback)on_choose_local_trainer,NULL,NULL,0);g_signal_connect_data(scan,"clicked",(GCallback)on_scan_trainer_library,NULL,NULL,0);g_signal_connect_data(addfolder,"clicked",(GCallback)on_add_trainer_folder,NULL,NULL,0);g_signal_connect_data(clear,"clicked",(GCallback)on_clear_local_trainer,NULL,NULL,0);pack(lr,choose,0);pack(lr,scan,0);pack(lr,addfolder,0);pack(lr,clear,0);pack(lc,lr,0);GtkWidget*hr=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*stop=button("Stop Stuck Trainer","action");GtkWidget*reset=button("Reset Heroic Prefix (Closes Game)","action");g_signal_connect_data(stop,"clicked",(GCallback)on_stop_heroic_trainer,NULL,NULL,0);g_signal_connect_data(reset,"clicked",(GCallback)on_reset_heroic_prefix,NULL,NULL,0);pack(hr,stop,0);pack(hr,reset,0);pack(lc,hr,0);GtkWidget*compat=label("Validated FLiNG recipe: normal desktop windows are used. The engine is game-agnostic and scoped to the exact Heroic installation discovered for the selected title. On affected Wine/Proton 11+ builds, game and trainer share pinned GE-Proton10-34 with Wine-Wayland. Epic/Legendary uses matching UMU runinprefix instead of host Wine, so a trainer cannot be deferred until after game exit.","muted");gtk_label_set_line_wrap((GtkLabel*)compat,TRUE);pack(lc,compat,0);G.local_trainer_status=label("Select a game first.","good");gtk_label_set_line_wrap((GtkLabel*)G.local_trainer_status,TRUE);pack(lc,G.local_trainer_status,0);pack(left,lc,0);
     GtkWidget*cc=box(GTK_ORIENTATION_VERTICAL,8);style(cc,"card");pack(cc,label("Managed Cheat Engine Provider (.CT)","card-title"),0);GtkWidget*cd=label("GameWeld uses the official Cheat Engine Linux package as the native bridge and a shared Windows CE companion in windowsbin. Steam handoff joins the verified Proton session; Heroic handoff waits for the real game process and asks Heroic to launch Windows CE as an alternate executable using that game's configured Wine/Proton runner. Install the bridge and Windows companion once. Cheat Engine itself is not bundled inside GameWeld.","muted");gtk_label_set_line_wrap((GtkLabel*)cd,TRUE);pack(cc,cd,0);G.cheat_engine_installer_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.cheat_engine_installer_entry,"Official CheatEngineLinux771.zip or Windows CE installer/ZIP");pack(cc,G.cheat_engine_installer_entry,0);G.cheat_engine_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.cheat_engine_entry,"Managed native Linux CE appears here after install");pack(cc,G.cheat_engine_entry,0);G.cheat_table_entry=gtk_entry_new();gtk_entry_set_placeholder_text((GtkEntry*)G.cheat_table_entry,"No .CT table configured for selected game");pack(cc,G.cheat_table_entry,0);GtkWidget*cr0=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*ceauto=button("Download + Install Linux CE","action");GtkWidget*cedl=button("Open Official Linux ZIP","action");GtkWidget*cewin=button("Open Official Windows CE","action");GtkWidget*cei=button("Choose CE Package","action");g_signal_connect_data(ceauto,"clicked",(GCallback)on_download_install_managed_cheat_engine,NULL,NULL,0);g_signal_connect_data(cedl,"clicked",(GCallback)on_open_cheat_engine_download,NULL,NULL,0);g_signal_connect_data(cewin,"clicked",(GCallback)on_open_cheat_engine_windows_download,NULL,NULL,0);g_signal_connect_data(cei,"clicked",(GCallback)on_choose_cheat_engine_installer,NULL,NULL,0);pack(cr0,ceauto,0);pack(cr0,cedl,0);pack(cr0,cewin,0);pack(cr0,cei,0);pack(cc,cr0,0);GtkWidget*cr1=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*ceinstall=button("Install Selected Package","action");GtkWidget*ced=button("Detect / Refresh CE","action");GtkWidget*cce=button("Choose Existing CE","action");GtkWidget*cct=button("Choose .CT Table","action");g_signal_connect_data(ceinstall,"clicked",(GCallback)on_install_managed_cheat_engine,NULL,NULL,0);g_signal_connect_data(ced,"clicked",(GCallback)on_detect_managed_cheat_engine,NULL,NULL,0);g_signal_connect_data(cce,"clicked",(GCallback)on_choose_cheat_engine,NULL,NULL,0);g_signal_connect_data(cct,"clicked",(GCallback)on_choose_cheat_table,NULL,NULL,0);pack(cr1,ceinstall,0);pack(cr1,ced,0);pack(cr1,cce,0);pack(cr1,cct,0);pack(cc,cr1,0);GtkWidget*cr2=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*cte=button("Clear External CE","action");GtkWidget*ctt=button("Clear Table","action");g_signal_connect_data(cte,"clicked",(GCallback)on_clear_cheat_engine,NULL,NULL,0);g_signal_connect_data(ctt,"clicked",(GCallback)on_clear_cheat_table,NULL,NULL,0);pack(cr2,cte,0);pack(cr2,ctt,0);pack(cc,cr2,0);G.cheat_table_status=label("Select a game first.","good");gtk_label_set_line_wrap((GtkLabel*)G.cheat_table_status,TRUE);pack(cc,G.cheat_table_status,0);pack(right,cc,0);
     if(pc2_discovery_only()){
