@@ -118,3 +118,24 @@ The independent MIT GameWeld installer is `scripts/gameweld-deckcheatz-install.p
 The next screen for an opted-in **experimental game+trainer test** remains the existing preview and **game-prefix mutation consent**. These are distinct from download permission. The successful Astrometica field test applies to the recorded installed upstream environment; new cloned versions and other games still need verification.
 
 Offline synthetic tests live at `scripts/test_gameweld_deckcheatz_install.py`, including first install, repeated install (no overwrite), invalid pre-existing directory, clone failure and rollback, outside existing checkout reuse, no-install-without-consent, and Steam/compatdata non-mutation. The PC2 GitHub Actions job also builds the GTK source and executes these tests. A successful CI result would validate build and fixtures, **not** downloading over a real end-user network or third-party trainer effectiveness.
+
+
+## Managed DeckCheatz 1.x updates and simplified game entry (PC2)
+
+This slice retains the previously validated Astrometica + Proton Experimental + WeMod trainer path while improving product flow for new users. The GameWeld UI now labels the game action **Play with WeMod — DeckCheatz (experimental)** in Overview and Library. On an initial install it still offers the download prompt, reuses the selected game and gives a read-only preview followed by a distinct Wine-prefix launch consent. Nothing silently turns on trainer execution for other games.
+
+**Settings → DeckCheatz 1.x — Managed Updates** provides:
+
+- **Check DeckCheatz updates:** performs a read-only `git ls-remote` of the official `main` branch for checkouts GameWeld installed or adopted. No download or local change. Manually installed external checkouts are reported as unmanaged, not overwritten.
+- **Update DeckCheatz (opt-in):** after an explicit confirmation, refuses to proceed if DeckCheatz appears to be running, checkout metadata or Git origin differs, or user-local changes/untracked files exist. Stages and validates a fresh `main` checkout first; moves the previous checkout to a uniquely named rollback directory and verifies the replacement. A failure while activating the replacement attempts to restore the prior checkout.
+- **Manage existing DeckCheatz checkout:** explicitly enrols a clean manually cloned upstream 1.x checkout already located in GameWeld's expected data folder, after verifying origin URL, branch name, revision and absence of local edits. It writes only `.gameweld-managed.json` metadata and does not download, replace or update any source at adoption time.
+
+The user-managed installation metadata stores only schema, official source URL, `main` and full 40-character commit revision; it does not contain secrets or Steam settings. Updated checkouts retain their own matching metadata. The updater never automatically updates DeckCheatz on application startup and never changes Steam Launch Options or Wine prefixes. The old checkout stays available as a backup; automatic one-click rollback is not yet built. **Upstream behavior can change after an approved update; the first live test following any update should remain experimental.** Tests cannot prove external third-party integrity solely from Git layout checks.
+
+The offline reproducible test command is:
+
+    bash scripts/pc2-deckcheatz-aio.sh
+
+It creates `build/pc2-source/deckcheatz-aio-report.txt` and runs Python compile checks, locally created Git fixture tests for fresh install/update/adoption, Proton chooser and backend safeguards, GTK C syntax verification and read-only checkout status. No real game, Wine prefix, external download or trainer is started by this AIO command. The CI workflow also calls it. Results from actual user's CachyOS system and GitHub Actions must be inspected before declaring a generally ready release.
+
+**Release gate:** Astrometica has a player-reported successful cheat toggle, but the simplified UI and update-manager feature are new code. Do not mark all other games field-tested or promote an across-the-board unattended installer/updater based on the one working game.
