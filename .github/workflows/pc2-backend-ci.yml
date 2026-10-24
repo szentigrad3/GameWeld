@@ -158,6 +158,7 @@ jobs:
         run: |
           bash -n scripts/pc2-build-local-appimage.sh
           bash -n scripts/pc2-rc1-package-audit.sh
+          python3 -m unittest scripts/test_pc2_rc1_package_audit_selection.py -v
           test -s LICENSE && test -s THIRD-PARTY.md
           grep -Fq 'PC2 Steam game-only launch: disabled' scripts/pc2-build-local-appimage.sh
       - name: Stage local PC2 test AppDir with runtime helpers
