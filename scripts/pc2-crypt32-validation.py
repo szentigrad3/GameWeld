@@ -287,15 +287,80 @@ def runtime_probes(proton: Path) -> int:
     return 0
 
 
+
+def diagnose_runtime_logs() -> int:
+    """Inspect the most recent sandbox output only; never start Proton.
+
+    A nonzero Windows process exit code without GW_CRYPT32_MODULE proves
+    neither an API failure nor a bad DLL. Show the bootstrap and architecture
+    logs to distinguish loader/probe/environment failures.
+    """
+    safe_workdir()
+    root = TESTROOT / "runtime"
+    if not root.is_dir() or root.is_symlink():
+        print("No previous Test22 runtime logs found under " + str(root))
+        return 2
+    sessions = [
+        p for p in root.iterdir()
+        if p.is_dir() and not p.is_symlink()
+        and re.fullmatch(r"isolated-[0-9a-f]{12}", p.name)
+    ]
+    if not sessions:
+        print("No previous Test22 disposable runtime session found")
+        return 2
+    session = max(sessions, key=lambda p: p.stat().st_mtime_ns)
+    print("GameWeld PC2 Test 22 — existing isolated Proton runtime diagnostics")
+    print("Mode: READ ONLY; does not launch Steam, Proton, Wand or a game")
+    print("Session: " + str(session))
+    pattern = re.compile(
+        r"(?i)(err:|error:|fatal|failed|failure|not found|not load|"
+        r"cannot|can't|module|c0000135|c000007b|status_dll|"
+        r"GW_|steam[_ ]compat|proton:|wine:)"
+    )
+    for name in ("bootstrap.log", "x86_64.log", "i386.log", "report.txt"):
+        path = session / name
+        print("\n========== " + name + " ==========")
+        if path.is_symlink() or not path.is_file():
+            print("MISSING or unsafe file")
+            continue
+        if path.stat().st_size > 12 * 1024 * 1024:
+            print("Large log: displaying last 2 MiB only")
+        with path.open("rb") as inp:
+            inp.seek(0, os.SEEK_END)
+            inp.seek(max(0, inp.tell() - 2 * 1024 * 1024))
+            content = inp.read().decode("utf-8", errors="replace")
+        lines = content.splitlines()
+        print("Read lines:", len(lines))
+        selected = [line for line in lines if pattern.search(line)]
+        if selected:
+            print("--- Diagnostic matches (last 40) ---")
+            for line in selected[-40:]:
+                print(line[:900])
+        if name != "report.txt":
+            print("--- Last 25 lines ---")
+            for line in lines[-25:]:
+                print(line[:900])
+        elif not selected:
+            print(content[-3000:])
+    print("\nSTATUS: No new tests were run. Exit code 53 + no GW_ markers "
+          "cannot identify a crypt32 API defect without loader diagnostics.")
+    print("Do not install the staged DLLs into the existing GE Proton Wand tool.")
+    return 0
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--audit", action="store_true", help="default: read-only binary/export inspection")
     mode.add_argument("--compile-probes", action="store_true")
     mode.add_argument("--runtime-probes", action="store_true")
+    mode.add_argument("--diagnose-runtime", action="store_true", help="read previous sandbox Proton logs without running any tests")
     p.add_argument("--confirm", action="store_true")
     p.add_argument("--proton", type=Path, help="explicit absolute Proton launcher for disposable runtime tests")
     args = p.parse_args(argv)
+    if args.diagnose_runtime:
+        if args.confirm or args.proton:
+            raise ValidationBlocked("--diagnose-runtime is read-only and accepts no --confirm or --proton")
+        return diagnose_runtime_logs()
     if args.audit or (not args.compile_probes and not args.runtime_probes):
         if args.confirm or args.proton:
             raise ValidationBlocked("--audit is read only; --confirm/--proton not used")
