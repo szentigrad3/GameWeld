@@ -1858,7 +1858,7 @@ static void pc2_save_window_size(void){
     if(!pc2_window_state_path(path,sizeof path,1))return;
     int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,0600);
     if(fd<0)return;
-    dprintf(fd,"%d %d\\n",w,h);
+    dprintf(fd,"%d %d\n",w,h);
     close(fd);
 }
 
