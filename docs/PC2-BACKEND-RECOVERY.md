@@ -460,3 +460,28 @@ tail -n 100 "${XDG_STATE_HOME:-$HOME/.local/state}/gameweld/wand-live-2353250.lo
 ```
 
 The new Activity result should state **Wand startup mode: direct active Proton wineserver join + Wand-only X11**; it must not report `runinprefix` for the default live action. A rendered Wand window and confirmed in-game trainer remain field-validation tasks; AIO performs only synthetic, bounded, no-real-process fixture tests.
+
+## PC2 Test 19 — Retire white-window experiments in favor of the validated Wand Native 0.1.41 session
+
+Field screenshot 24 Oct 2026: the direct X11/active-wineserver PC2 Test 18 **still showed a blank white Wand window** while Astrometica was running. Therefore neither the early Proton `runinprefix` implementation nor the Test 18 direct-join reimplementation has demonstrated a fixed renderer. Do not portray Test 18 as proven merely because it launched a window.
+
+The actual independently validated stable Wand Native **0.1.41** implementation, whose release notes recorded game and trainer working with Resonance, instead used the existing Rust WeMod provider's `build_one_proton_session_launch_plan`: Wand and the game start in ONE newly managed Proton session via the same Windows batch. It ensures DWriteCore beside the selected runtime and requires the isolated verified **GE Proton Wand SHA256** compatibility tool. That is not identical to the Test 18 game-already-running Wine join. The daemon is responsible for session state; successful `begin-session` only means the request was accepted, not that a trainer is attached.
+
+To reuse the known architecture without silently repairing, overwriting, modifying a game prefix or cloning patched Proton, Test 19 adds a guarded bridge to an already-installed, working Wand Native **0.1.41** `wandctl`/`wandd`. In GameWeld's Overview and Settings: **Play with Wand Native 0.1.41 (opt-in)**. In Settings: **Check Wand Native 0.1.41 (read-only)**. The bridge validates exact wandctl version, daemon, built-in `wandctl proton verify`, provider health/runtime path, DWriteCore health, selected installed Steam game ID/directory, exact isolated compatibility tool and absence of an existing game process. It calls the old daemon's `begin-session APPID RUNTIME --provider wemod --proton 'GE Proton Wand SHA256'` after explicit UI confirmation. It NEVER downloads installers or crypt32 blobs, patches DLLs, changes Steam launch options, kills game processes, or modifies the standalone stable program. If the old executable/daemon/setup is missing or another version is installed, it refuses to launch and displays the reason.
+
+**Important:** Close Astrometica AND any old white Wand windows normally BEFORE selecting the Test 19 managed start. You must not attempt to start the old new-session architecture while the game is already playing. Keep the Test 19 bridge in development until an actual CachyOS user session demonstrates correct Wand rendering and trainer availability. The previously selected PC2 patched app-12.55.0 is NOT automatically imported into the old runtime; `provider-health` chooses and reports the old provider's existing runtime. This prevents silent mixing of Wine clients and is a strict limitation of the safe recovery path.
+
+Test steps:
+
+```bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+bash scripts/pc2-test19-aio-report.sh  # fixtures only, no real game/Wand
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+# Choose Astrometica 2353250 in GameWeld.
+# FIRST: Settings -> Check Wand Native 0.1.41 (read-only).
+# If healthy and Astrometica is CLOSED: Play with Wand Native 0.1.41 (opt-in).
+```
+
+This is a bridge to the existing stable service, not yet a native GameWeld port of the 0.1.41 runtime. If the read-only check blocks, use its concrete result to decide whether to integrate the missing provider/compatibility functionality into GameWeld without disrupting the current working Steam launch. Don't repeat the unproductive white-window flags.
