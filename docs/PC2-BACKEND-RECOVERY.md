@@ -438,3 +438,25 @@ tail -n 100 "${XDG_STATE_HOME:-$HOME/.local/state}/gameweld/wand-live-2353250.lo
 ```
 
 If the window remains white, diagnose logged Chromium renderer, GPU, dependency, authentication or ASAR errors; do not delete the existing compatibility prefix or Wand profile without explicit backup and separate troubleshooting. Test 17 AIO uses fake Proton and GTK compilation checks, not real rendering.
+
+## PC2 Test 18 — Recover already proven Wand Native runtime instead of trial-and-error renderer flags
+
+Maintainer noted that the white Wand window had been resolved in earlier Wand Native development. Review of the prior shipped records found the key sequence: 0.1.13 joined a game that was already running via the selected Proton tool's `files/bin/wine` plus the existing wineserver, reusing game-selected WINEPREFIX/WINELOADER/WINESERVER and live Proton/Steam environment (without a *second* Proton runinprefix); 0.1.14 applied **WINE_GRAPHICS_DRIVER=x11** and **PROTON_USE_X11_EXCLUSIVE=Wand.exe** to **Wand only**, leaving the running game's graphics driver untouched. Later stable Wand Native **0.1.41** field reports confirmed a working game + Wand + trainer under the dedicated **GE Proton Wand SHA256** direct-graft hybrid architecture, which avoided the earlier proxy crypt32 and WINEDLLPATH experiments.
+
+PC2's new Python `live-launch` had unfortunately bypassed the earlier proven launch code still preserved in `crates/wand-runtime/src/lib.rs::build_active_wineserver_launch_plan` and used `proton runinprefix`. Test 18 changes **the default PC2 live-launch** to use the running game's **exact Proton root** `files/bin/wine` with verified `files/bin/wineserver`, reusing bounded same-user game process Wine/Proton variables, restoring the Wand-only X11 backend, and retaining the already-required Enhancer `version=n,b` proxy. No global Steam launch options are changed, no game is relaunched, and missing Wine binaries or missing DISPLAY fail closed. The existing GPU-off runinprefix retry remains an explicitly opted-in legacy experiment, **not** the default.
+
+This is a recovery of the historical *startup/window* design, **not** yet the entire 0.1.41 dedicated compat tool and crypt32 patch lifecycle. The latter is already represented by historical scripts in this repository but must not be silently applied to an active Steam/Proton installation. A successful child launch still does not prove trainer attachment. Old release notes/README and `crates/wand-runtime` remain the reference implementation.
+
+To validate on CachyOS, with the white Wand process closed normally, and Astrometica still running via the existing corrected Steam command line:
+
+```bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+bash scripts/pc2-test18-aio-report.sh
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+# In Overview select Astrometica and choose: Launch Wand in Running Steam Game (opt-in)
+tail -n 100 "${XDG_STATE_HOME:-$HOME/.local/state}/gameweld/wand-live-2353250.log"
+```
+
+The new Activity result should state **Wand startup mode: direct active Proton wineserver join + Wand-only X11**; it must not report `runinprefix` for the default live action. A rendered Wand window and confirmed in-game trainer remain field-validation tasks; AIO performs only synthetic, bounded, no-real-process fixture tests.
