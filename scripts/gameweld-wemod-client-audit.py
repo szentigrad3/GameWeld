@@ -119,11 +119,27 @@ def inspect(client_dir: Path) -> dict:
                 "source": "local_nupkg_filename",
                 "scope": "nearby archive; NOT proof the executable came from it",
             })
+    asar_backup = location / "resources" / "app.asar.backup"
+    enhancer_proxy = location / "version.dll"
+    backup_present = (asar_backup.is_file() and not asar_backup.is_symlink())
+    proxy_present = (enhancer_proxy.is_file() and not enhancer_proxy.is_symlink())
     return {
         "mode": "read_only",
         "client_executable": str(exe),
         "resources_app_asar_found": asar.is_file() and not asar.is_symlink(),
         "dwritecore_present": (location / "DWriteCore.dll").is_file(),
+        "enhancer_proxy_version_dll_present": proxy_present,
+        "original_asar_backup_present": backup_present,
+        "enhancer_runtime_note": (
+            "If the installed version.dll is WeMod Enhancer's proxy, it requires "
+            "WINEDLLOVERRIDES=version=n,b in the WeMod process. File presence "
+            "alone does not prove a valid Enhancer patch."
+        ),
+        "dotnet_runtime_verified": False,
+        "dotnet_runtime_note": (
+            "This audit reads the client folder only. It does NOT establish "
+            "whether .NET Framework 4.8 is installed in the game's Proton prefix."
+        ),
         "reported_versions": findings,
         "release_version_verified": False,
         "version_note": (
