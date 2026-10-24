@@ -97,6 +97,55 @@ class IntegratedManagedSessionTests(unittest.TestCase):
         self.assertEqual(self.wand.read_bytes(), b"MZ-WAND")
         self.assertFalse((self.root / "state").exists())
 
+    def test_missing_historical_metadata_accepts_exact_verified_dll_hashes_readonly(self):
+        metadata = self.protonroot / "WAND-HYBRID.json"
+        metadata.unlink()
+        with self.healthy():
+            output = io.StringIO()
+            with redirect_stdout(output):
+                p = mod.plan("2353250", str(self.game), None)
+                self.assertEqual(
+                    mod.main(["check", "--appid", "2353250",
+                              "--game-dir", str(self.game)]), 0)
+        self.assertEqual(p.proton, self.proton.resolve())
+        self.assertIn("WAND-HYBRID.json ABSENT", output.getvalue())
+        self.assertIn("BOTH exact proven crypt32 DLL hashes VERIFIED", output.getvalue())
+        self.assertIn("READINESS PASS", output.getvalue())
+        self.assertFalse(metadata.exists(), "Read-only check must not repair metadata")
+        self.assertEqual(self.exe.read_bytes(), b"MZ-GAME")
+        self.assertFalse((self.root / "state").exists())
+
+    def test_missing_metadata_does_not_bypass_real_hash_mismatch(self):
+        metadata = self.protonroot / "WAND-HYBRID.json"
+        metadata.unlink()
+        with patch.object(mod, "verified_client", return_value=self.wand), \
+             patch.object(mod, "existing_game_process", return_value=False):
+            with self.assertRaisesRegex(mod.Blocked, "x86_64-windows crypt32 SHA-256 mismatch"):
+                mod.plan("2353250", str(self.game), None)
+        self.assertFalse(metadata.exists())
+        self.assertFalse((self.root / "state").exists())
+
+    def test_existing_bad_metadata_rejected_even_when_dll_hashes_match(self):
+        metadata = self.protonroot / "WAND-HYBRID.json"
+        data = json.loads(metadata.read_text(encoding="utf-8"))
+        data["patched_i386_crypt32_sha256"] = "0" * 64
+        metadata.write_text(json.dumps(data))
+        with self.healthy():
+            with self.assertRaisesRegex(mod.Blocked, "WAND-HYBRID.json payload hash"):
+                mod.plan("2353250", str(self.game), None)
+        self.assertFalse((self.root / "state").exists())
+
+    def test_symlinked_metadata_rejected_even_with_known_dll_hashes(self):
+        metadata = self.protonroot / "WAND-HYBRID.json"
+        other = self.root / "untrusted.json"
+        other.write_bytes(metadata.read_bytes())
+        metadata.unlink()
+        metadata.symlink_to(other)
+        with self.healthy():
+            with self.assertRaisesRegex(mod.Blocked, "WAND-HYBRID.json is symlinked"):
+                mod.plan("2353250", str(self.game), None)
+        self.assertFalse((self.root / "state").exists())
+
     def test_real_fingerprint_mismatch_blocks_before_launch(self):
         # Synthetic crypt32 DLLs don't match the tested release fingerprints.
         with patch.object(mod, "verified_client", return_value=self.wand), \
