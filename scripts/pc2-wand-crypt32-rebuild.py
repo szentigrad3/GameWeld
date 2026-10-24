@@ -204,7 +204,7 @@ def diagnose_build_log(work: Path, *, max_errors: int = 16) -> int:
         r"cannot find -l|linker command failed|cannot execute)"
     )
     matches = [i for i, line in enumerate(lines) if pattern.search(line)]
-    print("GameWeld PC2 Test 21 — failed Wine build diagnostics")
+    print("GameWeld PC2 Test 21 — Wine build log inspection (read-only)")
     print("Mode: READ ONLY; no Wine/Proton/make processes started")
     print("Source log: " + str(log_path))
     print("Latest attempt lines: " + str(len(lines)) +
@@ -219,10 +219,88 @@ def diagnose_build_log(work: Path, *, max_errors: int = 16) -> int:
         print(line[:700])
     if not matches:
         print("No standard compiler/linker errors matched; see last lines above.")
-    print("Nothing was rebuilt or installed. Share these diagnostics to identify "
-          "the actual missing dependency or compilation failure.")
+    print("No build or installation was started by --diagnose.")
+    print("Run --status to verify whether both DLLs were built and staged.")
     return 0
 
+
+
+def status_candidates(work: Path) -> int:
+    """Report candidate reality, independently of linker lines in build logs.
+
+    0 = both staged candidates match their local SHA256SUMS and are PE DLLs.
+    This proves only build/package integrity; NOT historic binary equivalence
+    or working Wine/Proton/WeMod behavior.
+    """
+    safe_dirs(work)
+    output = work / "candidate"
+    manifest = output / "SHA256SUMS"
+    print("GameWeld PC2 Test 21 — isolated crypt32 candidate status")
+    print("READ ONLY: nothing is compiled, copied, patched, or installed")
+    print("Build root: " + str(work))
+    values = {}
+    missing = []
+    for arch, expected in HISTORIC.items():
+        candidate = output / arch / "crypt32.dll"
+        build_object = work / "wine-build" / "dlls/crypt32" / arch / "crypt32.dll"
+        if candidate.is_symlink() or build_object.is_symlink():
+            blocked("Refusing symlinked crypt32 DLL path: " + str(candidate))
+        if not candidate.is_file():
+            missing.append(arch)
+            if build_object.is_file():
+                print(arch + ": compiled in Wine build, NOT YET STAGED (" +
+                      sha256(build_object) + ")")
+            else:
+                print(arch + ": NOT FOUND in build or candidate directory")
+            continue
+        fingerprint = sha256(candidate)
+        values[arch] = fingerprint
+        print(arch + ": STAGED (" + str(candidate) + ")")
+        print("  SHA256=" + fingerprint)
+        print("  Historical proven 0.1.41 match: " +
+              ("YES" if fingerprint == expected else "NO — NEW UNVERIFIED BINARY"))
+        if shutil.which("file"):
+            description = subprocess.check_output(
+                ["file", "-b", str(candidate)], text=True).strip()
+            print("  File type: " + description)
+            if "PE32" not in description or "DLL" not in description:
+                blocked("Candidate is not a Windows PE DLL: " + str(candidate))
+            if arch == "i386-windows" and "PE32+" in description:
+                blocked("32-bit crypt32 candidate is marked PE32+: " + str(candidate))
+            if arch == "x86_64-windows" and "PE32+" not in description:
+                blocked("64-bit crypt32 candidate is not PE32+: " + str(candidate))
+
+    if missing:
+        print("STATUS: INCOMPLETE — missing staged candidate(s): " + ", ".join(missing))
+        print("The latest compiler log alone cannot prove a successful stage.")
+        return 2
+    if not manifest.is_file() or manifest.is_symlink():
+        print("STATUS: INCOMPLETE — SHA256SUMS missing or symlinked")
+        return 2
+    recorded = {}
+    try:
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            fingerprint, relative = line.split(maxsplit=1)
+            if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+                blocked("Malformed SHA256SUMS digest")
+            if relative in recorded:
+                blocked("Duplicate SHA256SUMS entry")
+            recorded[relative] = fingerprint
+    except (OSError, ValueError) as exc:
+        blocked("Cannot read candidate SHA256SUMS: " + str(exc))
+    expected_keys = {arch + "/crypt32.dll" for arch in HISTORIC}
+    if set(recorded) != expected_keys:
+        blocked("Candidate SHA256SUMS contains missing/unexpected entries")
+    for arch, value in values.items():
+        if recorded[arch + "/crypt32.dll"] != value:
+            blocked("Staged " + arch + " does NOT match SHA256SUMS; preserve artifacts for investigation")
+    print("STATUS: BOTH CANDIDATES COMPILED AND STAGED; SHA256SUMS VERIFIED.")
+    if all(values[arch] == HISTORIC[arch] for arch in HISTORIC):
+        print("Both historical 0.1.41 binary hashes match; still requires runtime validation.")
+    else:
+        print("This is a NEW BINARY BUILD, not the tested 0.1.41 payload.")
+    print("NEXT: Isolated ABI and functional SHA256 property tests; NO installed Proton changes.")
+    return 0
 
 def crypt32_targets() -> list[str]:
     """Wine multi-arch Makefile targets for the ONLY two PE DLLs we need."""
@@ -326,8 +404,13 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--preflight", action="store_true")
     group.add_argument("--build", action="store_true")
     group.add_argument("--diagnose", action="store_true", help="read only the existing latest build error log")
+    group.add_argument("--status", action="store_true", help="read-only staged DLL hashes and SHA256SUMS verification")
     p.add_argument("--confirm", action="store_true")
     args = p.parse_args(argv)
+    if args.status:
+        if args.confirm:
+            blocked("--status does not accept --confirm")
+        return status_candidates(WORK)
     if args.diagnose:
         if args.confirm:
             blocked("--diagnose does not accept --confirm")
