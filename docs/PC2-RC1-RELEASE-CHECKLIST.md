@@ -45,6 +45,8 @@ This is a **release candidate for local validation**, not a published release.
 - [x] Original local AppImage: Astrometica + WeMod launched; user closed game
       early (the upstream fast-exit message was not proof of launch failure).
 - [ ] Clean RC1 UI builds and passes CI in both development and public mode.
+- [x] Release-facing **Play Game** requests the owning Steam, Heroic or
+      Lutris platform, without initiating a trainer or requiring dev mode.
 - [ ] Platform-native launch ownership and **verified same-session trainer**
       attachment; see [platform-native launch design](PC2-PLATFORM-NATIVE-LAUNCH.md).
       The previous Astrometica + WeMod success used direct Proton, not Steam
