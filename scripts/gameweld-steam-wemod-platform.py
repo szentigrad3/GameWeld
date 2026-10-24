@@ -167,7 +167,7 @@ def active_wine_handoff(plan: dict, game_pid: int,
         raise ValueError("Game process exited before WeMod handoff") from exc
 
     variables: dict[str, str] = {}
-    for token in raw.split(b"\\0"):
+    for token in raw.split(b"\0"):
         key, sep, value = token.partition(b"=")
         if not sep:
             continue
