@@ -4126,9 +4126,9 @@ static void on_pc2_deckcheatz_detect(GtkButton*b,void*d){
         return;
     }
     if(strstr(output,"\"available_count\": 0")){
-        log_line("DeckCheatz 1.x: no existing checkout detected. Optional backend only; install/select an upstream 1.x checkout separately. Steam LaunchOptions unchanged.");
+        log_line("DeckCheatz 1.x: not yet installed. Click Install DeckCheatz 1.x (managed), or select Preview to download automatically after consent. Steam LaunchOptions unchanged.");
         if(G.library_detail_status)set_label(G.library_detail_status,
-            "DeckCheatz 1.x not detected. No Steam launch option changes or game launch.");
+            "DeckCheatz 1.x not installed. GameWeld can download it on first use. No game or trainer launched.");
     }else{
         log_line("DeckCheatz 1.x detected (read-only). GameWeld direct launch requires per-game EXE, Proton and prefix selection plus explicit consent; real handoff NOT yet validated.");
         if(G.library_detail_status)set_label(G.library_detail_status,
@@ -4231,6 +4231,12 @@ static void pc2_deckcheatz_request_install(int resume_mode){
     if(!pc2_discovery_only())return;
     if(pc2_deckcheatz_install_busy){
         log_line("DeckCheatz managed installation already in progress.");return;
+    }
+    char existing[4096]={0};
+    if(pc2_deckcheatz_find_launcher(existing,sizeof existing)){
+        log_line("DeckCheatz 1.x already installed at %s; no download required.",existing);
+        if(resume_mode>=0)pc2_deckcheatz_flow(resume_mode);
+        return;
     }
     GtkWidget*consent=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
