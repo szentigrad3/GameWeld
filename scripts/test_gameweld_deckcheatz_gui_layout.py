@@ -137,7 +137,9 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
     def test_about_and_compatibility_are_scoped_to_pc2(self):
         self.assertIn('pack(head,label(pc2_public_release_ui()?"GameWeld":"GameWeld PC2","workspace-title"),0)', text)
         self.assertIn('GtkWidget*intro=card("What GameWeld does"', text)
-        self.assertIn('GtkWidget*tested=card("Validation"', text)
+        self.assertIn('GtkWidget*tested=pc2_public_release_ui()?', text)
+        self.assertIn('card("Validation"', text)
+        self.assertIn('card("Compatibility"', text)
         self.assertIn("It is NOT required for the independent DeckCheatz", text)
         self.assertIn("Other titles and machines must be tested", text)
 
