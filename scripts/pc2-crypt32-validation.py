@@ -189,7 +189,10 @@ def run_proton(proton: Path, exe: Path, data: Path, steam: Path,
             env=env, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, timeout=180, check=False,
         )
-        result = p.stdout[-250_000:]
+        # Preserve the ENTIRE short-lived Win32 probe transcript. The old
+        # tail-only truncation could discard GW_* evidence when verbose Wine
+        # +module traces continued after the probe exited.
+        result = p.stdout or ""
         rc = p.returncode
     except subprocess.TimeoutExpired as exc:
         result = str(exc)
@@ -348,13 +351,62 @@ def runtime_probes(proton: Path) -> int:
 
 
 
-def diagnose_runtime_logs() -> int:
-    """Inspect the most recent sandbox output only; never start Proton.
+def summarize_runtime_log(raw: str, *, name: str) -> list[str]:
+    """Extract signal from noisy Wine +module traces.
 
-    A nonzero Windows process exit code without GW_CRYPT32_MODULE proves
-    neither an API failure nor a bad DLL. Show the bootstrap and architecture
-    logs to distinguish loader/probe/environment failures.
+    Never treat ordinary LdrLoadDll / MODULE_InitDLL trace lines or Wine
+    background shutdown as errors. Show every GW_* marker and all actual
+    loader errors, plus crypt32.dll import/load evidence.
     """
+    lines = raw.splitlines()
+    tests = [line.strip()[:1000] for line in lines if "GW_" in line]
+    errors = [line.strip()[:1000] for line in lines if re.search(
+        r"(?i)(?:\berr:|\bfatal:|\bwarn:module:|"
+        r"status_dll_not_found|0xc0000135|0xc000007b|"
+        r"Library [^ ]+ not found|import_dll.*failed|"
+        r"failed to load|could not load)",
+        line
+    )]
+    dlls = [line.strip()[:1000] for line in lines if re.search(
+        r"(?i)(?:crypt32\.dll|certgetcertificatecontextproperty|"
+        r"certsetcertificatecontextproperty|crypt32-property\.exe)",
+        line
+    )]
+    exported = []
+    exported.append("Complete inspected transcript: " + str(len(lines)) + " lines")
+    exported.append("Probe markers: " + str(len(tests)) +
+                    "; loader/error lines: " + str(len(errors)) +
+                    "; crypt32/EXE references: " + str(len(dlls)))
+    exported.append("== Probe markers (ALL) ==")
+    exported.extend(tests[:100] if tests else ["(none)"])
+    if len(tests) > 100:
+        exported.append("(... additional markers omitted)")
+    exported.append("== Loader/error lines (FIRST 30) ==")
+    exported.extend(errors[:30] if errors else ["(none)"])
+    if len(errors) > 30:
+        exported.append("== Loader/error lines (LAST 15) ==")
+        exported.extend(errors[-15:])
+    exported.append("== crypt32.dll / probe EXE references (FIRST 20) ==")
+    exported.extend(dlls[:20] if dlls else ["(none)"])
+    if len(dlls) > 20:
+        exported.append("== crypt32.dll / probe EXE references (LAST 12) ==")
+        exported.extend(dlls[-12:])
+    has_module = any("GW_CRYPT32_MODULE=" in line for line in tests)
+    has_api = any("GW_CRYPT32_CERT_SHA256_RESULT=PASS" in line for line in tests)
+    exported.append(
+        "CLASSIFICATION " + name + ": " +
+        ("API TEST EXECUTED AND PASSED" if has_api else
+         "PROBE MAIN REACHED; API NOT PASSING" if has_module else
+         "PROBE DID NOT REPORT MODULE; PRE-MAIN OR OUTPUT CAPTURE FAILURE")
+    )
+    if "builtin-control" in name and not has_module:
+        exported.append("WARNING: built-in control produced no module marker; "
+                        "do not attribute failure to newly built candidate DLL.")
+    return exported
+
+
+def diagnose_runtime_logs() -> int:
+    """Read complete saved sandbox logs; never launch Proton or install DLLs."""
     safe_workdir()
     root = TESTROOT / "runtime"
     if not root.is_dir() or root.is_symlink():
@@ -369,44 +421,37 @@ def diagnose_runtime_logs() -> int:
         print("No previous Test22 disposable runtime session found")
         return 2
     session = max(sessions, key=lambda p: p.stat().st_mtime_ns)
-    print("GameWeld PC2 Test 22 — existing isolated Proton runtime diagnostics")
-    print("Mode: READ ONLY; does not launch Steam, Proton, Wand or a game")
+    print("GameWeld PC2 Test 22 — focused sandbox Proton diagnostics")
+    print("Mode: READ ONLY — no Wine, Steam, Proton, Wand, rebuild, or install")
     print("Session: " + str(session))
-    pattern = re.compile(
-        r"(?i)(err:|error:|fatal|failed|failure|not found|not load|"
-        r"cannot|can't|module|c0000135|c000007b|status_dll|"
-        r"GW_|steam[_ ]compat|proton:|wine:)"
-    )
     for name in ("bootstrap.log", "x86_64-builtin-control.log",
-                 "i386-builtin-control.log", "x86_64.log", "i386.log", "report.txt"):
+                 "i386-builtin-control.log", "x86_64.log", "i386.log",
+                 "report.txt"):
         path = session / name
         print("\n========== " + name + " ==========")
         if path.is_symlink() or not path.is_file():
-            print("MISSING or unsafe file")
+            print("Missing/unreadable or symlinked; no assumptions.")
             continue
+        # Probe logs are expected to be small. Refuse unusually large logs
+        # instead of quietly discarding GW markers at the start.
         if path.stat().st_size > 12 * 1024 * 1024:
-            print("Large log: displaying last 2 MiB only")
-        with path.open("rb") as inp:
-            inp.seek(0, os.SEEK_END)
-            inp.seek(max(0, inp.tell() - 2 * 1024 * 1024))
-            content = inp.read().decode("utf-8", errors="replace")
-        lines = content.splitlines()
-        print("Read lines:", len(lines))
-        selected = [line for line in lines if pattern.search(line)]
-        if selected:
-            print("--- Diagnostic matches (last 40) ---")
-            for line in selected[-40:]:
-                print(line[:900])
-        if name != "report.txt":
-            print("--- Last 25 lines ---")
-            for line in lines[-25:]:
-                print(line[:900])
-        elif not selected:
-            print(content[-3000:])
-    print("\nSTATUS: No new tests were run. Exit code 53 may indicate a Windows "
-          "DLL load failure, but exact imports and module errors determine cause.")
-    print("Do not install the staged DLLs into the existing GE Proton Wand tool.")
+            print("Log exceeds 12MiB; cannot guarantee full marker coverage.")
+            print("Inspect this original sandbox log in place: " + str(path))
+            continue
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        if name == "report.txt":
+            print(raw[:5000])
+        elif name == "bootstrap.log":
+            print("Bootstrapping mode: Steam game shim may return nonzero even if prefix was created.")
+            for line in summarize_runtime_log(raw, name=name)[:26]:
+                print(line)
+        else:
+            for line in summarize_runtime_log(raw, name=name):
+                print(line)
+    print("\nNo tests run by --diagnose-runtime. Do not install new candidates "
+          "or loosen GameWeld's runtime binary verification.")
     return 0
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
