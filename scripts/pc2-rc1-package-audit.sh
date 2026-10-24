@@ -60,6 +60,9 @@ trap 'rm -rf -- "$TEMP"' EXIT
         usr/libexec/gameweld-deckcheatz-proton.py \
         usr/libexec/gameweld-steam-game-exe.py \
         usr/libexec/gameweld-platform-session.py \
+        usr/libexec/gameweld-steam-handoff.py \
+        usr/libexec/gameweld-heroic-launch.sh \
+        usr/libexec/gameweld-lutris-session.sh \
         usr/share/applications/gameweld.desktop \
         usr/share/icons/hicolor/scalable/apps/gameweld.svg; do
         [[ -f "$APP/$item" ]] || { echo "FAIL: missing $item" >&2; exit 4; }
