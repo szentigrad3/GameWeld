@@ -90,7 +90,9 @@ def preflight(appid: str, install: Path, game: Path, compat: Path,
         raise ValueError("Proton runtime is unavailable")
     if not (steam / "steamapps").is_dir():
         raise ValueError("Steam root is invalid")
-    if actual_launcher.name != "wemod" or not (actual_launcher.parent / "src/wemod.py").is_file():
+    if (launcher.name != "wemod" or
+        not (launcher.parent / "src/wemod.py").is_file() or
+        actual_launcher != (launcher.parent / "src/wemod.py").resolve(strict=True)):
         raise ValueError("DeckCheatz checkout must be installed before using WeMod")
     wemod = installed_wemod(actual_launcher, prefix)
     if wemod is None:
