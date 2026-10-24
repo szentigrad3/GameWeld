@@ -85,62 +85,144 @@ def steam_install(game_dir: Path, appid: str) -> tuple[Path, Path, Path]:
     return steamapps, compat.resolve(), prefix.resolve()
 
 
-def find_proton(steamapps: Path) -> tuple[Path, Path]:
+def _proton_candidates(steamapps: Path) -> list[Path]:
+    """Bounded searches for existing, installed compatibility tools only.
+
+    Includes other Steam libraries and Flatpak. Never scans /proc, downloads
+    binaries, or treats an arbitrary extracted Proton archive as installed.
+    """
     home = Path.home()
-    candidates = [
-        steamapps.parent / "compatibilitytools.d" / TOOL,
-        home / ".local/share/Steam/compatibilitytools.d" / TOOL,
-        home / ".steam/root/compatibilitytools.d" / TOOL,
-        home / ".steam/steam/compatibilitytools.d" / TOOL,
+    roots = [
+        steamapps.parent,
+        home / ".local/share/Steam",
+        home / ".steam/root",
+        home / ".steam/steam",
+        home / ".var/app/com.valvesoftware.Steam/data/Steam",
+        Path("/mnt/games/Steam"),
     ]
-    explicit = os.environ.get("GAMEWELD_MANAGED_PROTON", "")
+    # Steam may live on another disk. Enumerate only shallow library roots;
+    # do not recurse over the user's home directory or entire /mnt.
+    for base in (Path("/mnt"), Path("/run/media")):
+        if base.is_dir():
+            for pattern in ("*/compatibilitytools.d", "*/*/compatibilitytools.d",
+                            "*/Steam/compatibilitytools.d",
+                            "*/SteamLibrary/compatibilitytools.d"):
+                for directory in list(base.glob(pattern))[:32]:
+                    roots.append(directory.parent)
+    roots = roots[:128]
+    explicit = os.environ.get("GAMEWELD_MANAGED_PROTON")
     if explicit:
-        # Explicit selection is useful for tests, but still MUST pass every
-        # stable payload fingerprint and manifest check below.
-        if not Path(explicit).is_absolute():
-            raise Blocked("GAMEWELD_MANAGED_PROTON must be absolute")
-        candidates.insert(0, Path(explicit))
-    verified = []
-    for candidate in candidates:
-        if not candidate.is_dir():
-            continue
-        root = candidate.resolve()
-        proton = root / "proton"
-        metadata = root / "WAND-HYBRID.json"
-        descriptor = root / "compatibilitytool.vdf"
-        if not proton.is_file() or not os.access(proton, os.X_OK):
-            continue
-        if not metadata.is_file() or not descriptor.is_file():
-            continue
+        p = Path(explicit)
+        if not p.is_absolute():
+            raise Blocked("GAMEWELD_MANAGED_PROTON must be an absolute compatibility-tool root")
+        roots.insert(0, p.parent.parent if p.parent.name == "compatibilitytools.d" else p)
+    result = []
+    seen: set[str] = set()
+    for root in roots:
+        possible = root / "compatibilitytools.d" / TOOL
+        if explicit and root == Path(explicit) and root.name == TOOL:
+            possible = root
+        key = str(possible.resolve(strict=False))
+        if key not in seen:
+            seen.add(key)
+            result.append(possible)
+    return result
+
+
+def _known_recovery_archives() -> list[Path]:
+    """Only discover old 0.1.41 build products; never auto-extract or install."""
+    home = Path.home()
+    paths = [
+        home / "Desktop/wand-native-0.1.41/dist/wand-native-0.1.41-linux-x86_64.zip",
+        home / "Desktop/wand-native-0.1.41/dist/GE-Proton-Wand-SHA256.tar.gz",
+        home / "Desktop/wand-crypt32-payload.zip",
+        home / "Downloads/wand-native-0.1.41-linux-x86_64.zip",
+        home / "Downloads/wand-crypt32-payload.zip",
+        home / "src/wand-ge-proton/build/GE-Proton-Wand-SHA256.tar.gz",
+        home / "Desktop/wand-native-0.1.41/payload/crypt32",
+    ]
+    return [p for p in paths if p.exists() and not p.is_symlink()]
+
+
+def _verify_isolated_tool(root: Path) -> Path:
+    proton = root / "proton"
+    metadata = root / "WAND-HYBRID.json"
+    descriptor = root / "compatibilitytool.vdf"
+    if not (proton.is_file() and os.access(proton, os.X_OK)):
+        raise Blocked("Proton launcher is missing/not executable")
+    if not metadata.is_file() or metadata.is_symlink():
+        raise Blocked("WAND-HYBRID.json metadata is missing or symlinked")
+    if not descriptor.is_file() or descriptor.is_symlink():
+        raise Blocked("Steam compatibilitytool.vdf is missing or symlinked")
+    try:
+        obj = json.loads(metadata.read_text(encoding="utf-8"))
+        description = descriptor.read_text(encoding="utf-8")
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise Blocked("Cannot parse compatibility-tool metadata") from exc
+    if obj.get("tool_id") != TOOL or PROTON_DISPLAY not in description:
+        raise Blocked("Installed tool identification/manifest does not match")
+    for arch, fingerprint in EXPECTED.items():
+        matches = list((root / "files").glob("**/" + arch + "/crypt32.dll"))
+        if len(matches) != 1 or matches[0].is_symlink():
+            raise Blocked("Exactly one installed " + arch + " crypt32.dll required")
         try:
-            obj = json.loads(metadata.read_text(encoding="utf-8"))
-            if obj.get("tool_id") != TOOL or not re.search(r'GE Proton Wand SHA256', descriptor.read_text(encoding="utf-8")):
-                continue
-            for arch, fingerprint in EXPECTED.items():
-                matches = list((root / "files").glob("**/" + arch + "/crypt32.dll"))
-                if len(matches) != 1 or sha256(matches[0]) != fingerprint:
-                    raise Blocked("Existing isolated Proton crypt32 " + arch +
-                                  " does not match verified release payload; refusing to launch")
-                if obj.get("patched_" + arch.split("-")[0] + "_crypt32_sha256") != fingerprint:
-                    raise Blocked("Isolated Proton metadata does not match the actual patched crypt32 payload")
-            verified.append(proton.resolve())
-        except (OSError, json.JSONDecodeError) as exc:
-            raise Blocked("The existing isolated Proton installation cannot be verified") from exc
+            found_hash = sha256(matches[0])
+        except OSError as exc:
+            raise Blocked("Cannot hash installed " + arch + " crypt32.dll") from exc
+        if found_hash != fingerprint:
+            raise Blocked(arch + " crypt32 SHA-256 mismatch (expected " +
+                          fingerprint + ", found " + found_hash + ")")
+        if obj.get("patched_" + arch.split("-")[0] + "_crypt32_sha256") != fingerprint:
+            raise Blocked(arch + " WAND-HYBRID.json payload hash does not match the proven release")
+    return proton.resolve(strict=True)
+
+
+def find_proton(steamapps: Path) -> tuple[Path, Path]:
+    checked = _proton_candidates(steamapps)
+    installed = [path for path in checked if path.is_dir()]
+    verified: list[Path] = []
+    rejected: list[str] = []
+    for path in installed:
+        try:
+            verified.append(_verify_isolated_tool(path.resolve(strict=True)))
+        except (Blocked, OSError, ValueError) as exc:
+            rejected.append(str(path) + ": " + str(exc))
+
     distinct = {str(p): p for p in verified}
     if len(distinct) != 1:
-        raise Blocked(
-            "No unique verified GE Proton Wand SHA256 tool. GameWeld has the "
-            "historic Wine patch source but not its compiled 0.1.41 DLL payloads; "
-            "it will not download, patch, or invent those binaries.")
-    # Real Steam root, not the games library, is passed to Proton.
+        archive_paths = _known_recovery_archives()
+        explanation = (
+            "Expected one verified GE Proton Wand SHA256 tool; found " +
+            str(len(installed)) + " candidate(s) in " + str(len(checked)) +
+            " checked locations, " + str(len(distinct)) + " verified."
+        )
+        if rejected:
+            explanation += " Candidate errors: " + " | ".join(rejected[:4])
+        if archive_paths:
+            explanation += " Previous tested-release recovery files FOUND (not installed): " + (
+                " | ".join(str(p) for p in archive_paths[:6]))
+        else:
+            explanation += (" No known previous release/archive paths found. "
+                            "The 0.1.41 release was previously built at "
+                            "~/Desktop/wand-native-0.1.41/dist/ and "
+                            "~/src/wand-ge-proton/build/.")
+        explanation += (
+            " The current repo does not include its compiled crypt32 payload. "
+            "No Proton tools were installed, modified or downloaded."
+        )
+        raise Blocked(explanation)
+
+    home = Path.home()
     roots = [
         home / ".steam/root",
         home / ".local/share/Steam",
         home / ".steam/steam",
+        home / ".var/app/com.valvesoftware.Steam/data/Steam",
     ]
     steam_root = next((p.resolve() for p in roots if p.is_dir()), None)
     if steam_root is None:
-        raise Blocked("Steam client installation root is not found")
+        raise Blocked("Steam client root is missing; isolated Proton tool verified but "
+                      "no client install directory was found")
     return next(iter(distinct.values())), steam_root
 
 
