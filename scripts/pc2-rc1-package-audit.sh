@@ -14,13 +14,19 @@ if [[ $# -gt 1 ]]; then
 fi
 
 if [[ $# -eq 1 ]]; then
-    mapfile -d '' -t candidates < <(find "$OUT" -maxdepth 1 -type f \
-        -name 'GameWeld-PC2-RC1-LOCAL-*-x86_64.AppImage' -print0)
-    if [[ "${#candidates[@]}" -eq 0 ]]; then
-        echo "No local PC2 AppImage found; pass its exact pathname." >&2
+    # The packager calls this with the exact newly built image; never replace
+    # it with another image merely because a prior LOCAL build exists.
+    IMAGE="$1"
+else
+    # Standalone audit: discover the newest local or RC1 candidate image.
+    IMAGE="$(find "$OUT" -maxdepth 1 -type f \
+        \( -name 'GameWeld-PC2-RC1-LOCAL-*-x86_64.AppImage' -o \
+           -name 'GameWeld-PC2-RC1-CANDIDATE-*-x86_64.AppImage' \) \
+        -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+    if [[ -z "$IMAGE" ]]; then
+        echo "No PC2 local/candidate AppImage found. Supply an exact image path." >&2
         exit 2
     fi
-    IMAGE="$(ls -t -- "${candidates[@]}" | head -n 1)"
 fi
 [[ -f "$IMAGE" && ! -L "$IMAGE" ]] || {
     echo "Refusing missing or symlinked image: $IMAGE" >&2
