@@ -601,3 +601,19 @@ Resume exactly:
     python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
 
 If make encounters a new compiler error, the builder now prints the relevant log excerpts; alternatively run `python3 scripts/pc2-wand-crypt32-rebuild.py --diagnose` (read-only). Do not copy compiled candidates into the existing Steam compatibility tool until independent ABI/runtime verification. The old binary fingerprints are unchanged and remain enforced.
+
+
+### Test 21 targeted crypt32 rebuild — unrelated winedmo / FFmpeg compile failure
+
+The user provided the read-only GameWeld `--diagnose` log after resolving `CERT_SHA256_HASH_PROP_ID=107`. The pinned Wine build got past `crypt32` but a **full Wine `make -j12`** failed under `dlls/winedmo/libavcodec/pcm_byte_order_reverse_bsf.c`: the bundled code references `AVBSFInternal`, `AVBSFContext.internal`, `AVCodecParameters.channels`, and `AVBitStreamFilter.filter/init`, which do not match the available FFmpeg API in the configured build. This is an **unrelated multimedia dependency** and does not indicate a crypt32 source bug.
+
+Test 21 now issues `make -jN dlls/crypt32/x86_64-windows/crypt32.dll dlls/crypt32/i386-windows/crypt32.dll` from the existing configured multi-architecture Wine build directory instead of a generic full `make`. Make still builds any real prerequisites for these DLLs, but does not request all other Wine components. The preexisting pinned Git checkout, source patches, Makefile, object files, and append-only log are retained. Regression fixtures assert **only** those two target names are sent to make, with no default `all` or `winedmo` invocation.
+
+On CachyOS continue:
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
+
+The outputs are only candidate binaries in `build/pc2-source/crypt32-source-rebuild/candidate`. The historical binary hashes remain required for the old GameWeld runtime; if rebuilt hashes differ, do not copy them into an installed Steam compatibility tool or loosen the old hash guard. Validate crypt32 property correctness in a disposable Wine/Proton environment before any explicitly reviewed new tool release.
