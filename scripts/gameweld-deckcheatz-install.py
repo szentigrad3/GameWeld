@@ -26,7 +26,7 @@ SOURCE_BRANCH = "main"
 SUBDIR = "gameweld/deckcheatz"
 MAX_REPORT = 3000
 MANAGED_MARKER = ".gameweld-managed.json"
-REV_RE = re.compile(r"[0-9a-f]{40}\\Z")
+REV_RE = re.compile(r"[0-9a-f]{40}\Z")
 
 
 class InstallError(RuntimeError):
@@ -100,7 +100,7 @@ def write_managed_metadata(path: Path, revision: str) -> None:
                "branch": SOURCE_BRANCH, "revision": revision}
     with marker.open("x", encoding="utf-8") as output:
         json.dump(payload, output, indent=2, sort_keys=True)
-        output.write("\\n")
+        output.write("\n")
 
 
 def git_environment() -> dict[str, str]:
@@ -169,7 +169,7 @@ def running_launcher(path: Path) -> bool:
                 try:
                     if item.stat().st_uid != os.getuid():
                         continue
-                    argv = (Path(item.path) / "cmdline").read_bytes()[:65536].split(b"\\0")
+                    argv = (Path(item.path) / "cmdline").read_bytes()[:65536].split(b"\0")
                     if any(token in wanted for token in argv):
                         return True
                 except (OSError, PermissionError):
