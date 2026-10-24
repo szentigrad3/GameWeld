@@ -215,6 +215,68 @@ def authenticated_x11_environment(
     )
 
 
+def _verified_enhancer_patch(folder: Path) -> bool:
+    """Use the pinned upstream adapter's exact backup/ASAR/proxy hash checks.
+
+    Module import is local to GameWeld's installed helper; no download, patch,
+    restore, Wine invocation or prefix edit is performed.
+    """
+    script = Path(__file__).with_name("gameweld-wemod-enhancer.py")
+    if not script.is_file() or script.is_symlink():
+        return False
+    try:
+        spec = importlib.util.spec_from_file_location("gw_pc2_pinned_enhancer", script)
+        if spec is None or spec.loader is None:
+            return False
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        helper = module.installed_helper_dir()
+        if not module.valid_patcher(helper):
+            return False
+        verified, _evidence = module.verify_patch_files(folder, helper)
+        return bool(verified)
+    except (OSError, ValueError, RuntimeError, AttributeError):
+        return False
+
+
+def prepare_enhancer_runtime(
+        wemod_exe: Path, environment: dict[str, str],
+        *, verify=None) -> str:
+    """Enable native version.dll ONLY for a verified, user-patched WeMod.
+
+    Preserve all unrelated Wine DLL overrides. Refuse incomplete/mismatched
+    client patches; never patch files implicitly or change game-wide settings.
+    """
+    client = wemod_exe.parent.resolve(strict=True)
+    proxy = client / "version.dll"
+    backup = client / "resources" / "app.asar.backup"
+    has_proxy = proxy.is_file() and not proxy.is_symlink()
+    has_backup = backup.is_file() and not backup.is_symlink()
+    if not has_proxy and not has_backup:
+        return "no-enhancer-installed"
+    if not has_proxy or not has_backup:
+        raise ValueError(
+            "WeMod Enhancer files are incomplete: expected version.dll and "
+            "original app.asar.backup; no WeMod process started."
+        )
+    verifier = verify or _verified_enhancer_patch
+    if not verifier(client):
+        raise ValueError(
+            "WeMod Enhancer file verification failed (ASAR/backup/proxy hash). "
+            "Open GameWeld Settings > WeMod Enhancer > Detect; do not launch "
+            "a potentially mismatched proxy DLL."
+        )
+    # The game's original Wine DLL policy must not be changed. Only the
+    # new WeMod subprocess receives the native-first override.
+    old = environment.get("WINEDLLOVERRIDES", "")
+    keep = [
+        entry for entry in old.split(";")
+        if entry and not entry.split("=", 1)[0].strip().lower() == "version"
+    ]
+    environment["WINEDLLOVERRIDES"] = ";".join(keep + ["version=n,b"])
+    return "enhancer-verified-native-version-dll"
+
+
 def active_wine_handoff(plan: dict, game_pid: int,
                         proc_root: Path = Path("/proc")) -> tuple[list[str], dict[str, str]]:
     """Join the observed game's active wineserver; do NOT bootstrap Proton twice.
@@ -318,6 +380,9 @@ def active_wine_handoff(plan: dict, game_pid: int,
     environment["PROTON_USE_X11_EXCLUSIVE"] = Path(plan["wemod_exe"]).name
     environment.pop("LD_PRELOAD", None)
     environment.pop("MANGOHUD", None)
+    environment["GAMEWELD_WEMOD_ENHANCER_MODE"] = prepare_enhancer_runtime(
+        Path(plan["wemod_exe"]), environment
+    )
     # These Electron switches affect only the WeMod executable, not the
     # already-running Astrometica game. Avoid disabling Chromium sandboxing
     # or setting global Wine/Steam variables to change the game's renderer.
@@ -352,6 +417,9 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
     except (OSError, ValueError) as exc:
         emit("WEMOD_HANDOFF_BLOCKED: " + str(exc))
         return {"state": "WEMOD_HANDOFF_BLOCKED", "trainer_verified": False}
+    emit("WEMOD_ENHANCER_MODE: " +
+         environment.pop("GAMEWELD_WEMOD_ENHANCER_MODE",
+                         "unverified-no-client-patch-change"))
     emit("WEMOD_X11_AUTHORIZATION_VERIFIED: " +
          environment.pop("GAMEWELD_X11_DISPLAY_SOURCE", "verified-local-X11") +
          " display (Xauthority cookie never logged)")
