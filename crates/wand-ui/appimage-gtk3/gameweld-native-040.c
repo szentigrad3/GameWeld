@@ -4245,7 +4245,7 @@ static void on_pc2_deckcheatz_preview(GtkButton*b,void*d){
     }
     if(!compat[0]){
         /* Game-specific compatdata may be in a separate Steam library. */
-        snprintf(candidate,sizeof candidate,"%s/../compatdata/%s",g->install_dir,g->appid);
+        snprintf(candidate,sizeof candidate,"%s/../../compatdata/%s",g->install_dir,g->appid);
         if(pc2_deckcheatz_folder(candidate))snprintf(compat,sizeof compat,"%s",candidate);
     }
     if(!compat[0] && !pc2_deckcheatz_choose(
