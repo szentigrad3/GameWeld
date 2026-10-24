@@ -134,6 +134,7 @@ APPRUN
                   gameweld-deckcheatz-proton.py gameweld-steam-game-exe.py \
                   gameweld-platform-session.py gameweld-steam-wemod-platform.py \
                   gameweld-wemod-client-audit.py gameweld-wemod-prefix-readiness.py \
+                  gameweld-steam-wemod-runtime-audit.py \
                   gameweld-steam-handoff.py \
                   gameweld-heroic-launch.sh gameweld-lutris-session.sh; do
         test -s "$APP/usr/libexec/$helper" || { echo "Missing helper $helper" >&2; exit 5; }
