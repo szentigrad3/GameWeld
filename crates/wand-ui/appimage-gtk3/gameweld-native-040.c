@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "gameweld-pc2-window-policy.h"
 
 /* Minimal GTK3 declarations. We intentionally build against the stable GTK3 ABI
  * already used by the proven 0.1.41 AppImage. This keeps the redesign independent
@@ -1817,7 +1818,7 @@ static void pc2_primary_monitor_pixels(int *physical_w,int *physical_h){
 static int pc2_primary_monitor_is_4k(void){
     int w=0,h=0;
     pc2_primary_monitor_pixels(&w,&h);
-    return w>=3840 && h>=2160;
+    return gameweld_pc2_window_policy(1280,720,w,h).maximize;
 }
 
 static void recommended_window_geometry(int *out_w,int *out_h){
@@ -1838,25 +1839,10 @@ static void recommended_window_geometry(int *out_w,int *out_h){
     if(pc2_discovery_only()){
         int physical_w=0,physical_h=0;
         pc2_primary_monitor_pixels(&physical_w,&physical_h);
-        /* Adapt every display's *restored* window to its usable GTK logical
-         * workarea. Small 720p panels use more available room, 1080p/1440p
-         * get modest breathing space, while UHD starts maximized. */
-        int width_pct=90,height_pct=88;
-        if(physical_w>0 && physical_h>0 && (physical_w<=1600 || physical_h<=900)){
-            width_pct=95;height_pct=93;
-        }else if(physical_w>=2560 && physical_h>=1440){
-            width_pct=92;height_pct=90;
-        }
-        int maxw=sw>40?sw-24:sw;
-        int maxh=sh>60?sh-32:sh;
-        int ww=(sw*width_pct)/100;
-        int wh=(sh*height_pct)/100;
-        if(ww<900 && maxw>=900)ww=900;
-        if(wh<600 && maxh>=600)wh=600;
-        if(ww>maxw)ww=maxw;
-        if(wh>maxh)wh=maxh;
-        if(out_w)*out_w=ww;
-        if(out_h)*out_h=wh;
+        GameWeldPC2WindowPolicy size=gameweld_pc2_window_policy(
+            sw,sh,physical_w,physical_h);
+        if(out_w)*out_w=size.width;
+        if(out_h)*out_h=size.height;
         return;
     }
     /* Preserve the former PC1 window sizing, including its max bounds. */
