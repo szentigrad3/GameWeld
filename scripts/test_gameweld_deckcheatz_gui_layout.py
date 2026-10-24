@@ -26,7 +26,7 @@ def function_body(signature: str, following: str) -> str:
 class DeckCheatzGuiLayoutTests(unittest.TestCase):
     def test_primary_launch_is_available_on_overview_and_library(self):
         self.assertEqual(
-            text.count('button("Play with WeMod — DeckCheatz (experimental)","primary-action")'),
+            text.count('button("Play with WeMod","primary-action")'),
             2,
         )
         self.assertIn("G.pc2_deckcheatz_overview_play=direct", text)
