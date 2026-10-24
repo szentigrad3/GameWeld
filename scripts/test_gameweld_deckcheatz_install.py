@@ -178,6 +178,16 @@ class DeckCheatzInstallerTests(unittest.TestCase):
         updated = installer.update()
         self.assertEqual(updated["upstream_revision"], new)
 
+    def test_official_git_url_with_or_without_suffix_is_allowed(self):
+        with patch.object(installer, "SOURCE_URL",
+                          "https://github.com/DeckCheatz/wemod-launcher.git"):
+            self.assertTrue(installer.official_origin(
+                "https://github.com/DeckCheatz/wemod-launcher.git"))
+            self.assertTrue(installer.official_origin(
+                "https://github.com/DeckCheatz/wemod-launcher"))
+            self.assertFalse(installer.official_origin(
+                "https://example.invalid/DeckCheatz/wemod-launcher.git"))
+
     def test_adopt_refuses_dirty_manual_checkout(self):
         self.target.parent.mkdir(parents=True, exist_ok=True)
         self.git("clone", str(self.origin), str(self.target), cwd=self.root)
