@@ -679,3 +679,21 @@ Run:
     python3 scripts/pc2-crypt32-validation.py --diagnose-runtime
 
 Send the resulting terminal output (or paste the three log files). Once the loader error is established, adjust only the disposable runtime procedure or diagnose genuine candidate PE loader incompatibility. Do not change GameWeld's production historical crypt32 hash gate or reinstall any DLLs from these unverified candidates.
+
+
+### Test22 runtime exit 53 traced to Proton launcher game-mode handoff
+
+The user's Test22 `--diagnose-runtime` output shows the Proton-created prefix loading `C:\windows\system32\steam.exe` as a Wine **builtin** and no `GW_CRYPT32_MODULE` or certificate-test markers in either `x86_64.log` or `i386.log`. The user invoked no real game. Neither probe exited with its own programmed return code; the wrapper exited 53. This evidence is consistent with a Proton Steam-mode handoff failure, not proof of a bad `crypt32.dll`. The built-in steam.exe by itself is not a loader error; it is the normal Proton game-launch shim.
+
+Verified from Valve Proton's launcher Python source (proton_10.0): `Session.run()` invokes `wine64 c:\windows\system32\steam.exe <game executable>`; mode `waitforexitandrun` waits for Wine then calls that same Steam shim, whereas mode `runinprefix` invokes `wine <executable>` directly. `init_session(update_prefix_files)` calls `CompatData.setup_prefix()` only when `update_prefix_files=True`: `run` and `waitforexitandrun` do this; `runinprefix` does not.
+
+Fix: Test22 runtime bootstrap initializes a NEW scratch compatdata prefix with Proton `run`, whose Steam shim return code may be ignored **only if** the sandbox `drive_c/windows/system32` is created. The actual certificate test executables are then invoked via Proton `runinprefix` with a native-only `crypt32=n` override and independently checked module-path and certificate hash markers. The existing GE-Proton-Wand-SHA256 launcher is used read-only. Neither the real Steam game prefix nor Wand processes are touched. Fixture tests assert the exact two-mode handoff and reject `waitforexitandrun` for the offline API probes.
+
+After updating the PC2 branch, rerun the existing opt-in disposable runtime test (it creates a **new** isolated prefix without deleting prior logs or touching Proton):
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-crypt32-validation.py --runtime-probes --confirm --proton /mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton
+
+Do not rerun `--compile-probes`, overwrite the original candidate DLLs or disable GameWeld's release hash gate. If this still fails, read the **newest** session with `python3 scripts/pc2-crypt32-validation.py --diagnose-runtime` and inspect exact program/loader evidence before changing anything else.
