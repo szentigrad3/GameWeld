@@ -181,6 +181,23 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('"launch_enabled"', public_launch)
         self.assertIn("if(pc2_steam_launch_busy)", public_launch)
 
+    def test_public_wemod_routes_game_launch_through_steam(self):
+        flow = function_body(
+            "static void pc2_deckcheatz_flow(int experimental_launch){",
+            "static void on_pc2_deckcheatz_preview(",
+        )
+        self.assertIn('if(pc2_public_release_ui() && experimental_launch){', flow)
+        self.assertIn('gameweld-steam-wemod-platform.py', flow)
+        self.assertIn('execlp("python3","python3",native_helper,"probe"', flow)
+        self.assertIn('execlp("python3","python3",native_helper,"launch"', flow)
+        self.assertIn('Steam-native Play with WeMod REQUESTED', flow)
+        self.assertIn('gameweld-deckcheatz-direct.py', flow)
+        self.assertLess(
+            flow.index('if(pc2_public_release_ui() && experimental_launch){'),
+            flow.index('gameweld-deckcheatz-direct.py'),
+        )
+        self.assertIn('return;', flow)
+
     def test_public_play_with_wemod_has_no_mandatory_file_or_preview_dialog(self):
         flow = function_body(
             "static void pc2_deckcheatz_flow(int experimental_launch){",
