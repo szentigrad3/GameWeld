@@ -29,8 +29,9 @@ done
 for required in gameweld-deckcheatz-direct.py gameweld-deckcheatz-proton.py \
                 gameweld-deckcheatz-install.py gameweld-steam-game-exe.py \
                 gameweld-platform-session.py \
-                gameweld-steam-shortcuts.py \
-                gameweld-heroic-provider.py gameweld-lutris-provider.py; do
+                gameweld-steam-shortcuts.py gameweld-steam-handoff.py \
+                gameweld-heroic-provider.py gameweld-heroic-launch.sh \
+                gameweld-lutris-provider.py gameweld-lutris-session.sh; do
     test -s "$APP/usr/libexec/$required" || {
         printf 'Missing runtime helper: %s\n' "$required" >&2; exit 3;
     }
