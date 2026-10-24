@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Static regression checks for the PC2 DeckCheatz GUI surface.
+
+No GTK display, Steam login, game startup, installation or prefix writes.
+The full GTK compilation is handled by pc2-deckcheatz-aio.sh.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+import re
+import unittest
+
+
+SOURCE = Path(__file__).resolve().parents[1] / (
+    "crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
+)
+text = SOURCE.read_text(encoding="utf-8")
+
+
+def function_body(signature: str, following: str) -> str:
+    start = text.index(signature)
+    end = text.index(following, start)
+    return text[start:end]
+
+
+class DeckCheatzGuiLayoutTests(unittest.TestCase):
+    def test_primary_launch_is_available_on_overview_and_library(self):
+        self.assertEqual(
+            text.count('button("Play with WeMod — DeckCheatz (experimental)","primary-action")'),
+            2,
+        )
+        self.assertIn("G.pc2_deckcheatz_overview_play=direct", text)
+        self.assertIn("G.pc2_deckcheatz_library_play=deckcheatz_test", text)
+
+    def test_button_is_steam_only_and_other_games_stay_experimental(self):
+        self.assertIn("game_is_steam(g)&&!game_is_steam_shortcut(g)", text)
+        self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_overview_play,allowed)", text)
+        self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,allowed)", text)
+        self.assertIn('!strcmp(g->appid,"2353250")', text)
+        self.assertIn("Experimental for this game", text)
+
+    def test_advanced_launch_controls_are_collapsed(self):
+        self.assertIn('gtk_expander_new("Advanced Steam / WeMod diagnostics")', text)
+        self.assertIn('gtk_expander_new("Advanced trainer / launch diagnostics")', text)
+        self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", text)
+        self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", text)
+
+    def test_settings_separates_maintenance_and_advanced(self):
+        self.assertIn('label("Quick Start",NULL)', text)
+        self.assertIn('label("DeckCheatz / WeMod",NULL)', text)
+        self.assertIn('label("Advanced Providers",NULL)', text)
+        self.assertIn("pack(deckpage,dc,0)", text)
+        self.assertIn("pack(advancedpage,cols,1)", text)
+        self.assertIn("gtk_notebook_set_current_page((GtkNotebook*)tabs,0)", text)
+
+    def test_launch_preview_and_prefix_consent_remain_separate(self):
+        self.assertIn("pc2_deckcheatz_flow(1)", text)
+        self.assertIn("pc2_deckcheatz_show_preview(output)", text)
+        self.assertIn("if(!ok || !experimental_launch)return", text)
+        self.assertIn("GTK_BUTTONS_YES_NO", text)
+        self.assertIn('"--confirm-prefix-changes","--experimental-direct-launch"', text)
+
+    def test_no_default_automatic_update_or_steam_option_edit(self):
+        self.assertIn("pc2_deckcheatz_request_install(experimental_launch)", text)
+        self.assertIn('"--check-update"', text)
+        self.assertIn('"--update","--confirm"', text)
+        self.assertIn("GameWeld will NOT edit Steam Launch Options", text)
+
+
+if __name__ == "__main__":
+    unittest.main()
