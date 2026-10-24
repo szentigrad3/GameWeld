@@ -79,6 +79,17 @@ launch implementation without verified compatibility checks.
 
 ## Implementation progress
 
+The release-facing **Play with WeMod** now uses the experimental
+`scripts/gameweld-steam-wemod-platform.py` route instead of launching the game
+EXE directly: resolve installed game/Proton, request `steam -applaunch`, wait
+for an exact game AppID/executable/prefix observation, then run an already
+installed WeMod.exe/Wand.exe via `proton runinprefix` in that prefix. This
+requires no Steam Launch Options edits. **Trainer attachment, Electron rendering
+and Steam ownership beyond a launch request remain unverified by synthetic CI**.
+When runtime or matching game-process evidence is missing, it does not launch a
+second standalone game EXE or claim success. The existing direct DeckCheatz 1.x
+launch remains available in developer-only builds as a regression fallback.
+
 The release-facing Overview and Library now expose **Play Game**, which uses the
 owning platform without starting a trainer: Steam via the validated PC2 Steam
 handoff, Steam shortcuts via their exact numeric `rungameid`, and existing
@@ -98,6 +109,8 @@ window appeared, or Steam supervision was independently proven.
 - [x] PC2 release-facing native **Play Game** wired for Steam, Steam
       shortcuts, Heroic and Lutris with game-only request status.
 - [x] Read-only exact game-process identity observer and synthetic fixture tests.
+- [x] Release **Play with WeMod** code requests Steam-owned game launch before
+      an existing WeMod runtime, rather than invoking the game .exe.
 - [ ] Steam-owned Astrometica launch with correct Steam AppID and live game PID.
 - [ ] WeMod trainer starts/attaches in that *same* Steam game/prefix session.
 - [ ] Already-running game: no duplicate launch or prefix collision.
