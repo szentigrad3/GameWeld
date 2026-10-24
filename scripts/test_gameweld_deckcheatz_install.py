@@ -121,6 +121,90 @@ class DeckCheatzInstallerTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 2)
         self.assertFalse(self.target.exists())
 
+    def next_upstream_commit(self):
+        marker = self.origin / "UPSTREAM-FIX"
+        marker.write_text("second 1.x bugfix revision")
+        self.git("add", ".", cwd=self.origin)
+        self.git("-c", "user.name=Fixture", "-c", "user.email=test@example.invalid",
+                 "commit", "-m", "upstream-fix", cwd=self.origin)
+        return self.git("-C", str(self.origin), "rev-parse", "HEAD",
+                        cwd=self.root).stdout.strip()
+
+    def test_fresh_checkout_has_managed_version_record(self):
+        report = installer.install()
+        self.assertTrue(report["managed_install"])
+        meta = installer.managed_metadata(self.target)
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta["revision"], report["upstream_revision"])
+        self.assertEqual(installer.inspect_managed_checkout(self.target), meta["revision"])
+
+    def test_check_update_is_read_only(self):
+        report = installer.install()
+        installed = report["upstream_revision"]
+        new = self.next_upstream_commit()
+        result = installer.check_update()
+        self.assertEqual(result["result"], "update_available")
+        self.assertEqual(result["installed_revision"], installed)
+        self.assertEqual(result["upstream_revision"], new)
+        self.assertFalse((self.target / "UPSTREAM-FIX").exists())
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-backup-*")))
+
+    def test_opt_in_update_keeps_previous_checkout_as_backup(self):
+        result = installer.install()
+        old = result["upstream_revision"]
+        new = self.next_upstream_commit()
+        report = installer.update()
+        self.assertEqual(report["result"], "updated")
+        self.assertEqual(report["previous_revision"], old)
+        self.assertEqual(report["upstream_revision"], new)
+        self.assertTrue((self.target / "UPSTREAM-FIX").is_file())
+        self.assertEqual(installer.inspect_managed_checkout(self.target), new)
+        backup = Path(report["rollback_path"])
+        self.assertTrue(backup.is_dir())
+        self.assertEqual(installer.inspect_managed_checkout(backup), old)
+        self.assertFalse((backup / "UPSTREAM-FIX").exists())
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-staging-*")))
+
+    def test_update_noop_when_already_current(self):
+        installer.install()
+        result = installer.update()
+        self.assertEqual(result["result"], "up_to_date")
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-backup-*")))
+
+    def test_update_refuses_external_unmanaged_checkout(self):
+        self.target.mkdir(parents=True)
+        with self.assertRaisesRegex(installer.InstallError, "not installed by GameWeld"):
+            installer.update()
+
+    def test_update_refuses_local_changes_without_overwriting(self):
+        installer.install()
+        src = self.target / "src/wemod.py"
+        src.write_text("# modified privately\\n")
+        self.next_upstream_commit()
+        with self.assertRaisesRegex(installer.InstallError, "local changes"):
+            installer.update()
+        self.assertEqual(src.read_text(), "# modified privately\\n")
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-backup-*")))
+
+    def test_update_blocks_running_launcher(self):
+        installer.install()
+        self.next_upstream_commit()
+        with patch.object(installer, "running_launcher", return_value=True):
+            with self.assertRaisesRegex(installer.InstallError, "running"):
+                installer.update()
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-backup-*")))
+
+    def test_failed_update_preserves_previous_version(self):
+        initial = installer.install()["upstream_revision"]
+        self.next_upstream_commit()
+        with patch.object(installer, "_clone_to",
+                          side_effect=installer.InstallError("simulated download failure")):
+            with self.assertRaisesRegex(installer.InstallError, "download failure"):
+                installer.update()
+        self.assertEqual(installer.inspect_managed_checkout(self.target), initial)
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-staging-*")))
+        self.assertFalse(list(self.target.parent.glob(".deckcheatz-backup-*")))
+
     def test_no_steam_launch_options_or_game_prefix_mutation(self):
         config = self.root / "Steam/userdata/config/localconfig.vdf"
         config.parent.mkdir(parents=True)
