@@ -169,3 +169,20 @@ Following the successful player-reported Astrometica live trainer test, managed-
 - **Regression testing:** `scripts/test_gameweld_deckcheatz_gui_layout.py` checks UI labels, Steam-only availability, the separate preview/consent path, hidden legacy PC2 controls and settings tabs. `scripts/pc2-deckcheatz-aio.sh` runs it along with the installer, Proton and provider tests, GTK C syntax compilation, and read-only status.
 
 This is a development-branch UI change, not a release announcement. Do not assume this newly arranged GUI has passed a live GTK render test until the updated AIO and PC2 source runner have been exercised on the user's CachyOS desktop. Full integrated game+trainer verification remains limited to Astrometica.
+
+
+## PC2 live GUI screenshot review and responsive layout changes (2026-10-24)
+
+Eight user-provided CachyOS desktop screenshots show the development GUI rendering and navigating successfully across **Overview, Library, Trainer Library, Compatibility, Support, About, and Settings/Quick Start**. The screenshots confirm the selected-game **Play with WeMod** button is displayed in both Overview and Library, the primary Settings entry is simplified, and the player-visible selection includes Steam game `7 Days to Die` as the current selected game. These images **do not** establish a live WeMod handoff for `7 Days to Die`; only Astrometica is field-validated.
+
+**Visual regression found:** On a relatively narrow restored window, the Library game list was squeezed to a thin column of cover thumbnails by the inspector's fixed width. A second presentation issue was the legacy About page's dense long text; Compatibility also still surfaced a status specific to the optional isolated Wand tool without distinguishing it from the successful DeckCheatz/Proton pathway.
+
+**Fixes implemented:**
+- PC2 Library has a width-responsive allocation handler. At widths below approximately 990 GTK pixels, the game list and selected-game inspector stack vertically and the page becomes vertically scrollable; at wider widths they return to a side-by-side layout. A hysteresis threshold avoids repeated flips near the breakpoint. The Steam/DeckCheatz launch callback, game selection and saved data are unchanged.
+- The PC2 About page is shorter, scrollable and uses individually wrapped cards, while the original PC1 About page remains untouched.
+- Compatibility now labels the missing isolated Wand compatibility tool as optional and explicitly states it is not a prerequisite for the independent DeckCheatz/Proton/WeMod workflow.
+- The Astrometica readiness message now accurately describes success on **one tested CachyOS system**, not guaranteed success on every user's computer.
+
+The test suite `scripts/test_gameweld_deckcheatz_gui_layout.py` includes static regression assertions for responsive Library orientation, page scrolling, the revised About page and the compatibility-scope description. These tests run from the existing `scripts/pc2-deckcheatz-aio.sh`.
+
+**Gate still required:** Updated GTK syntax compilation, resize testing on the user's real desktop (wide and narrow window), and fresh AIO output. This source change has not yet been proven visually by screenshots. Do not change the already-validated Steam/DeckCheatz launch path merely because a GUI viewport was adjusted.
