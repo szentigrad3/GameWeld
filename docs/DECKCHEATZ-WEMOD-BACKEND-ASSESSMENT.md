@@ -277,3 +277,12 @@ Changes:
 - Static PC2 GUI regressions now cover persistence, clamping, reset action, and unchanged external game launch consent. Native C sizing tests have been updated for the larger defaults at eight synthetic resolutions.
 
 These source changes are committed but **the revised linked GTK binary and runtime preference round trip are not yet verified** on the user's desktop. The next gate is staging a new development AppDir with a unique destination, opening GameWeld, resizing it, closing/relaunching the same AppDir, and confirming the saved dimensions return. It should still never automatically maximize. Verify the offline AIO/preflight tests before declaring the preference feature complete.
+
+
+## PC2 Reset window size disabled-button fix (2026-10-24)
+
+The user reported that Settings → Quick Start → **Reset window size** did nothing on the live CachyOS GUI. Inspection of the GTK source found the exact cause: the global PC2 `button()` factory automatically calls `pc2_guard_button(w)` on any action label not explicitly allow-listed, permanently disabling it in `GAMEWELD_PC2_DISCOVERY_ONLY` mode. The new window reset button had been wired to `on_pc2_window_size_reset` but was **missing from the safe-action allow-list**. Therefore the handler was never invoked.
+
+Fix: add only the string `"Reset window size"` to that safe-action allow-list, which does not affect trainer execution/launch, download/update permissions or Steam Launch Options. The existing reset callback removes only `pc2-window-size.txt`, recomputes screen-proportional default dimensions, exits maximized mode if needed, and resizes/recenters the window. A new static GUI regression assertion inspects the actual `button()` guard to prevent this UI regression. This is a code fix; compile and click testing remain required on a newly built AppDir.
+
+Expected validation: pull the updated PC2 branch and stage a new AppDir in a fresh path (never silently overwrite a prior stage). Launch, resize to a custom normal-window size, close/reopen to check persistence, then click **Reset window size** and confirm a visible size change plus the Activity message `PC2 window reset: ... normal window`. No separate game/WeMod test is required because the launch path was not changed.
