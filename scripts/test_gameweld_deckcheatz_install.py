@@ -166,6 +166,7 @@ class DeckCheatzInstallerTests(unittest.TestCase):
         self.assertFalse(list(self.target.parent.glob(".deckcheatz-staging-*")))
 
     def test_adopt_clean_manual_checkout_for_managed_updates(self):
+        self.target.parent.mkdir(parents=True, exist_ok=True)
         self.git("clone", str(self.origin), str(self.target), cwd=self.root)
         self.assertFalse(installer.status()["managed_install"])
         result = installer.adopt_existing()
@@ -178,6 +179,7 @@ class DeckCheatzInstallerTests(unittest.TestCase):
         self.assertEqual(updated["upstream_revision"], new)
 
     def test_adopt_refuses_dirty_manual_checkout(self):
+        self.target.parent.mkdir(parents=True, exist_ok=True)
         self.git("clone", str(self.origin), str(self.target), cwd=self.root)
         marker = self.target / "KEEP-ME"
         marker.write_text("personal file")
@@ -198,6 +200,7 @@ class DeckCheatzInstallerTests(unittest.TestCase):
         self.git("add", ".", cwd=other)
         self.git("-c", "user.name=Fixture", "-c", "user.email=test@example.invalid",
                  "commit", "-m", "fixture", cwd=other)
+        self.target.parent.mkdir(parents=True, exist_ok=True)
         self.git("clone", str(other), str(self.target), cwd=self.root)
         with self.assertRaisesRegex(installer.InstallError, "not the official"):
             installer.adopt_existing()
