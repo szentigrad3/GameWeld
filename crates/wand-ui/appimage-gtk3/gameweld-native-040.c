@@ -4210,11 +4210,8 @@ static void on_pc2_deckcheatz_preview(GtkButton*b,void*d){
                 snprintf(proton,sizeof proton,"%s",candidate);
         }
     }
-    if(!pc2_deckcheatz_file(proton) &&
-        !pc2_deckcheatz_choose("Select the Proton launcher file named proton",0,
-            NULL,proton,sizeof proton)){
-        log_line("DeckCheatz preview cancelled: no Proton launcher selected.");return;
-    }
+    /* When game discovery does not expose Proton, try the same Steam runtime
+     * resolution used by the shortcut provider before prompting the user. */
     if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
         snprintf(steam,sizeof steam,"%s",g->steam_root);
     else {
@@ -4252,6 +4249,74 @@ static void on_pc2_deckcheatz_preview(GtkButton*b,void*d){
             "Select existing compatdata folder for this Steam AppID",1,
             NULL,compat,sizeof compat)){
         log_line("DeckCheatz preview cancelled: no existing game prefix selected.");return;
+    }
+
+    if(!pc2_deckcheatz_file(proton)){
+        char locator[4096]={0},discovery[16384]={0};
+        const char *dev=getenv("APPDIR");
+        if(dev && *dev)snprintf(locator,sizeof locator,
+            "%s/usr/libexec/gameweld-deckcheatz-proton.py",dev);
+        else snprintf(locator,sizeof locator,"gameweld-deckcheatz-proton.py");
+        int lookupfd[2];
+        if(pipe(lookupfd)==0){
+            pid_t lookup=fork();
+            if(lookup==0){
+                close(lookupfd[0]);setsid();
+                dup2(lookupfd[1],STDOUT_FILENO);
+                dup2(lookupfd[1],STDERR_FILENO);
+                close(lookupfd[1]);
+                clear_desktop_activation_env();
+                execlp("python3","python3",locator,
+                    "--appid",g->appid,
+                    "--steam-root",steam,
+                    "--install-dir",g->install_dir,
+                    "--compatdata",compat,
+                    "--preferred-name",g->compat_tool,
+                    "--preferred-path",g->compat_tool_path,
+                    (char*)NULL);
+                _exit(127);
+            }
+            close(lookupfd[1]);
+            if(lookup>0){
+                int success=bounded_child_output(lookup,lookupfd[0],
+                    discovery,sizeof discovery,12);
+                if(success){
+                    char resolved[4096]={0};
+                    json_string(discovery,"selected",resolved,sizeof resolved);
+                    if(pc2_deckcheatz_file(resolved) &&
+                       !strcmp(strrchr(resolved,'/')?strrchr(resolved,'/')+1:resolved,"proton")){
+                        snprintf(proton,sizeof proton,"%s",resolved);
+                        log_line("DeckCheatz: automatically found the selected Steam game's Proton launcher: %s",proton);
+                    }
+                }
+            }else{
+                close(lookupfd[0]);
+            }
+        }
+    }
+    if(!pc2_deckcheatz_file(proton)){
+        char browse[4096]={0};
+        if(pc2_deckcheatz_folder(g->compat_tool_path))
+            snprintf(browse,sizeof browse,"%s",g->compat_tool_path);
+        else {
+            snprintf(candidate,sizeof candidate,"%s/compatibilitytools.d",steam);
+            if(pc2_deckcheatz_folder(candidate))
+                snprintf(browse,sizeof browse,"%s",candidate);
+            else {
+                snprintf(candidate,sizeof candidate,"%s/steamapps/common",steam);
+                if(pc2_deckcheatz_folder(candidate))
+                    snprintf(browse,sizeof browse,"%s",candidate);
+            }
+        }
+        log_line("DeckCheatz: Steam's Proton version could not be automatically resolved for %s. Please choose the executable file named proton inside the installed Proton or GE-Proton folder.",g->name);
+        if(!pc2_deckcheatz_choose("Select the file named proton (inside GE-Proton or Steam Proton)",0,
+                                 browse[0]?browse:NULL,proton,sizeof proton)){
+            log_line("DeckCheatz preview cancelled: Proton file not selected. This is not a DeckCheatz installation failure.");return;
+        }
+    }
+    if(strcmp(strrchr(proton,'/')?strrchr(proton,'/')+1:proton,"proton") ||
+       !pc2_deckcheatz_file(proton)){
+        log_line("DeckCheatz preview blocked: select the launcher file literally named proton.");return;
     }
     const char *appdir=getenv("APPDIR");char helper[4096]={0};
     if(appdir && *appdir)snprintf(helper,sizeof helper,
