@@ -616,6 +616,14 @@ static int pc2_discovery_only(void) {
     return 0;
 #endif
 }
+/* The release UI is a presentation mode, not an opt-in to legacy actions. */
+static int pc2_public_release_ui(void) {
+#ifdef GAMEWELD_PC2_PUBLIC_UI
+    return pc2_discovery_only();
+#else
+    return 0;
+#endif
+}
 static void pc2_block_action(GtkButton *b, void *unused) {
     (void)unused;
     if (!pc2_discovery_only()) return;
@@ -1994,7 +2002,11 @@ static void refresh_ui(void) {
             gtk_widget_set_sensitive(G.pc2_deckcheatz_overview_play,allowed);
         if(G.pc2_deckcheatz_library_play)
             gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,allowed);
-        const char *message= !g?"Select an installed Steam game to use WeMod.":
+        const char *message=pc2_public_release_ui()?
+            (!g?"Select a game to see its launch options.":
+             !allowed?"Play with WeMod supports installed Steam Windows games.":
+             "Review the launch plan and approve prefix changes before starting."):
+            !g?"Select an installed Steam game to use WeMod.":
             !allowed?"DeckCheatz direct play supports installed Steam Windows games only.":
             !strcmp(g->appid,"2353250")?
             "Astrometica: trainer validated on one CachyOS system. This computer still requires an opt-in test.":
@@ -2114,13 +2126,17 @@ static void refresh_ui(void) {
     if(pc2_discovery_only()){
         set_label(G.wand_ready,"Unverified");
         set_label(G.compat_ready,"Not verified");
-        set_label(G.play_title,"TRAINER LAUNCH DISABLED");
-        set_label(G.play_subtitle,"PC2 test build: legacy trainer and Play Normally actions are blocked. Use the separate Steam game-only opt-in button.");
-        if(G.overview_launch_hint)set_label(G.overview_launch_hint,
+        if(!pc2_public_release_ui()){
+            set_label(G.play_title,"TRAINER LAUNCH DISABLED");
+            set_label(G.play_subtitle,"PC2 test build: legacy trainer and Play Normally actions are blocked. Use the separate Steam game-only opt-in button.");
+        }
+        if(!pc2_public_release_ui() && G.overview_launch_hint)set_label(G.overview_launch_hint,
             pc2_steam_launch_allowed()?
             "PC2 SOURCE TEST • Trainer/manager buttons disabled. For a standard Steam game, use the separate Steam game-only opt-in button and confirm Yes.":
             "PC2 SOURCE TEST • Trainer/manager buttons disabled. Restart with --enable-steam-game-launch to test a game-only Steam handoff.");
-        if(G.right_proton)set_label(G.right_proton,"Proton health: not verified in PC2\nNo repair indicated by missing optional metadata.");
+        if(G.right_proton)set_label(G.right_proton,pc2_public_release_ui()?
+            "Proton readiness: check the selected game before launch.":
+            "Proton health: not verified in PC2\nNo repair indicated by missing optional metadata.");
     }
     if(G.native_profile_status){
         if(!g)set_label(G.native_profile_status,"Select a game first.");
@@ -2843,7 +2859,7 @@ static GtkWidget *build_home(void){
     GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");
     GtkWidget*page=box(GTK_ORIENTATION_VERTICAL,14);gtk_widget_set_name(page,"page");margins(page,20);gtk_container_add(outer,page);
 
-    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("OVERVIEW","page-kicker"),0);pack(ht,label("Your game, runtime and trainer in one place","workspace-title"),0);pack(ht,label(pc2_discovery_only()?"PC2 SOURCE TEST • Steam / Heroic / Lutris discovery. Legacy trainer controls remain disabled; game-only Steam launch requires explicit opt-in.":"GameWeld keeps launcher-native sessions intact and gives every game one Launch With surface for trainers and manager providers.","page-subtitle"),0);pack(head,ht,1);GtkWidget*online=label(pc2_discovery_only()?"●  Library discovery active":"●  Services ready","good");gtk_widget_set_name(online,"status-pill");pack(head,online,0);pack(page,head,0);
+    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("OVERVIEW","page-kicker"),0);pack(ht,label("Your game, runtime and trainer in one place","workspace-title"),0);pack(ht,label(pc2_public_release_ui()?"Steam, Heroic and Lutris games in one library. Select a game to see its launch options.":pc2_discovery_only()?"PC2 SOURCE TEST • Steam / Heroic / Lutris discovery. Legacy trainer controls remain disabled; game-only Steam launch requires explicit opt-in.":"GameWeld keeps launcher-native sessions intact and gives every game one Launch With surface for trainers and manager providers.","page-subtitle"),0);pack(head,ht,1);GtkWidget*online=label(pc2_discovery_only()?"●  Library discovery active":"●  Services ready","good");gtk_widget_set_name(online,"status-pill");pack(head,online,0);pack(page,head,0);
 
     GtkWidget*spot=box(GTK_ORIENTATION_HORIZONTAL,16);gtk_widget_set_name(spot,"spotlight");
     GtkWidget*copy=box(GTK_ORIENTATION_VERTICAL,12);gtk_widget_set_name(copy,"spotlight-copy");gtk_widget_set_size_request(copy,390,-1);
@@ -2860,7 +2876,7 @@ static GtkWidget *build_home(void){
         pack(copy,G.pc2_deckcheatz_overview_status,0);
     }
     GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);if(pc2_discovery_only()){gtk_widget_set_no_show_all(plays,TRUE);gtk_widget_hide(plays);}
-    if(pc2_discovery_only()){
+    if(pc2_discovery_only() && !pc2_public_release_ui()){
         GtkWidget*advanced=gtk_expander_new("Advanced Steam / WeMod diagnostics");
         GtkWidget*diagbox=box(GTK_ORIENTATION_VERTICAL,8);
         gtk_container_add(advanced,diagbox);
@@ -2963,7 +2979,7 @@ static GtkWidget *build_library(void){
         gtk_scrolled_window_set_policy((GtkScrolledWindow*)pc2_outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);
         gtk_container_add(pc2_outer,p);
     }
-    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("LIBRARY","page-kicker"),0);pack(ht,label("All detected games","workspace-title"),0);pack(ht,label("Steam, Steam shortcuts, Heroic and Lutris titles in one working set. Fully resolved Lutris entries support Test 4 launch + same-session local-trainer handoff.","page-subtitle"),0);pack(head,ht,1);char count[64];snprintf(count,sizeof count,"%d games",G.game_count);GtkWidget*ct=label(count,"good");gtk_widget_set_name(ct,"status-pill");pack(head,ct,0);pack(p,head,0);
+    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("LIBRARY","page-kicker"),0);pack(ht,label("All detected games","workspace-title"),0);pack(ht,label(pc2_public_release_ui()?"Browse installed Steam, Heroic and Lutris games. Check launch readiness before starting.":"Steam, Steam shortcuts, Heroic and Lutris titles in one working set. Fully resolved Lutris entries support Test 4 launch + same-session local-trainer handoff.","page-subtitle"),0);pack(head,ht,1);char count[64];snprintf(count,sizeof count,"%d games",G.game_count);GtkWidget*ct=label(count,"good");gtk_widget_set_name(ct,"status-pill");pack(head,ct,0);pack(p,head,0);
     GtkWidget*body=box(GTK_ORIENTATION_HORIZONTAL,14);
     GtkWidget*listpanel=box(GTK_ORIENTATION_VERTICAL,8);style(listpanel,"panel");pack(listpanel,label("GAMES","section-kicker"),0);GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_vexpand(sc,TRUE);G.game_list=gtk_list_box_new();g_signal_connect_data(G.game_list,"row-selected",(GCallback)selected_changed,NULL,NULL,0);
     for(int i=0;i<G.game_count;i++){GtkWidget*r=gtk_list_box_row_new();style(r,"library-row");G.game_rows[i]=r;GtkWidget*rb=box(GTK_ORIENTATION_HORIZONTAL,11);margins(rb,7);GtkWidget*thumb=gtk_image_new();style(thumb,"game-thumb");char art[2048]={0};if(!resolve_game_art(&G.games[i],1,art,sizeof art))resolve_game_art(&G.games[i],0,art,sizeof art);set_image_path(thumb,art[0]?art:NULL,52,70);pack(rb,thumb,0);GtkWidget*txt=box(GTK_ORIENTATION_VERTICAL,3);pack(txt,label(G.games[i].name,"game-row-title"),0);char x[384];if(game_is_steam_shortcut(&G.games[i]))snprintf(x,sizeof x,"Steam shortcut • %s",G.games[i].appid);else if(game_is_steam(&G.games[i]))snprintf(x,sizeof x,"Steam • %s",G.games[i].appid);else if(game_is_lutris(&G.games[i]))snprintf(x,sizeof x,"Lutris • %s",G.games[i].runner[0]?G.games[i].runner:"wine");else snprintf(x,sizeof x,"Heroic • %s",G.games[i].runner);pack(txt,label(x,"muted"),0);pack(rb,txt,1);GtkWidget*installed=label(game_is_lutris(&G.games[i])?"Discovery":"Ready",game_is_lutris(&G.games[i])?"muted":"good");gtk_widget_set_name(installed,"status-pill");pack(rb,installed,0);gtk_container_add(r,rb);gtk_list_box_insert((GtkListBox*)G.game_list,r,-1);}gtk_container_add(sc,G.game_list);pack(listpanel,sc,1);pack(body,listpanel,1);
@@ -2981,13 +2997,13 @@ static GtkWidget *build_library(void){
         pack(tools,steam_only,0);
         pack(tools,session_check,0);
         pack(tools,preview,0);
-        pack(inspect,advanced,0);
+        if(!pc2_public_release_ui())pack(inspect,advanced,0);
     }else{
         pack(inspect,lb1,0);pack(inspect,lbct,0);pack(inspect,lbw,0);
         pack(inspect,lba,0);pack(inspect,lbc,0);pack(inspect,lbx,0);
         pack(inspect,lb2,0);pack(inspect,lb3,0);pack(inspect,preview,0);
         pack(inspect,steam_only,0);pack(inspect,session_check,0);
-    }pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("TIP","section-kicker"),0);GtkWidget*tip=label("Use the search dropdown above to choose All games, Steam, Steam shortcuts, Heroic, Lutris, or Trainers. Lutris launch integration is intentionally disabled in Test 1; trainer searches jump directly to Trainer Library.","muted");gtk_label_set_line_wrap((GtkLabel*)tip,TRUE);pack(inspect,tip,0);pack(body,inspect,0);
+    }pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("TIP","section-kicker"),0);GtkWidget*tip=label(pc2_public_release_ui()?"Use the search dropdown to filter games by launcher or find local trainers.":"Use the search dropdown above to choose All games, Steam, Steam shortcuts, Heroic, Lutris, or Trainers. Lutris launch integration is intentionally disabled in Test 1; trainer searches jump directly to Trainer Library.","muted");gtk_label_set_line_wrap((GtkLabel*)tip,TRUE);pack(inspect,tip,0);pack(body,inspect,0);
     if(pc2_discovery_only()){
         PC2LibraryAdaptive *adaptive=calloc(1,sizeof *adaptive);
         if(adaptive){
@@ -4983,7 +4999,7 @@ static GtkWidget *build_settings(void){
     pack(ht,label("SETTINGS","page-kicker"),0);
     pack(ht,label("GameWeld Settings","workspace-title"),0);
     pack(ht,label(pc2_discovery_only()?
-        "Simple game-first controls, with provider maintenance and developer diagnostics in separate tabs.":
+        (pc2_public_release_ui()?"Manage launch preferences and your installed WeMod tools.":"Simple game-first controls, with provider maintenance and developer diagnostics in separate tabs."):
         "Provider configuration, compatibility tools and maintenance controls.","page-subtitle"),0);
     pack(p,ht,0);
     GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);
@@ -5000,10 +5016,15 @@ static GtkWidget *build_settings(void){
             "It checks game and Proton paths, shows a launch preview and asks before any Wine prefix changes.",
             NULL);
         pack(quick,first,0);
-        pack(quick,card("Tested game: Astrometica",
-            "GameWeld + DeckCheatz 1.x + Proton Experimental + WeMod trainer worked in-game "
-            "on the validated CachyOS host. Other games are experimental until tested; "
-            "Steam Launch Options remain untouched by this direct workflow.",NULL),0);
+        if(!pc2_public_release_ui())
+            pack(quick,card("Tested game: Astrometica",
+                "GameWeld + DeckCheatz 1.x + Proton Experimental + WeMod trainer worked in-game "
+                "on the validated CachyOS host. Other games are experimental until tested; "
+                "Steam Launch Options remain untouched by this direct workflow.",NULL),0);
+        else
+            pack(quick,card("Game compatibility",
+                "GameWeld checks the selected game and Proton paths, then asks before launching WeMod. "
+                "Some games require additional compatibility setup, and success can differ by system.",NULL),0);
         pack(quick,card("Keep your installation working",
             "DeckCheatz downloads, version checks and opt-in updates are under the DeckCheatz tab. "
             "Source-level trainer providers, compatibility fixes and patch diagnostics are under Advanced Providers. "
@@ -5019,7 +5040,7 @@ static GtkWidget *build_settings(void){
         pack(advancedpage,cols,1);
         gtk_notebook_append_page((GtkNotebook*)tabs,quick,label("Quick Start",NULL));
         gtk_notebook_append_page((GtkNotebook*)tabs,deckpage,label("DeckCheatz / WeMod",NULL));
-        gtk_notebook_append_page((GtkNotebook*)tabs,advancedpage,label("Advanced Providers",NULL));
+        if(!pc2_public_release_ui())gtk_notebook_append_page((GtkNotebook*)tabs,advancedpage,label("Advanced Providers",NULL));
         gtk_notebook_set_current_page((GtkNotebook*)tabs,0);
         pack(p,tabs,1);
     }else pack(p,cols,1);
@@ -5089,11 +5110,13 @@ static GtkWidget *build_settings(void){
         g_signal_connect_data(live_render,"clicked",(GCallback)on_pc2_wemod_live_render,NULL,NULL,0);
         g_signal_connect_data(native_check,"clicked",(GCallback)on_pc2_native_check,NULL,NULL,0);
         g_signal_connect_data(native_play,"clicked",(GCallback)on_pc2_native_play,NULL,NULL,0);
-        pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
-        pack(eh,live_launch,0);pack(eh,live_render,0);
-        pack(eh,native_check,0);pack(eh,native_play,0);
+        if(!pc2_public_release_ui()){
+            pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
+            pack(eh,live_launch,0);pack(eh,live_render,0);
+            pack(eh,native_check,0);pack(eh,native_play,0);
+        }
         GtkWidget*note=label("GameWeld's integrated managed flow follows the Wand Native 0.1.41 one-session architecture without requiring a separate wandctl. It requires the isolated GE Proton Wand SHA256 DLLs and DWriteCore already installed. Check readiness first and close the game before managed Play. The earlier white-window live handoffs remain for diagnostics only.","muted");
-        gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
+        gtk_label_set_line_wrap((GtkLabel*)note,TRUE);if(!pc2_public_release_ui())pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
         G.wand_patcher_status=pc2_wemod_status;
@@ -5101,7 +5124,8 @@ static GtkWidget *build_settings(void){
         pc2_wemod_helper_status=label("Enhancer helper: separate from the Wand client and Proton provider. Click Detect to check its status.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_helper_status,TRUE);
         pack(eh,pc2_wemod_helper_status,0);
-        pack(right,eh,0);
+        if(pc2_public_release_ui())pack(deckpage,eh,0);
+        else pack(right,eh,0);
         wand_detect_start();
     }
     GtkWidget*scard=box(GTK_ORIENTATION_VERTICAL,8);style(scard,"card");pack(scard,label("Steam Direct Launch Cleanup","card-title"),0);GtkWidget*sd=label("Older pre-GameWeld builds could leave the legacy wand-steam-wrap hook in a game's Steam Launch Options. Steam can still invoke that obsolete hook and leave a terminal attached to the game. This cleanup removes only LaunchOptions entries that still reference wand-steam-wrap and creates a timestamped localconfig.vdf backup first.","muted");gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(scard,sd,0);GtkWidget*sbtn=button("Remove Legacy Steam Hooks","action");g_signal_connect_data(sbtn,"clicked",(GCallback)on_clean_legacy_hooks,NULL,NULL,0);pack(scard,sbtn,0);G.steam_cleanup_status=label("After cleanup, restart Steam once before testing direct Play.","good");gtk_label_set_line_wrap((GtkLabel*)G.steam_cleanup_status,TRUE);pack(scard,G.steam_cleanup_status,0);pack(right,scard,0);pack(right,card("Safety","Use native profiles, local trainers and Cheat Engine tables for single-player/offline games. Do not use them in anti-cheat protected or competitive multiplayer modes. No provider bypasses anti-cheat systems.",NULL),0);return outer;}
@@ -5113,8 +5137,8 @@ static GtkWidget *build_about(void){
         gtk_container_add(outer,page);
         GtkWidget*head=box(GTK_ORIENTATION_VERTICAL,4);
         pack(head,label("ABOUT","page-kicker"),0);
-        pack(head,label("GameWeld PC2","workspace-title"),0);
-        GtkWidget*sub=label("A game-first Linux launcher and trainer manager. PC2 is a development build; PC1 remains the stable reference.","muted");
+        pack(head,label(pc2_public_release_ui()?"GameWeld":"GameWeld PC2","workspace-title"),0);
+        GtkWidget*sub=label(pc2_public_release_ui()?"A game-first Linux launcher and trainer manager.":"A game-first Linux launcher and trainer manager. PC2 is a development build; PC1 remains the stable reference.","muted");
         gtk_label_set_line_wrap((GtkLabel*)sub,TRUE);pack(head,sub,0);pack(page,head,0);
         GtkWidget*intro=card("What GameWeld does",
             "Finds installed Steam, Steam shortcuts, Heroic and Lutris games in one Library. "
@@ -5125,10 +5149,14 @@ static GtkWidget *build_about(void){
             "For supported Steam games, select a game and choose Play with WeMod. "
             "The launch shows a preview and requests permission for possible Wine prefix changes.",NULL);
         pack(page,deck,0);
-        GtkWidget*tested=card("Validation",
-            "Astrometica launched through Proton Experimental and a WeMod trainer worked "
-            "in-game on one CachyOS test system. Other titles and machines must be tested "
-            "separately. Managed DeckCheatz updates remain opt-in with rollback backups.",NULL);
+        GtkWidget*tested=pc2_public_release_ui()?
+            card("Compatibility",
+                "GameWeld validates game paths and launch preferences, but compatibility varies by game and runtime. "
+                "Managed DeckCheatz updates are opt-in with rollback backups.",NULL):
+            card("Validation",
+                "Astrometica launched through Proton Experimental and a WeMod trainer worked "
+                "in-game on one CachyOS test system. Other titles and machines must be tested "
+                "separately. Managed DeckCheatz updates remain opt-in with rollback backups.",NULL);
         pack(page,tested,0);
         GtkWidget*design=card("Safety and licensing",
             "GameWeld does not bundle DeckCheatz's AGPL source or silently update game "
@@ -5149,7 +5177,7 @@ static void build_ui(void){
     }
     G.window=gtk_window_new(GTK_WINDOW_TOPLEVEL);gtk_window_set_title((GtkWindow*)G.window,"GameWeld");gtk_window_set_icon_name((GtkWindow*)G.window,"gameweld");gtk_window_set_default_size((GtkWindow*)G.window,initial_w,initial_h);gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);gtk_window_set_decorated((GtkWindow*)G.window,TRUE);g_signal_connect_data(G.window,"destroy",(GCallback)on_destroy,NULL,NULL,0);if(pc2_discovery_only())g_signal_connect_data(G.window,"configure-event",(GCallback)pc2_window_configure,NULL,NULL,0);
     GtkWidget*titlebar=box(GTK_ORIENTATION_HORIZONTAL,12);gtk_widget_set_name(titlebar,"app-titlebar");gtk_widget_set_size_request(titlebar,-1,54);gtk_widget_set_margin_start(titlebar,14);gtk_widget_set_margin_end(titlebar,10);
-    GtkWidget*titlebrand=box(GTK_ORIENTATION_HORIZONTAL,10);gtk_widget_set_name(titlebrand,"title-brand");GtkWidget*wm=asset_image("gameweld-app-icon.png",36,36);if(!wm){wm=label("GW",NULL);gtk_widget_set_name(wm,"wandmark");}pack(titlebrand,wm,0);GtkWidget*bt=box(GTK_ORIENTATION_VERTICAL,0);GtkWidget*brand=label("GameWeld",NULL);gtk_widget_set_name(brand,"brand");pack(bt,brand,0);GtkWidget*ver=label(pc2_discovery_only()?"PC2 DISCOVERY TEST":"0.7.0",NULL);gtk_widget_set_name(ver,"brandver");pack(bt,ver,0);pack(titlebrand,bt,0);pack(titlebar,titlebrand,0);
+    GtkWidget*titlebrand=box(GTK_ORIENTATION_HORIZONTAL,10);gtk_widget_set_name(titlebrand,"title-brand");GtkWidget*wm=asset_image("gameweld-app-icon.png",36,36);if(!wm){wm=label("GW",NULL);gtk_widget_set_name(wm,"wandmark");}pack(titlebrand,wm,0);GtkWidget*bt=box(GTK_ORIENTATION_VERTICAL,0);GtkWidget*brand=label("GameWeld",NULL);gtk_widget_set_name(brand,"brand");pack(bt,brand,0);GtkWidget*ver=label(pc2_discovery_only()?(pc2_public_release_ui()?"RC1":"PC2 DISCOVERY TEST"):"0.7.0",NULL);gtk_widget_set_name(ver,"brandver");pack(bt,ver,0);pack(titlebrand,bt,0);pack(titlebar,titlebrand,0);
     GtkWidget*grow=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow,1);GtkWidget*searchwrap=box(GTK_ORIENTATION_HORIZONTAL,0);gtk_widget_set_name(searchwrap,"global-search-wrap");G.search_scope=gtk_combo_box_text_new();gtk_widget_set_name(G.search_scope,"global-search-scope");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"all","All games");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"steam","Steam");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"shortcut","Steam shortcuts");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"heroic","Heroic");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"lutris","Lutris");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"trainers","Trainers");gtk_combo_box_set_active_id((GtkComboBox*)G.search_scope,"all");gtk_widget_set_size_request(G.search_scope,126,36);g_signal_connect_data(G.search_scope,"changed",(GCallback)on_search_scope_changed,NULL,NULL,0);pack(searchwrap,G.search_scope,0);G.search=gtk_entry_new();gtk_widget_set_name(G.search,"global-search-entry");gtk_entry_set_placeholder_text((GtkEntry*)G.search,"Search all games…");gtk_entry_set_icon_from_icon_name((GtkEntry*)G.search,GTK_ENTRY_ICON_PRIMARY,"system-search-symbolic");gtk_widget_set_size_request(G.search,250,36);g_signal_connect_data(G.search,"changed",(GCallback)on_search,NULL,NULL,0);pack(searchwrap,G.search,0);pack(titlebar,searchwrap,0);GtkWidget*grow2=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow2,1);G.top_steam_status=label("Detecting Steam, Heroic and Lutris…","muted");pack(titlebar,G.top_steam_status,0);pack(titlebar,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);GtkWidget*mi=button("—","windowctl");GtkWidget*ma=button("□","windowctl");GtkWidget*cl=button("×","windowctl");gtk_widget_set_name(cl,"closectl");g_signal_connect_data(mi,"clicked",(GCallback)on_minimize,NULL,NULL,0);g_signal_connect_data(ma,"clicked",(GCallback)on_maximize,NULL,NULL,0);g_signal_connect_data(cl,"clicked",(GCallback)on_close_btn,NULL,NULL,0);pack(titlebar,mi,0);pack(titlebar,ma,0);pack(titlebar,cl,0);gtk_window_set_titlebar((GtkWindow*)G.window,titlebar);
     GtkWidget*root=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(root,"root");gtk_container_add(G.window,root);GtkWidget*nav=box(GTK_ORIENTATION_HORIZONTAL,5);gtk_widget_set_name(nav,"navstrip");G.nav_home=make_nav("go-home-symbolic","Overview",(GCallback)nav_home);G.nav_library=make_nav("view-grid-symbolic","Library",(GCallback)nav_library);G.nav_trainers=make_nav("applications-engineering-symbolic","Trainer Library",(GCallback)nav_trainers);G.nav_setup=make_nav("emblem-system-symbolic","Compatibility",(GCallback)nav_setup);G.nav_diag=make_nav("help-browser-symbolic","Support",(GCallback)nav_diag);G.nav_settings=make_nav("preferences-system-symbolic","Settings",(GCallback)nav_settings);G.nav_about=make_nav("dialog-information-symbolic","About",(GCallback)nav_about);pack(nav,G.nav_home,0);pack(nav,G.nav_library,0);pack(nav,G.nav_trainers,0);pack(nav,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);pack(nav,G.nav_setup,0);pack(nav,G.nav_diag,0);GtkWidget*ng=box(GTK_ORIENTATION_HORIZONTAL,0);pack(nav,ng,1);GtkWidget*hint=label("Ctrl+F Search","command-hint");pack(nav,hint,0);pack(nav,G.nav_settings,0);pack(nav,G.nav_about,0);pack(root,nav,0);
     G.stack=gtk_stack_new();gtk_stack_set_hhomogeneous((GtkStack*)G.stack,FALSE);gtk_stack_set_vhomogeneous((GtkStack*)G.stack,FALSE);gtk_widget_set_hexpand(G.stack,TRUE);gtk_widget_set_vexpand(G.stack,TRUE);gtk_stack_add_named((GtkStack*)G.stack,build_home(),"home");gtk_stack_add_named((GtkStack*)G.stack,build_library(),"library");gtk_stack_add_named((GtkStack*)G.stack,build_trainer_library(),"trainers");gtk_stack_add_named((GtkStack*)G.stack,build_setup(),"setup");gtk_stack_add_named((GtkStack*)G.stack,build_diag(),"diag");gtk_stack_add_named((GtkStack*)G.stack,build_settings(),"settings");gtk_stack_add_named((GtkStack*)G.stack,build_about(),"about");pack(root,G.stack,1);
