@@ -21,6 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "gameweld-pc2-window-policy.h"
+#include "gameweld-pc2-window-state.h"
 
 /* Minimal GTK3 declarations. We intentionally build against the stable GTK3 ABI
  * already used by the proven 0.1.41 AppImage. This keeps the redesign independent
@@ -1835,18 +1836,8 @@ static int pc2_window_state_path(char *out,size_t cap,int create_dir){
 }
 static int pc2_load_window_size(int *out_w,int *out_h,int max_w,int max_h){
     char path[4096]={0};
-    if(!out_w||!out_h||!pc2_window_state_path(path,sizeof path,0))return 0;
-    FILE *file=fopen(path,"r");
-    if(!file)return 0;
-    int w=0,h=0;
-    int ok=fscanf(file,"%d %d",&w,&h)==2;
-    fclose(file);
-    if(!ok||w<640||h<480||w>8192||h>8192)return 0;
-    if(w>max_w)w=max_w;
-    if(h>max_h)h=max_h;
-    if(w<1||h<1)return 0;
-    *out_w=w;*out_h=h;
-    return 1;
+    if(!pc2_window_state_path(path,sizeof path,0))return 0;
+    return gameweld_pc2_state_read(path,out_w,out_h,max_w,max_h);
 }
 /* Record the LAST live normal-window size when GTK configures the window.
  * Reading geometry inside the "destroy" signal is too late on KWin/GTK3:
@@ -1862,18 +1853,10 @@ static void pc2_save_window_size(void){
     if(w<640||h<480||w>8192||h>8192)return;
     char path[4096]={0};
     if(!pc2_window_state_path(path,sizeof path,1))return;
-    /* Write through a temporary file and rename after close: a failed or
-     * interrupted write cannot leave a partially parsed preference. */
-    char temp[4096]={0};
-    int n=snprintf(temp,sizeof temp,"%s.tmp-%ld",path,(long)getpid());
-    if(n<=0||n>=(int)sizeof temp)return;
-    int fd=open(temp,O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,0600);
-    if(fd<0)return;
-    char value[64];
-    int size=snprintf(value,sizeof value,"%d %d\n",w,h);
-    ssize_t actual=write(fd,value,(size_t)size);
-    if(close(fd)!=0||actual!=size){unlink(temp);return;}
-    if(rename(temp,path)!=0){unlink(temp);return;}
+    if(gameweld_pc2_state_write(path,w,h))
+        log_line("PC2 saved live window size: %dx%d normal window.",w,h);
+    else
+        log_line("PC2 window size save failed; check write access to the user config directory.");
 }
 static gboolean pc2_window_save_after_resize(void *unused){
     (void)unused;
