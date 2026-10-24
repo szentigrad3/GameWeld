@@ -139,3 +139,19 @@ The offline reproducible test command is:
 It creates `build/pc2-source/deckcheatz-aio-report.txt` and runs Python compile checks, locally created Git fixture tests for fresh install/update/adoption, Proton chooser and backend safeguards, GTK C syntax verification and read-only checkout status. No real game, Wine prefix, external download or trainer is started by this AIO command. The CI workflow also calls it. Results from actual user's CachyOS system and GitHub Actions must be inspected before declaring a generally ready release.
 
 **Release gate:** Astrometica has a player-reported successful cheat toggle, but the simplified UI and update-manager feature are new code. Do not mark all other games field-tested or promote an across-the-board unattended installer/updater based on the one working game.
+
+
+## CachyOS DeckCheatz AIO validation — 2026-10-24
+
+User supplied `deckcheatz-aio-report.txt` from `bash scripts/pc2-deckcheatz-aio.sh`. Result: **PASS (OFFLINE FIXTURES + GUI SYNTAX ONLY)**. The observed sections were:
+
+- Installer/updates/adoption: **20/20** synthetic tests passed, including adoption from a clean main checkout, refusal to overwrite dirty/wrong-origin checkouts, update backup, update failure rollback, and preservation of the existing Steam/prefix fixtures.
+- Proton discovery: **5/5** synthetic tests passed, including ambiguity failing closed and matching the chosen game's Proton tool.
+- DeckCheatz launch plan and consent guards: **8/8** synthetic tests passed, including duplicate-process rejection and no preview-time Steam configuration changes.
+- GTK PC2 frontend C source **gcc syntax-only check passed** (empty error output; final report PASS).
+- Read-only local checkout status: `installed: true`, `available_count: 1`, `managed_install: false`. Checkout was under the usual `~/.local/share/gameweld/deckcheatz` folder but did not yet have GameWeld-managed metadata. Dependencies detected: `git`, `python3`, `tkinter`, `venv` all true.
+- No external download, game or WeMod launch, real Steam LaunchOptions change, or Wine prefix change was performed by this AIO run.
+
+**Interpretation:** The *offline AIO + frontend syntax* gate has passed on this user's CachyOS host. This result alone does **not** verify that GUI adoption and managed updater controls work at runtime, validate upstream network updates, or establish cross-game compatibility. Earlier in this project, Astrometica 2353250 independently passed one end-to-end game+WeMod single-player trainer field test. Those are two distinct validation scopes.
+
+**Next gate:** verify the GameWeld Settings UI can safely enrol the existing clean checkout after explicit consent, then run a read-only upstream update check. Do not run the updating action or alter the validated installed files automatically. Continue with complete frontend compilation and future multi-game compatibility testing before promoting an unqualified stable release.
