@@ -45,6 +45,33 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.wemod = self.checkout / "wemod_data" / "wemod_bin" / "WeMod.exe"
         self.wemod.parent.mkdir(parents=True)
         self.wemod.write_bytes(b"MZ" + b"\0" * 128)
+        self.wine = self.proton.parent / "files" / "bin" / "wine"
+        self.wineserver = self.proton.parent / "files" / "bin" / "wineserver"
+        self.wine.parent.mkdir(parents=True)
+        for toolpath in (self.wine, self.wineserver):
+            toolpath.write_text("#!/bin/sh\nexit 0\n")
+            toolpath.chmod(0o755)
+        self.proc = self.root / "proc"
+        self.proc.mkdir()
+        self.set_proc_env(889)
+        self.set_proc_env(100)
+        real_handoff = tool.active_wine_handoff
+        patcher = patch.object(tool, "active_wine_handoff",
+            side_effect=lambda plan, pid: real_handoff(plan, pid, self.proc))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def set_proc_env(self, pid, *, wrong_prefix=False):
+        task = self.proc / str(pid)
+        task.mkdir(exist_ok=True)
+        prefix = str(self.compat if not wrong_prefix else self.root / "other-prefix")
+        variables = [
+            "SteamAppId=2353250",
+            "STEAM_COMPAT_DATA_PATH=" + prefix,
+            "STEAM_COMPAT_TOOL_PATHS=" + str(self.proton.parent),
+            "DISPLAY=:44",
+        ]
+        (task / "environ").write_bytes("\0".join(variables).encode() + b"\0")
 
     def prepare(self):
         with patch.object(tool.shutil, "which", return_value="/usr/bin/steam"):
@@ -87,7 +114,10 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.assertFalse(result["trainer_verified"])
         self.assertEqual(len(invocations), 1)
         self.assertEqual(invocations[0][0], "wemod")
-        self.assertEqual(invocations[0][1][1], "runinprefix")
+        self.assertEqual(invocations[0][1], [str(self.wine), str(self.wemod)])
+        self.assertEqual(invocations[0][2]["env"]["WINEPREFIX"],
+                         str(self.compat / "pfx"))
+        self.assertEqual(invocations[0][2]["env"]["WINESERVER"], str(self.wineserver))
         self.assertEqual(invocations[0][2]["env"]["STEAM_COMPAT_APP_ID"], "2353250")
         self.assertEqual(invocations[0][2]["env"]["STEAM_COMPAT_DATA_PATH"],
                          plan["compatdata"])
@@ -154,6 +184,41 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.assertEqual(calls[0], ("steam", "2353250"))
         self.assertEqual(calls[1][0], "wemod")
         self.assertFalse(result["trainer_verified"])
+
+    def test_active_wine_join_blocks_wrong_live_game_prefix(self):
+        plan = self.prepare()
+        self.set_proc_env(889, wrong_prefix=True)
+        messages = []
+        class Observer:
+            @staticmethod
+            def matching_game_processes(*args):
+                return [889]
+        result = tool.launch(
+            plan, observer=Observer(),
+            start_steam=lambda _appid: self.fail("Duplicate game launch"),
+            spawn=lambda *args, **kwargs: self.fail("Wine must not launch"),
+            log=messages.append,
+        )
+        self.assertEqual(result["state"], "WEMOD_HANDOFF_BLOCKED")
+        self.assertFalse(result["trainer_verified"])
+        self.assertTrue(any("prefix identity" in item for item in messages))
+
+    def test_active_wine_join_does_not_spawn_second_proton(self):
+        plan = self.prepare()
+        class Observer:
+            @staticmethod
+            def matching_game_processes(*args):
+                return [889]
+        command = []
+        def spawn(argv, **kwargs):
+            command.append(argv)
+            return SimpleNamespace(pid=890)
+        result = tool.launch(plan, observer=Observer(), spawn=spawn,
+                             log=lambda _message: None)
+        self.assertEqual(result["state"], "WEMOD_PROCESS_REQUESTED")
+        self.assertEqual(command[0][0], str(self.wine))
+        self.assertNotIn("runinprefix", command[0])
+        self.assertEqual(command[0][-1], str(self.wemod))
 
     def test_no_game_never_starts_trainer(self):
         plan = self.prepare()
