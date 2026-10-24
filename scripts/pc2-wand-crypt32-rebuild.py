@@ -97,7 +97,12 @@ def compile_only(work: Path) -> int:
         with log_path.open("w", encoding="utf-8") as log:
             run_log(["git", "clone", "--filter=blob:none", "--no-checkout",
                      UPSTREAM, str(source)], log)
-            run_log(["git", "-C", str(source), "checkout", "--detach", REV], log)
+            # GE-Proton11-7 predates the default Wine HEAD: fetch this
+            # immutable release commit explicitly rather than hoping it was
+            # included in a shallow/partial default checkout.
+            run_log(["git", "-C", str(source), "fetch", "--depth=1",
+                     "origin", REV], log)
+            run_log(["git", "-C", str(source), "checkout", "--detach", "FETCH_HEAD"], log)
             head = subprocess.check_output(
                 ["git", "-C", str(source), "rev-parse", "HEAD"],
                 text=True).strip()
