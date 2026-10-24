@@ -200,8 +200,8 @@ def main() -> int:
                           "trainer_verified": False}))
         return 0
     log_file = log_path(args.appid)
-    with log_file.open("x", encoding="utf-8") as file:
-        os.chmod(log_file, 0o600)
+    descriptor = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as file:
         def report(message: str):
             file.write(message + "\n")
             file.flush()
