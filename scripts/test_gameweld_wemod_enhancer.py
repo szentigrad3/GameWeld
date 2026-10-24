@@ -435,7 +435,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         # child; the existing version rule must be replaced, not duplicated.
         envfile = proc / "701" / "environ"
         envfile.write_bytes(envfile.read_bytes() +
-                            b"WINEDLLOVERRIDES=crypt32=b;version=b\\0")
+                            b"WINEDLLOVERRIDES=crypt32=b;version=b\0")
         self.assertEqual(
             self.cmd("patch", "--install-dir", str(self.client),
                      "--confirm").returncode, 0
