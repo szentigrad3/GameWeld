@@ -66,7 +66,7 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                 for arch in mod.ARCHS:
                     self.assertTrue(mod.probe_path(arch).is_file())
                 self.assertTrue(all("-lcrypt32" in c for c in calls))
-                with self.assertRaisesRegex(mod.ValidationBlocked, "already"):
+                with self.assertRaisesRegex(mod.ValidationBlocked, "output folder exists"):
                     with patch.object(mod, "audit", return_value=0):
                         mod.compile_probes()
 
