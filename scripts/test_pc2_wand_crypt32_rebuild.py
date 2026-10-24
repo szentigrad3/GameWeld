@@ -154,14 +154,16 @@ class WineRebuildSafetyTests(unittest.TestCase):
                 "#define CERT_LAST_RESERVED_PROP_ID                 0x00007fff\n"
                 "#define CERT_FIRST_USER_PROP_ID                    0x00008000\n"
                 "#define CERT_LAST_USER_PROP_ID                     0x0000ffff\n")
-            log = io.StringIO()
             self.assertTrue(builder.HEADER_PATCH.is_file())
-            builder.ensure_sha256_header(source, log)
-            first = header.read_text()
-            self.assertIn("#define CERT_SHA256_HASH_PROP_ID                    107", first)
-            builder.ensure_sha256_header(source, log)
-            self.assertEqual(header.read_text(), first)
-            self.assertEqual(first.count("#define CERT_SHA256_HASH_PROP_ID"), 1)
+            # git apply runs a real subprocess and needs an OS file descriptor;
+            # StringIO is valid for purely mocked calls but not stdout= here.
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as log:
+                builder.ensure_sha256_header(source, log)
+                first = header.read_text()
+                self.assertIn("#define CERT_SHA256_HASH_PROP_ID                    107", first)
+                builder.ensure_sha256_header(source, log)
+                self.assertEqual(header.read_text(), first)
+                self.assertEqual(first.count("#define CERT_SHA256_HASH_PROP_ID"), 1)
 
     def test_conflicting_crypt32_property_definition_refused_without_writes(self):
         with tempfile.TemporaryDirectory(prefix="gw-wine-crypt32-conflict-") as temp:
