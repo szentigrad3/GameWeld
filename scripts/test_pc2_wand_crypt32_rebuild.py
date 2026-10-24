@@ -132,6 +132,15 @@ class WineRebuildSafetyTests(unittest.TestCase):
             header.assert_called_once()
             self.assertTrue(any(c[0][0] == "make" for c in visited))
             self.assertTrue(any(c[0][0].endswith("configure") for c in visited))
+            self.assertEqual(
+                builder.crypt32_targets(),
+                ["dlls/crypt32/x86_64-windows/crypt32.dll",
+                 "dlls/crypt32/i386-windows/crypt32.dll"],
+            )
+            # No generic full-Wine target or unrelated multimedia builds.
+            make_calls = [c for c in visited if c[0][0] == "make"]
+            self.assertEqual(len(make_calls), 1)
+            self.assertEqual(make_calls[0][0][1][:2], "-j")
             self.assertTrue((work / "candidate/SHA256SUMS").is_file())
             self.assertIn("Original configure FileNotFoundError", old_log.read_text())
             self.assertTrue(source.is_dir())
@@ -176,6 +185,41 @@ class WineRebuildSafetyTests(unittest.TestCase):
                     builder.ensure_sha256_header(source, io.StringIO())
                 runner.assert_not_called()
             self.assertEqual(header.read_text(), "#define CERT_SHA256_HASH_PROP_ID 108\n")
+
+
+    def test_build_does_not_invoke_full_wine_or_winedmo(self):
+        with tempfile.TemporaryDirectory(prefix="gw-crypt32-target-") as temp:
+            work = Path(temp)
+            source = work / "wine-source"
+            source.mkdir()
+            (source / ".git").mkdir()
+            build = work / "wine-build"
+            build.mkdir()
+            (build / "Makefile").write_text("all:\n")
+            called = []
+
+            def fake_run(command, output, *, cwd=None):
+                called.append(command)
+                if command[0] == "make":
+                    for arch in builder.HISTORIC:
+                        dll = build / "dlls/crypt32" / arch / "crypt32.dll"
+                        dll.parent.mkdir(parents=True)
+                        dll.write_bytes(b"MZ-TEST-" + arch.encode())
+
+            with patch.object(builder, "ensure_pinned_source"):
+                with patch.object(builder, "ensure_configure"):
+                    with patch.object(builder, "ensure_sha256_header"):
+                        with patch.object(builder, "run_log", side_effect=fake_run):
+                            with patch.object(builder.subprocess, "check_output",
+                                              return_value="PE32+ executable (DLL)"):
+                                builder.compile_only(work)
+
+            self.assertEqual(len(called), 1)
+            self.assertEqual(called[0][0], "make")
+            self.assertEqual(called[0][2:], builder.crypt32_targets())
+            self.assertNotIn("all", called[0])
+            self.assertTrue(all("winedmo" not in value for value in called[0]))
+            self.assertTrue((work / "candidate/SHA256SUMS").is_file())
 
     def test_fingerprints_and_revision_are_pinned(self):
         self.assertEqual(builder.REV,
