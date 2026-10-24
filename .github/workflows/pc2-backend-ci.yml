@@ -123,8 +123,13 @@ jobs:
           python3 -m py_compile scripts/gameweld-deckcheatz-proton.py
           python3 scripts/test_gameweld_deckcheatz_proton.py
           python3 scripts/test_gameweld_deckcheatz_direct.py
+          python3 -m py_compile scripts/gameweld-deckcheatz-install.py
+          python3 scripts/test_gameweld_deckcheatz_install.py
+          python3 scripts/gameweld-deckcheatz-install.py --status
           grep -Fq 'DeckCheatz 1.x — Preview selected game (read-only)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
           grep -Fq 'DeckCheatz 1.x — Test game + WeMod (experimental)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+          grep -Fq 'Install DeckCheatz 1.x (managed)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+          grep -Fq 'pc2_deckcheatz_request_install(experimental_launch)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
           grep -Fq -- '--confirm-prefix-changes","--experimental-direct-launch' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
       - name: Integrated WeMod Enhancer GUI helper fixtures
         run: |
