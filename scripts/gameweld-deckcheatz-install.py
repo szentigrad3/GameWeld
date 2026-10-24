@@ -15,6 +15,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import time
+import re
 import subprocess
 import sys
 import tempfile
@@ -23,6 +25,8 @@ SOURCE_URL = "https://github.com/DeckCheatz/wemod-launcher.git"
 SOURCE_BRANCH = "main"
 SUBDIR = "gameweld/deckcheatz"
 MAX_REPORT = 3000
+MANAGED_MARKER = ".gameweld-managed.json"
+REV_RE = re.compile(r"[0-9a-f]{40}\\Z")
 
 
 class InstallError(RuntimeError):
@@ -66,10 +70,186 @@ def dependencies() -> dict:
     return result
 
 
+
+def managed_metadata(path: Path) -> dict | None:
+    """Read-only: recognize installs GameWeld explicitly created."""
+    try:
+        if path.is_symlink():
+            return None
+        meta = json.loads((path / MANAGED_MARKER).read_text(encoding="utf-8"))
+        if not isinstance(meta, dict):
+            return None
+        if (meta.get("schema") != 1 or meta.get("origin") != SOURCE_URL
+                or meta.get("branch") != SOURCE_BRANCH
+                or not isinstance(meta.get("revision"), str)
+                or not REV_RE.fullmatch(meta["revision"])):
+            return None
+        provider().inspect_launcher(path / "wemod")
+        return meta
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def write_managed_metadata(path: Path, revision: str) -> None:
+    if not REV_RE.fullmatch(revision):
+        raise InstallError("Cannot mark a checkout with an invalid Git revision")
+    marker = path / MANAGED_MARKER
+    if marker.exists() or marker.is_symlink():
+        raise InstallError("Upstream checkout contains GameWeld's private metadata name")
+    payload = {"schema": 1, "origin": SOURCE_URL,
+               "branch": SOURCE_BRANCH, "revision": revision}
+    with marker.open("x", encoding="utf-8") as output:
+        json.dump(payload, output, indent=2, sort_keys=True)
+        output.write("\\n")
+
+
+def git_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update({
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "Never",
+        "GIT_LFS_SKIP_SMUDGE": "1",
+    })
+    return env
+
+
+def git_readonly(args: list[str], timeout: float = 20) -> str:
+    binary = shutil.which("git")
+    if not binary:
+        raise InstallError("Git is missing; install the git package before updating.")
+    try:
+        result = subprocess.run([binary, *args], capture_output=True,
+                                text=True, check=False, timeout=timeout,
+                                env=git_environment(), stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise InstallError("Read-only Git check failed: " + type(exc).__name__) from exc
+    if result.returncode:
+        raise InstallError("Read-only Git check failed: " +
+                           (result.stderr or result.stdout or "Unknown Git error").strip()[-MAX_REPORT:])
+    return result.stdout.strip()
+
+
+def remote_revision() -> str:
+    output = git_readonly(["ls-remote", "--heads", SOURCE_URL, SOURCE_BRANCH], timeout=30)
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "refs/heads/" + SOURCE_BRANCH and REV_RE.fullmatch(parts[0]):
+            return parts[0]
+    raise InstallError("Official DeckCheatz main branch returned no verifiable Git revision")
+
+
+def inspect_managed_checkout(path: Path) -> str:
+    meta = managed_metadata(path)
+    if meta is None:
+        raise InstallError("This DeckCheatz checkout was not installed by GameWeld; updates will not overwrite it.")
+    local = git_readonly(["-C", str(path), "rev-parse", "HEAD"])
+    if local != meta["revision"]:
+        raise InstallError("Managed DeckCheatz revision differs from its install record; update blocked.")
+    origin = git_readonly(["-C", str(path), "remote", "get-url", "origin"])
+    if origin != SOURCE_URL:
+        raise InstallError("Managed DeckCheatz Git origin changed; update blocked.")
+    changes = git_readonly(["-C", str(path), "status", "--porcelain", "--untracked-files=normal"])
+    for line in changes.splitlines():
+        # The intentionally untracked metadata file does not count as source edits.
+        if line[3:] != MANAGED_MARKER:
+            raise InstallError("Managed DeckCheatz source contains local changes; update blocked to protect user data.")
+    return local
+
+
+def running_launcher(path: Path) -> bool:
+    """Best-effort refusal to update while the managed upstream launcher runs."""
+    wanted = ((str(path / "wemod")).encode(), (str(path / "src/wemod.py")).encode())
+    try:
+        with os.scandir("/proc") as items:
+            for item in items:
+                if not item.name.isdecimal() or int(item.name) == os.getpid():
+                    continue
+                try:
+                    if item.stat().st_uid != os.getuid():
+                        continue
+                    argv = (Path(item.path) / "cmdline").read_bytes()[:65536].split(b"\\0")
+                    if any(token in wanted for token in argv):
+                        return True
+                except (OSError, PermissionError):
+                    continue
+    except OSError:
+        return False
+    return False
+
+
+def check_update() -> dict:
+    current = status()
+    target = install_directory()
+    meta = managed_metadata(target)
+    if meta is None:
+        return {"result": "not_managed" if current["installed"] else "not_installed",
+                "message": "Only check updates for managed DeckCheatz installs.",
+                **current}
+    old = inspect_managed_checkout(target)
+    latest = remote_revision()
+    return {
+        "result": "update_available" if latest != old else "up_to_date",
+        "installed_revision": old, "upstream_revision": latest,
+        "update_available": latest != old,
+        **current,
+    }
+
+
+def update() -> dict:
+    parent = install_directory().parent
+    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lock_path = parent / ".deckcheatz-install.lock"
+    with lock_path.open("a+") as lock:
+        os.chmod(lock_path, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        target = install_directory()
+        old = inspect_managed_checkout(target)
+        if running_launcher(target):
+            raise InstallError("DeckCheatz is running; close WeMod and its launcher before updating.")
+        latest = remote_revision()
+        if old == latest:
+            return {"result": "up_to_date", "installed_revision": old, **status()}
+        staging_parent = Path(tempfile.mkdtemp(prefix=".deckcheatz-staging-", dir=parent))
+        backup = parent / (".deckcheatz-backup-" + old[:12] + "-" + str(time.time_ns()))
+        try:
+            checkout = staging_parent / "checkout"
+            new = _clone_to(checkout)
+            if new == old:
+                return {"result": "up_to_date", "installed_revision": old, **status()}
+            write_managed_metadata(checkout, new)
+            # Verify that no outside actor changed the old checkout while
+            # staging the replacement.
+            if inspect_managed_checkout(target) != old or running_launcher(target):
+                raise InstallError("Managed checkout changed or was launched during update; refusing replacement.")
+            target.rename(backup)
+            try:
+                checkout.rename(target)
+                if inspect_managed_checkout(target) != new:
+                    raise InstallError("Replacement checkout could not be verified after activation")
+            except Exception:
+                # Preserve the failed replacement for inspection if possible,
+                # but always prefer bringing the previously working copy back.
+                if target.exists():
+                    failed = staging_parent / "failed-checkout"
+                    target.rename(failed)
+                backup.rename(target)
+                raise
+            return {"result": "updated", "previous_revision": old,
+                    "upstream_revision": new, "rollback_path": str(backup), **status()}
+        finally:
+            shutil.rmtree(staging_parent, ignore_errors=True)
+
+
 def status() -> dict:
     detected = provider().inspect_available()
     target = install_directory()
+    meta = managed_metadata(target)
     return {
+        "managed_install": meta is not None,
+        "installed_revision": meta.get("revision", "") if meta else "",
+        "update_policy": "manual_opt_in_with_rollback",
         "provider": "DeckCheatz/wemod-launcher",
         "manager": "GameWeld managed optional external checkout",
         "mode": "read_only",
@@ -92,14 +272,7 @@ def _clone_to(staging: Path) -> str:
         raise InstallError("Git is missing. Install the git package and retry in GameWeld.")
     # Isolate Git configuration to avoid locally configured smudge filters,
     # templates/hooks and interactive credential helpers during checkout.
-    env = os.environ.copy()
-    env.update({
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GCM_INTERACTIVE": "Never",
-        "GIT_LFS_SKIP_SMUDGE": "1",
-    })
+    env = git_environment()
     args = [git, "-c", "init.templateDir=/dev/null",
             "-c", "core.hooksPath=/dev/null",
             "clone", "--depth", "1", "--single-branch", "--branch",
@@ -157,6 +330,7 @@ def install() -> dict:
         try:
             checkout = staging_parent / "checkout"
             revision = _clone_to(checkout)
+            write_managed_metadata(checkout, revision)
             # The destination has been held absent for the entire locked
             # transaction; os.rename is atomic within this data directory.
             if target.exists() or target.is_symlink():
@@ -175,14 +349,18 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--status", action="store_true", help="read-only installed checkout inspection")
     mode.add_argument("--install", action="store_true", help="clone the official external 1.x checkout")
-    parser.add_argument("--confirm", action="store_true", help="explicit GUI/user permission to download")
+    mode.add_argument("--check-update", action="store_true", help="query latest upstream commit without modifying install")
+    mode.add_argument("--update", action="store_true", help="opt-in managed checkout update with backup rollback")
+    parser.add_argument("--confirm", action="store_true", help="explicit GUI/user permission to install or update")
     args = parser.parse_args()
-    if args.confirm and not args.install:
-        parser.error("--confirm is only valid with --install")
-    if args.install and not args.confirm:
-        parser.error("External download requires explicit --install --confirm")
+    if args.confirm and not (args.install or args.update):
+        parser.error("--confirm is only valid with --install or --update")
+    if (args.install or args.update) and not args.confirm:
+        parser.error("External download/update requires explicit --confirm")
     try:
-        report = install() if args.install else status()
+        report = (install() if args.install else
+                  update() if args.update else
+                  check_update() if args.check_update else status())
         print(json.dumps(report, indent=2))
         return 0
     except (InstallError, OSError) as exc:
