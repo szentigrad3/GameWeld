@@ -240,13 +240,16 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         second = self.root / "app-3.4.5"
         (second / "resources").mkdir(parents=True)
         (second / "resources/app.asar").write_bytes(b"FIXTURE")
-        with patch.object(bridge, "discover_existing_clients", return_value=[self.client, second]):
-            self.assertIsNone(bridge.detect_wemod())
-            self.assertEqual(len(bridge.available_clients()), 2)
-        # Even if the scanner finds multiple, selecting one explicit
-        # installation still works without changing its files.
-        with patch.object(bridge, "discover_existing_clients", return_value=[self.client, second]):
-            self.assertEqual(bridge.detect_wemod(str(second)), second.resolve())
+        # Run discovery against the test HOME, never a developer's real
+        # managed DeckCheatz installation or explicit client override.
+        with patch.dict(os.environ, {"HOME": str(self.home),
+                                     "GAMEWELD_WEMOD_INSTALL_DIR": ""}):
+            with patch.object(bridge, "discover_existing_clients", return_value=[self.client, second]):
+                self.assertIsNone(bridge.detect_wemod())
+                self.assertEqual(len(bridge.available_clients()), 2)
+                # Explicit selection still works even when multiple clients
+                # exist, without altering any installed WeMod files.
+                self.assertEqual(bridge.detect_wemod(str(second)), second.resolve())
 
     def test_unrelated_proton_tool_is_not_a_wemod_client(self):
         tool = self.root / "GE-Proton-Wand-SHA256"
