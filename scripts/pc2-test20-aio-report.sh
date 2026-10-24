@@ -17,13 +17,17 @@ python3 -m py_compile \
     "$ROOT/scripts/pc2-wand-crypt32-recovery-audit.py" \
     "$ROOT/scripts/test_pc2_wand_crypt32_recovery_audit.py" \
     "$ROOT/scripts/pc2-wand-crypt32-rebuild.py" \
-    "$ROOT/scripts/test_pc2_wand_crypt32_rebuild.py"
+    "$ROOT/scripts/test_pc2_wand_crypt32_rebuild.py" \
+    "$ROOT/scripts/pc2-crypt32-validation.py" \
+    "$ROOT/scripts/test_pc2_crypt32_validation.py"
 python3 -m unittest discover -s "$ROOT/scripts" \
     -p 'test_gameweld_wand_native_bridge.py' -v
 python3 -m unittest discover -s "$ROOT/scripts" \
     -p 'test_pc2_wand_crypt32_recovery_audit.py' -v
 python3 -m unittest discover -s "$ROOT/scripts" \
     -p 'test_pc2_wand_crypt32_rebuild.py' -v
+python3 -m unittest discover -s "$ROOT/scripts" \
+    -p 'test_pc2_crypt32_validation.py' -v
 bash "$ROOT/scripts/run-pc2-source-frontend.sh" --check-layout
 test -L "$OUT/dev-AppDir/usr/libexec/gameweld-managed-wand.py"
 gcc -fsyntax-only -Werror=implicit-function-declaration -pthread \
@@ -44,6 +48,7 @@ grep -Fq 'waitforexitandrun' "$ROOT/scripts/gameweld-managed-wand.py"
   echo 'Test fixtures isolated from host Steam and /mnt/games installations: PASS'
   echo 'Read-only historical crypt32 archive / DLL recovery audit: PASS (synthetic fixtures)'
   echo 'Pinned dual-arch Wine crypt32 build requires explicit opt-in: PASS (no build launched)'
+  echo 'Test22 independent cert SHA256/SHA1 fixtures and sandbox-only opt-in gates: PASS (no runtime launched)'
   echo 'Original one-Proton-session batch architecture: PASS (fixture)'
   echo 'Managed game process exclusivity guard: PASS (fixture)'
   echo 'Explicit opt-in and GTK source compilation: PASS'
