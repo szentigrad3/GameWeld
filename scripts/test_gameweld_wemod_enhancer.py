@@ -422,12 +422,20 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         game_dir = self.root / "Astrometica"
         game_dir.mkdir()
         capture = self.root / "software-render-args.txt"
-        proton.write_text(
+        wine = proton.parent / "files" / "bin" / "wine"
+        wine.write_text(
             '#!/bin/sh\n'
-            'printf "%s\\n" "$@" > "$GAMEWELD_TEST_CAPTURE"\n'
-            'echo "fake Proton stderr: renderer unavailable" >&2\n'
-            'exit 0\n', encoding="utf-8"
+            'printf "overrides=%s\\nprefix=%s\\n" "$WINEDLLOVERRIDES" '
+            '"$WINEPREFIX" > "$GAMEWELD_TEST_CAPTURE"\n'
+            'printf "arg=%s\\n" "$@" >> "$GAMEWELD_TEST_CAPTURE"\n'
+            'echo "fake Wine stderr: renderer unavailable" >&2\n',
+            encoding="utf-8"
         )
+        # The selected game's prior DLL overrides must survive in the WeMod
+        # child; the existing version rule must be replaced, not duplicated.
+        envfile = proc / "701" / "environ"
+        envfile.write_bytes(envfile.read_bytes() +
+                            b"WINEDLLOVERRIDES=crypt32=b;version=b\\0")
         self.assertEqual(
             self.cmd("patch", "--install-dir", str(self.client),
                      "--confirm").returncode, 0
@@ -436,20 +444,24 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "XDG_STATE_HOME": str(state),
             "GAMEWELD_TEST_CAPTURE": str(capture),
+            "DISPLAY": ":0",
         }):
             bridge.launch_wand_in_live_game(
                 self.client, self.helper, "2353250", str(game_dir),
                 proc, software_render=True)
         argv = capture.read_text().splitlines()
-        self.assertEqual(argv[0], "runinprefix")
-        self.assertEqual(argv[1], str(self.client / "WeMod.exe"))
-        self.assertIn("--disable-gpu", argv)
-        self.assertIn("--disable-gpu-compositing", argv)
-        self.assertIn("--enable-logging=stderr", argv)
+        self.assertEqual(argv[0], "overrides=crypt32=b;version=n,b")
+        self.assertEqual(argv[1], "prefix=" + str(prefix.resolve() / "pfx"))
+        self.assertIn("arg=" + str(self.client / "WeMod.exe"), argv)
+        self.assertIn("arg=--disable-gpu", argv)
+        self.assertIn("arg=--disable-gpu-compositing", argv)
+        self.assertIn("arg=--enable-logging=stderr", argv)
+        self.assertNotIn("arg=runinprefix", argv)
         log = state / "gameweld" / "wand-live-2353250.log"
         self.assertTrue(log.is_file())
-        self.assertIn("software rendering", log.read_text())
-        self.assertIn("fake Proton stderr: renderer unavailable", log.read_text())
+        self.assertIn("direct X11 wineserver join + software rendering", log.read_text())
+        self.assertIn("Client executable: " + str(self.client / "WeMod.exe"), log.read_text())
+        self.assertIn("fake Wine stderr: renderer unavailable", log.read_text())
         self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
 
     def test_software_render_only_allowed_for_confirmed_live_launch(self):
