@@ -82,10 +82,12 @@ launch implementation without verified compatibility checks.
 The release-facing **Play with WeMod** now uses the experimental
 `scripts/gameweld-steam-wemod-platform.py` route instead of launching the game
 EXE directly: resolve installed game/Proton, request `steam -applaunch`, wait
-for an exact game AppID/executable/prefix observation, then run an already
-installed WeMod.exe/Wand.exe via `proton runinprefix` in that prefix. This
-requires no Steam Launch Options edits. **Trainer attachment, Electron rendering
-and Steam ownership beyond a launch request remain unverified by synthetic CI**.
+for an exact game AppID/executable/prefix observation, then join the
+game's active Proton Wine server with its own Wine binary to request an
+installed WeMod.exe/Wand.exe. The earlier second `proton runinprefix` invocation
+did not display WeMod in the Astrometica live test and was replaced. This
+requires no Steam Launch Options edits. **Trainer attachment and Electron
+rendering remain unverified**.
 When runtime or matching game-process evidence is missing, it does not launch a
 second standalone game EXE or claim success. The existing direct DeckCheatz 1.x
 launch remains available in developer-only builds as a regression fallback.
@@ -111,7 +113,8 @@ window appeared, or Steam supervision was independently proven.
 - [x] Read-only exact game-process identity observer and synthetic fixture tests.
 - [x] Release **Play with WeMod** code requests Steam-owned game launch before
       an existing WeMod runtime, rather than invoking the game .exe.
-- [ ] Steam-owned Astrometica launch with correct Steam AppID and live game PID.
+- [x] Steam-owned Astrometica launch with correct Steam AppID and real
+      game PID observed in the user's session log (PID 162175, AppID 2353250).
 - [ ] WeMod trainer starts/attaches in that *same* Steam game/prefix session.
 - [ ] Already-running game: no duplicate launch or prefix collision.
 - [ ] Game-only launch remains usable when WeMod attach is unavailable.
