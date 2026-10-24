@@ -248,3 +248,19 @@ The existing titlebar Maximize/Restore button reads actual GTK window state. No 
 Native C policy tests are in `scripts/test-pc2-window-policy.c` and now run from `scripts/pc2-deckcheatz-aio.sh`. Cases: 720p compact, 1080p, 1440p, ultrawide 3440×1440, UHD 1×, UHD 2× HiDPI, 5K 2× HiDPI, and 1440p with high scaling, plus exact expected restored dimensions. The static GUI tests now assert the GTK/GDK callsites and the shared policy.
 
 **Next validation:** New source checkout should pass PC2 AIO/RC1 preflight and a brand-new staged AppDir should open maximized on the user's UHD screen. If the user changes KWin scaling or runs the build on a 1080p/1440p monitor, it should open proportionally but *not* maximized. Full GTK runtime behavior and KWin fractional-scale handling remain unverified on this new code.
+
+
+## PC2 launch geometry revised: comfortable window on all resolutions (2026-10-24)
+
+Following live screenshots, the user clarified that the prior small window was a comfortable size and **maximizing or covering the 4K desktop by default is NOT desired**. This supersedes the previous 4K and 5K auto-maximize policy. Normal users should start in a useful centered window with sufficient room for other applications, independent of how high-resolution their monitor is.
+
+Updated PC2 policy:
+- **Never automatically maximize or fullscreen at startup** on 720p, 1080p, 1440p, ultrawide, 4K, 5K or scaled screens.
+- Determine the primary monitor's usable GTK workarea and physical resolution/scale for proportional sizing, then apply a reasonable upper cap. Example 4K 1x workarea 3840×2100 opens approximately **1800×1120 logical GTK pixels**, rather than filling 3840×2100. Example 4K 2x workarea 1920×1040 opens **1440×832 logical pixels**, with no auto-maximize.
+- Smaller 1080p example 1920×1040 opens **1574×852**; ultrawide/1440p examples cap around **1750×1050**.
+- Apply the preferred size only once, shortly after first mapping, to clear prior tiny KWin development-window restores; never enforce on every timer tick. Users remain able to resize or click the existing manual maximize/restore control at any time.
+- Preserve the established PC1 window sizing and all working GameWeld/DeckCheatz/Proton/WeMod launch code. No Wine prefix or Steam Launch Options changes.
+
+The native offline `scripts/test-pc2-window-policy.c` and static `scripts/test_gameweld_deckcheatz_gui_layout.py` have been updated to **reject automatic maximize** and check sensible, bounded restored window dimensions across eight monitor configurations. The arithmetic was cross-checked but a fresh local **C compilation and GTK runtime screenshot are still needed** on the user's CachyOS build.
+
+The next AppDir should use a new stage directory so a previously built, auto-maximizing executable is not accidentally reused. For release evaluation, confirm that launch stays in a normal resizable window, without covering the full 4K screen.
