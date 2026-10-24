@@ -178,9 +178,15 @@ def authenticated_x11_environment(
     an unverified local X11 connection. Refuse to start WeMod without access.
     """
     check = probe or _x11_display_accessible
-    for label, source in (("gameweld", current), ("steam-game", live_game)):
+    live_display = live_game.get("DISPLAY", "")
+    # The game-owned wineserver is already running against an X server.
+    # Prefer its verified DISPLAY/cookie pair. A different GUI DISPLAY,
+    # even if individually accessible, is not a safe replacement for it.
+    for label, source in (("steam-game", live_game), ("gameweld", current)):
         display = source.get("DISPLAY", "")
         if not display.startswith(":"):
+            continue
+        if live_display.startswith(":") and display != live_display:
             continue
         candidate = dict(current)
         candidate["DISPLAY"] = display
@@ -193,9 +199,9 @@ def authenticated_x11_environment(
         if check(candidate):
             return candidate, label
     raise ValueError(
-        "X11 authorization failed for both GameWeld and the live Steam game. "
-        "WeMod was NOT started; launch GameWeld from the KDE desktop session "
-        "with an accessible XWayland DISPLAY/XAUTHORITY."
+        "X11 authorization failed for the game's DISPLAY; no verified "
+        "XAUTHORITY cookie could open the same XWayland server. WeMod was "
+        "NOT started. Launch GameWeld from the active KDE desktop session."
     )
 
 
