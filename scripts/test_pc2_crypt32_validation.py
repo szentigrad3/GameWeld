@@ -103,6 +103,43 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
             self.assertEqual(list(outside.iterdir()), [])
 
 
+
+    def test_direct_wine_runner_does_not_invoke_steam_game_shim_for_probes(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-launchverb-") as temp:
+            root = Path(temp)
+            proton = root / "proton"
+            exe = root / "probe.exe"
+            steam = root / "Steam"
+            steam.mkdir()
+            exe.write_bytes(b"MZ-probe")
+            proton.write_text("#!/bin/sh\nexit 0\n")
+            proton.chmod(0o755)
+            logfile = root / "run.log"
+            invoked = []
+
+            def fake_subprocess(command, *, env, text, stdout, stderr, timeout, check):
+                invoked.append((command, env.copy()))
+                return SimpleNamespace(returncode=0, stdout="GW_PROBE_STARTED\n")
+
+            with patch.object(mod.subprocess, "run", side_effect=fake_subprocess):
+                with redirect_stdout(io.StringIO()):
+                    rc, output = mod.run_proton(proton, exe, root / "scratch", steam,
+                                                {"WINEDLLOVERRIDES": "crypt32=n"}, logfile)
+            self.assertEqual(rc, 0)
+            self.assertEqual(output, "GW_PROBE_STARTED\n")
+            self.assertEqual(invoked[0][0], [str(proton), "runinprefix", str(exe)])
+            self.assertEqual(invoked[0][1]["WINEDLLOVERRIDES"], "crypt32=n")
+            self.assertEqual(invoked[0][1]["STEAM_COMPAT_DATA_PATH"], str(root / "scratch"))
+            self.assertNotIn("waitforexitandrun", invoked[0][0])
+            self.assertEqual(logfile.read_text(), "GW_PROBE_STARTED\n")
+
+            with patch.object(mod.subprocess, "run", side_effect=fake_subprocess):
+                mod.run_proton(proton, exe, root / "scratch", steam, {}, logfile, verb="run")
+            self.assertEqual(invoked[1][0][1], "run")
+
+            with self.assertRaisesRegex(mod.ValidationBlocked, "Unsupported Proton invocation"):
+                mod.run_proton(proton, exe, root / "scratch", steam, {}, logfile, verb="waitforexitandrun")
+
     def test_runtime_log_diagnostics_reports_existing_exit_without_launching(self):
         with tempfile.TemporaryDirectory(prefix="gw-test22-diagnose-") as temp:
             root = Path(temp)
@@ -163,8 +200,8 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
             steam.mkdir()
             calls = []
 
-            def simulated_runner(proton, exe, session, steam_root, overrides, logfile):
-                calls.append((exe.name, overrides["WINEDLLOVERRIDES"]))
+            def simulated_runner(proton, exe, session, steam_root, overrides, logfile, *, verb="runinprefix"):
+                calls.append((exe.name, overrides["WINEDLLOVERRIDES"], verb))
                 pfx = session / "pfx"
                 for part in ("system32", "syswow64"):
                     dest = pfx / "drive_c/windows" / part
@@ -187,6 +224,7 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
             self.assertEqual(len(calls), 3)  # once to bootstrap; once per architecture
             self.assertEqual(calls[0][1], "crypt32=b")
             self.assertEqual([c[1] for c in calls[1:]], ["crypt32=n", "crypt32=n"])
+            self.assertEqual([c[2] for c in calls], ["run", "runinprefix", "runinprefix"])
             self.assertIn("API FUNCTIONAL PASS", output.getvalue())
             for arch in mod.ARCHS:
                 self.assertEqual((candidate_dir / "candidate" / arch / "crypt32.dll")
