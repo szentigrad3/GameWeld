@@ -725,3 +725,21 @@ READ-ONLY next command (do this before recompiling or creating any new runtime s
     python3 scripts/pc2-crypt32-validation.py --diagnose-runtime
 
 Upload or paste that focused result. The goal is to name the exact missing import or module, or show that probes executed with a wrong calculated certificate property. The compiled x86_64/i386 candidates remain STAGED and NOT approved for live Proton/Wand use; do not disable the historical binary hash check.
+
+
+### Test22 actual native-loader failure — app-local isolated candidate staging
+
+The user's **full focused log** from isolated session `isolated-60c628d87fa7` finally isolates a native DLL lookup failure. Both Proton-shipped BUILTIN control probes were not just launchable: **both printed GW_CRYPT32_CERT_SHA256_RESULT=PASS** with correct SHA256, SHA1 and SetProperty/GetProperty markers. In both candidate tests, loader returned `status=c0000135`: `err:module:import_dll Library CRYPT32.dll ... not found`. Neither candidate Win32 probe reached its first module marker. A separate i386 `winebth.sys` warning is incidental; the blocker is the CRYPT32.dll module import.
+
+Root cause is the existing Test22 staging method not making the newly built **native** DLL loadable under the native-only `WINEDLLOVERRIDES=crypt32=n` path. The prefix's system32/syswow64 are Wine-managed (and may use builtin module placeholders), so merely copying a rebuilt PE DLL to those prefix directories did not yield a resolved native crypt32 import. This is a TEST-STAGING/loader failure; no certificate calculation by the new DLL has yet been exercised.
+
+Corrective change: after baseline tests PASS, Test22 now creates a separate `native-x86_64` and `native-i386` subdirectory inside a BRAND-NEW disposable runtime session. It makes SHA-256-verified copies of the matching Windows probe EXE and rebuilt crypt32 PE DLL **with exact filename CRYPT32.dll** in each corresponding application directory. Proton `runinprefix` launches the application-local EXE with `WINEDLLOVERRIDES=crypt32=n`; Windows normally searches the executable directory for imported DLLs, bypassing Wine's builtin prefix system32 placeholders. A passing result requires 4 functional markers, exit code zero, and the probe's `GW_CRYPT32_MODULE` to name the actual **application-local** file path whose digest equals the staged candidate. A builtin `C:\windows\system32\CRYPT32.dll` no longer passes candidate validation. This is an isolated test and does NOT modify any installed Proton files or Steam game's prefix. The earlier `_safe_replace_prefix_dll` helper remains only for historical safety test coverage; the actual Test22 runtime no longer uses it.
+
+Run (after pulling branch; no rebuild/recompilation):
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-crypt32-validation.py --runtime-probes --confirm --proton /mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton
+
+If it blocks again, run read-only `python3 scripts/pc2-crypt32-validation.py --diagnose-runtime` for that new session. This approach improves the loader search but cannot guarantee that a bare rebuilt Wine crypt32 PE DLL is compatible with the installed GE-Proton runtime; never disable its historical release hash guard until functional and trainer integration checks pass.
