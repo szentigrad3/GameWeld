@@ -1847,21 +1847,21 @@ static int pc2_window_last_w=0,pc2_window_last_h=0;
 static int pc2_window_observation_ready=0;
 static int pc2_window_save_queued=0;
 
-static void pc2_save_window_size(void){
-    if(!pc2_discovery_only())return;
+static int pc2_save_window_size(void){
+    if(!pc2_discovery_only())return 0;
     int w=pc2_window_last_w,h=pc2_window_last_h;
-    if(w<640||h<480||w>8192||h>8192)return;
+    if(w<640||h<480||w>8192||h>8192)return 0;
     char path[4096]={0};
-    if(!pc2_window_state_path(path,sizeof path,1))return;
-    if(gameweld_pc2_state_write(path,w,h))
-        log_line("PC2 saved live window size: %dx%d normal window.",w,h);
-    else
-        log_line("PC2 window size save failed; check write access to the user config directory.");
+    if(!pc2_window_state_path(path,sizeof path,1))return 0;
+    return gameweld_pc2_state_write(path,w,h);
 }
 static gboolean pc2_window_save_after_resize(void *unused){
     (void)unused;
     pc2_window_save_queued=0;
-    pc2_save_window_size();
+    if(pc2_save_window_size())
+        log_line("PC2 saved live window size: %dx%d normal window.",pc2_window_last_w,pc2_window_last_h);
+    else
+        log_line("PC2 window size save failed; check write access to the user config directory.");
     return FALSE;
 }
 static gboolean pc2_window_configure(GtkWidget *window,void *event,void *unused){
