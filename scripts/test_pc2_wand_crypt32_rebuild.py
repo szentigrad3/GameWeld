@@ -122,18 +122,58 @@ class WineRebuildSafetyTests(unittest.TestCase):
                 with patch.object(builder, "safe_dirs"):
                     with patch.object(builder, "ensure_pinned_source") as pinned:
                         with patch.object(builder, "ensure_configure") as bootstrap:
-                            with patch.object(builder, "run_log", side_effect=pretend_run):
-                                with patch.object(builder.subprocess, "check_output", return_value="PE32+ executable (DLL)"):
-                                    self.assertEqual(builder.compile_only(work), 0)
+                            with patch.object(builder, "ensure_sha256_header") as header:
+                                with patch.object(builder, "run_log", side_effect=pretend_run):
+                                    with patch.object(builder.subprocess, "check_output", return_value="PE32+ executable (DLL)"):
+                                        self.assertEqual(builder.compile_only(work), 0)
 
             pinned.assert_called_once()
             bootstrap.assert_called_once()
+            header.assert_called_once()
             self.assertTrue(any(c[0][0] == "make" for c in visited))
             self.assertTrue(any(c[0][0].endswith("configure") for c in visited))
             self.assertTrue((work / "candidate/SHA256SUMS").is_file())
             self.assertIn("Original configure FileNotFoundError", old_log.read_text())
             self.assertTrue(source.is_dir())
             self.assertTrue(build.is_dir())
+
+
+    def test_missing_property_107_header_patch_applies_and_second_pass_is_readonly(self):
+        import subprocess
+        with tempfile.TemporaryDirectory(prefix="gw-wine-crypt32-header-") as temp:
+            source = Path(temp)
+            subprocess.run(["git", "init", "-q", str(source)], check=True)
+            header = source / "include" / "wincrypt.h"
+            header.parent.mkdir()
+            header.write_text(
+                "#define CERT_ROOT_PROGRAM_NAME_CONSTRAINTS_PROP_ID 84\n"
+                "\n"
+                "#define CERT_SIGN_HASH_CNG_ALG_PROP_ID             89\n"
+                "\n"
+                "#define CERT_FIRST_RESERVED_PROP_ID                130\n"
+                "#define CERT_LAST_RESERVED_PROP_ID                 0x00007fff\n"
+                "#define CERT_FIRST_USER_PROP_ID                    0x00008000\n"
+                "#define CERT_LAST_USER_PROP_ID                     0x0000ffff\n")
+            log = io.StringIO()
+            self.assertTrue(builder.HEADER_PATCH.is_file())
+            builder.ensure_sha256_header(source, log)
+            first = header.read_text()
+            self.assertIn("#define CERT_SHA256_HASH_PROP_ID                    107", first)
+            builder.ensure_sha256_header(source, log)
+            self.assertEqual(header.read_text(), first)
+            self.assertEqual(first.count("#define CERT_SHA256_HASH_PROP_ID"), 1)
+
+    def test_conflicting_crypt32_property_definition_refused_without_writes(self):
+        with tempfile.TemporaryDirectory(prefix="gw-wine-crypt32-conflict-") as temp:
+            source = Path(temp)
+            header = source / "include/wincrypt.h"
+            header.parent.mkdir()
+            header.write_text("#define CERT_SHA256_HASH_PROP_ID 108\n")
+            with patch.object(builder, "run_log") as runner:
+                with self.assertRaisesRegex(ValueError, "incompatibly"):
+                    builder.ensure_sha256_header(source, io.StringIO())
+                runner.assert_not_called()
+            self.assertEqual(header.read_text(), "#define CERT_SHA256_HASH_PROP_ID 108\n")
 
     def test_fingerprints_and_revision_are_pinned(self):
         self.assertEqual(builder.REV,
