@@ -136,6 +136,82 @@ class SteamOwnedWeModTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tool.authenticated_x11_environment(current, live, probe=check)
         self.assertEqual(seen, [(":0", None)])
+    def test_verified_enhancer_applies_native_version_only_to_wemod(self):
+        client = self.wemod.parent
+        (client / "resources").mkdir()
+        (client / "resources" / "app.asar.backup").write_bytes(b"original-asar")
+        (client / "resources" / "app.asar").write_bytes(b"patched-asar")
+        (client / "version.dll").write_bytes(b"MZ" + bytes(128))
+        env = {"WINEDLLOVERRIDES": "d3d11=b;version=b;dxgi=n,b"}
+        seen = []
+        mode = tool.prepare_enhancer_runtime(
+            self.wemod, env,
+            verify=lambda selected: seen.append(selected) or True,
+        )
+        self.assertEqual(mode, "enhancer-verified-native-version-dll")
+        self.assertEqual(seen, [client])
+        self.assertEqual(env["WINEDLLOVERRIDES"],
+                         "d3d11=b;dxgi=n,b;version=n,b")
+        self.assertFalse((client / "resources" / "app.asar.original").exists())
+
+    def test_incomplete_enhancer_fails_closed_without_dll_override(self):
+        client = self.wemod.parent
+        (client / "version.dll").write_bytes(b"MZ" + bytes(128))
+        env = {"WINEDLLOVERRIDES": "d3d11=b"}
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            tool.prepare_enhancer_runtime(self.wemod, env)
+        self.assertEqual(env["WINEDLLOVERRIDES"], "d3d11=b")
+
+    def test_mismatched_enhancer_fails_closed_without_dll_override(self):
+        client = self.wemod.parent
+        (client / "resources").mkdir()
+        (client / "resources" / "app.asar.backup").write_bytes(b"original")
+        (client / "version.dll").write_bytes(b"MZ" + bytes(128))
+        env = {}
+        with self.assertRaisesRegex(ValueError, "verification failed"):
+            tool.prepare_enhancer_runtime(
+                self.wemod, env, verify=lambda _client: False,
+            )
+        self.assertNotIn("WINEDLLOVERRIDES", env)
+
+    def test_unpatched_client_keeps_game_dll_settings_unchanged(self):
+        env = {"WINEDLLOVERRIDES": "d3d11=b,dxgi=n"}
+        self.assertEqual(
+            tool.prepare_enhancer_runtime(self.wemod, env),
+            "no-enhancer-installed",
+        )
+        self.assertEqual(env["WINEDLLOVERRIDES"], "d3d11=b,dxgi=n")
+
+    def test_verified_override_only_in_wemod_spawn(self):
+        client = self.wemod.parent
+        (client / "resources").mkdir()
+        (client / "resources" / "app.asar.backup").write_bytes(b"original")
+        (client / "resources" / "app.asar").write_bytes(b"patched")
+        (client / "version.dll").write_bytes(b"MZ" + bytes(128))
+        with patch.object(tool, "_verified_enhancer_patch", return_value=True):
+            plan = self.prepare()
+            calls = []
+            class Observer:
+                seen = 0
+                @classmethod
+                def matching_game_processes(cls, *_args):
+                    cls.seen += 1
+                    return [889] if cls.seen > 1 else []
+            def spawn(argv, **kwargs):
+                calls.append(("wemod", argv, kwargs))
+                return SimpleNamespace(pid=905, poll=lambda: None)
+            with patch.object(tool.time, "sleep", return_value=None):
+                result = tool.launch(
+                    plan, observer=Observer(),
+                    start_steam=lambda appid: calls.append(("steam", appid)),
+                    spawn=spawn, log=lambda _line: None, timeout=3,
+                )
+        self.assertEqual(result["state"], "WEMOD_PROCESS_REQUESTED")
+        self.assertEqual(calls[0], ("steam", "2353250"))
+        self.assertEqual(calls[1][2]["env"]["WINEDLLOVERRIDES"], "version=n,b")
+        self.assertEqual(calls[1][1][0], str(self.wine))
+        self.assertFalse(result["trainer_verified"])
+
     def test_preflight_existing_installed_runtime(self):
         plan = self.prepare()
         self.assertEqual(plan["appid"], "2353250")
