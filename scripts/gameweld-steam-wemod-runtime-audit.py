@@ -6,10 +6,10 @@ Uses only the newest GameWeld session record for an exact, validated AppID.
 Does not read unrelated processes, dump secrets, enter namespaces, run Wine,
 launch a game, change Steam settings, or touch a prefix.
 
-PID reuse guard: require each process to be owned by the current user and its
-creation time (from /proc stat + btime) to be no earlier than the session log.
-A Wine launcher may hand off to a child; a missing PID does NOT prove
-WeMod exited or never displayed a window.
+Only current-user processes from the latest recorded session are inspected.
+A PID may have been reused since the log was written: results are observations,
+not verified identities. A Wine launcher may hand off to a child; a missing
+PID does NOT prove WeMod exited or never displayed a window.
 """
 from __future__ import annotations
 
@@ -75,8 +75,7 @@ def ids_from_session(log: Path, appid: str) -> tuple[int | None, int | None]:
     return game_pid, wemod_pid
 
 
-def process_status(pid: int | None, *, proc_root: Path = Path("/proc"),
-                   min_age: float | None = None) -> dict:
+def process_status(pid: int | None, *, proc_root: Path = Path("/proc")) -> dict:
     if pid is None or pid < 1:
         return {"process_observed": False, "reason": "not_recorded_in_session"}
     d = proc_root / str(pid)
