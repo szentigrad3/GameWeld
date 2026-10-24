@@ -28,6 +28,12 @@ MAX_REPORT = 3000
 MANAGED_MARKER = ".gameweld-managed.json"
 REV_RE = re.compile(r"[0-9a-f]{40}\Z")
 
+def official_origin(value: str) -> bool:
+    # Git accepts these two URL forms for the same official repository.
+    # Do not accept SSH aliases, alternate domains or arbitrary local remotes.
+    return value in (SOURCE_URL, SOURCE_URL.removesuffix(".git"))
+
+
 
 class InstallError(RuntimeError):
     pass
@@ -148,7 +154,7 @@ def inspect_managed_checkout(path: Path) -> str:
     if local != meta["revision"]:
         raise InstallError("Managed DeckCheatz revision differs from its install record; update blocked.")
     origin = git_readonly(["-C", str(path), "remote", "get-url", "origin"])
-    if origin != SOURCE_URL:
+    if not official_origin(origin):
         raise InstallError("Managed DeckCheatz Git origin changed; update blocked.")
     changes = git_readonly(["-C", str(path), "status", "--porcelain", "--untracked-files=normal"])
     for line in changes.splitlines():
@@ -200,7 +206,7 @@ def adopt_existing() -> dict:
         if running_launcher(target):
             raise InstallError("Close DeckCheatz and WeMod before enrolling this checkout in managed updates.")
         origin = git_readonly(["-C", str(target), "remote", "get-url", "origin"])
-        if origin != SOURCE_URL:
+        if not official_origin(origin):
             raise InstallError("Existing checkout Git origin is not the official DeckCheatz source.")
         branch = git_readonly(["-C", str(target), "rev-parse", "--abbrev-ref", "HEAD"])
         if branch != SOURCE_BRANCH:
