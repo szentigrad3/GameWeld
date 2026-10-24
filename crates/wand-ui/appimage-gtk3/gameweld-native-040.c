@@ -4818,6 +4818,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     if(!steam[0] || !pc2_deckcheatz_folder(candidate)){
         if(pc2_public_release_ui()){
             log_line("Play with WeMod blocked: Steam installation was not detected. Nothing launched.");
+            if(G.pc2_deckcheatz_overview_status)set_label(G.pc2_deckcheatz_overview_status,
+                "Steam installation not found. Check Steam is installed and your game is detected.");
+            if(G.pc2_deckcheatz_library_status)set_label(G.pc2_deckcheatz_library_status,
+                "Steam root not resolved; launch was not attempted.");
             return;
         }
         if(!pc2_deckcheatz_choose("Select Steam root folder (containing steamapps)",1,
@@ -4839,6 +4843,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     if(!compat[0]){
         if(pc2_public_release_ui()){
             log_line("Play with WeMod blocked: Steam Proton prefix for %s is missing. Start the game normally once.",g->name);
+            if(G.pc2_deckcheatz_overview_status)set_label(G.pc2_deckcheatz_overview_status,
+                "Game prefix missing. Start this game once through Steam, then try again.");
+            if(G.pc2_deckcheatz_library_status)set_label(G.pc2_deckcheatz_library_status,
+                "No Proton prefix yet. Start the game once through Steam.");
             return;
         }
         if(!pc2_deckcheatz_choose(
@@ -4894,6 +4902,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     if(!pc2_deckcheatz_file(proton)){
         if(pc2_public_release_ui()){
             log_line("Play with WeMod blocked: selected Proton runtime unresolved. Choose a Proton version in Steam Compatibility settings.");
+            if(G.pc2_deckcheatz_overview_status)set_label(G.pc2_deckcheatz_overview_status,
+                "Proton not detected. Set a Proton version in Steam's game Compatibility settings.");
+            if(G.pc2_deckcheatz_library_status)set_label(G.pc2_deckcheatz_library_status,
+                "Unable to find the configured Proton runtime.");
             return;
         }
         char browse[4096]={0};
@@ -4942,7 +4954,15 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     char output[16384]={0};
     int ok=bounded_child_output(pid,fd[0],output,sizeof output,12);
     if(!ok){
-        log_line("DeckCheatz preview blocked for %s; no launch or Steam option changes occurred.",g->name);
+        log_line(pc2_public_release_ui()?
+            "Play with WeMod could not validate the launch for %s; no game started.":
+            "DeckCheatz preview blocked for %s; no launch or Steam option changes occurred.",g->name);
+        if(pc2_public_release_ui()){
+            if(G.pc2_deckcheatz_overview_status)set_label(G.pc2_deckcheatz_overview_status,
+                "WeMod launch check failed; see Activity for the game/runtime error.");
+            if(G.pc2_deckcheatz_library_status)set_label(G.pc2_deckcheatz_library_status,
+                "Launch blocked by game/runtime validation. Nothing was changed.");
+        }
         if(!output[0])snprintf(output,sizeof output,"GameWeld preview helper failed without output.");
     }else{
         log_line("DeckCheatz read-only preview generated for %s; no game/trainer launched.",g->name);
@@ -4953,8 +4973,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         pc2_deckcheatz_show_preview(output);
     if(!ok || !experimental_launch)return;
 
-    /* This provider has no real-game field validation. The preview is always
-     * presented first and game/prefix changes require an explicit Yes. */
+    /* Public Play still validates game/runtime paths without displaying raw
+     * JSON. The action itself starts the external provider; first-time managed
+     * DeckCheatz installation has its own consent gate. Development mode keeps
+     * the extra prompt for diagnostic testing. */
     GtkWidget*consent=NULL;
     if(!pc2_public_release_ui())consent=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
