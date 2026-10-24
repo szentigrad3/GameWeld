@@ -77,10 +77,27 @@ neither should GameWeld silently change Launch Options to get DeckCheatz working
 Reuse the existing provider/session helpers; do not create a second universal
 launch implementation without verified compatibility checks.
 
+## Implementation progress
+
+The release-facing Overview and Library now expose **Play Game**, which uses the
+owning platform without starting a trainer: Steam via the validated PC2 Steam
+handoff, Steam shortcuts via their exact numeric `rungameid`, and existing
+Heroic/Lutris launch helpers. Internal test-only launch controls remain hidden
+from the public-facing UI. The original working direct-Proton **Play with WeMod**
+path is deliberately unchanged.
+
+`scripts/gameweld-platform-session.py` provides read-only, fail-closed
+*game-process identity* evidence for Steam: exact AppID, expected executable
+process name and exact compatdata path. It never asserts that WeMod attached, a
+window appeared, or Steam supervision was independently proven.
+
 ## RC1 test matrix (not yet complete)
 
 - [x] Previous packaged local PC2 build: Astrometica game + WeMod launched;
       user exited early. This was **direct Proton**, not platform-native.
+- [x] PC2 release-facing native **Play Game** wired for Steam, Steam
+      shortcuts, Heroic and Lutris with game-only request status.
+- [x] Read-only exact game-process identity observer and synthetic fixture tests.
 - [ ] Steam-owned Astrometica launch with correct Steam AppID and live game PID.
 - [ ] WeMod trainer starts/attaches in that *same* Steam game/prefix session.
 - [ ] Already-running game: no duplicate launch or prefix collision.
