@@ -55,6 +55,86 @@ class WineRebuildSafetyTests(unittest.TestCase):
                     builder.compile_only(root)
                 run.assert_not_called()
 
+
+    def test_wine_git_checkout_bootstraps_missing_configure(self):
+        with tempfile.TemporaryDirectory(prefix="gw-wine-autogen-") as temp:
+            source = Path(temp) / "wine-source"
+            source.mkdir()
+            (source / "autogen.sh").write_text("#!/bin/sh\necho generated\n")
+            (source / "configure.ac").write_text("AC_INIT([Wine],[1])\n")
+            log = io.StringIO()
+            invoked = []
+
+            def generate(command, output, *, cwd=None):
+                invoked.append((command, cwd))
+                (source / "configure").write_text("#!/bin/sh\nexit 0\n")
+
+            with patch.object(builder, "run_log", side_effect=generate):
+                with patch.object(builder.shutil, "which", return_value="/usr/bin/autoreconf"):
+                    builder.ensure_configure(source, log)
+                    builder.ensure_configure(source, log)
+            self.assertEqual(invoked, [(["sh", "./autogen.sh"], source)])
+            self.assertTrue((source / "configure").is_file())
+
+    def test_existing_exact_revision_and_applied_patch_are_reused(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory(prefix="gw-wine-reuse-") as temp:
+            source = Path(temp) / "wine-source"
+            source.mkdir()
+            (source / ".git").mkdir()
+            cert = source / "dlls/crypt32/cert.c"
+            cert.parent.mkdir(parents=True)
+            cert.write_text("case CERT_SHA256_HASH_PROP_ID: CALG_SHA_256")
+            log = io.StringIO()
+            reverse_ok = Mock(returncode=0)
+            with patch.object(builder.subprocess, "check_output", return_value=builder.REV):
+                with patch.object(builder.subprocess, "run", return_value=reverse_ok) as subprocess_run:
+                    with patch.object(builder, "run_log") as run_log:
+                        builder.ensure_pinned_source(source, log)
+            subprocess_run.assert_called_once()
+            self.assertIn("--reverse", subprocess_run.call_args.args[0])
+            run_log.assert_not_called()
+            self.assertTrue(cert.is_file())
+
+    def test_resume_preserves_failed_source_and_empty_build_dir(self):
+        with tempfile.TemporaryDirectory(prefix="gw-wine-resume-") as temp:
+            work = Path(temp)
+            source = work / "wine-source"
+            source.mkdir()
+            (source / ".git").mkdir()
+            build = work / "wine-build"
+            build.mkdir()
+            old_log = work / "build-output.log"
+            old_log.write_text("Original configure FileNotFoundError\n")
+            visited = []
+
+            def pretend_run(command, output, *, cwd=None):
+                visited.append((command[:2], cwd))
+                if command[0].endswith("configure"):
+                    (build / "Makefile").write_text("all:\n")
+                elif command[0] == "make":
+                    for arch in builder.HISTORIC:
+                        dll = build / "dlls/crypt32" / arch / "crypt32.dll"
+                        dll.parent.mkdir(parents=True)
+                        dll.write_bytes(b"MZ-TEST-SYNTHETIC-" + arch.encode())
+
+            with patch.object(builder, "PATCH", Path(__file__)):
+                with patch.object(builder, "safe_dirs"):
+                    with patch.object(builder, "ensure_pinned_source") as pinned:
+                        with patch.object(builder, "ensure_configure") as bootstrap:
+                            with patch.object(builder, "run_log", side_effect=pretend_run):
+                                with patch.object(builder.subprocess, "check_output", return_value="PE32+ executable (DLL)"):
+                                    self.assertEqual(builder.compile_only(work), 0)
+
+            pinned.assert_called_once()
+            bootstrap.assert_called_once()
+            self.assertTrue(any(c[0][0] == "make" for c in visited))
+            self.assertTrue(any(c[0][0].endswith("configure") for c in visited))
+            self.assertTrue((work / "candidate/SHA256SUMS").is_file())
+            self.assertIn("Original configure FileNotFoundError", old_log.read_text())
+            self.assertTrue(source.is_dir())
+            self.assertTrue(build.is_dir())
+
     def test_fingerprints_and_revision_are_pinned(self):
         self.assertEqual(builder.REV,
             "46b29104e3741fe23bf5e2547196a253aab88c89")
