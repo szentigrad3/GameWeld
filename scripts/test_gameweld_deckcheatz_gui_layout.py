@@ -154,6 +154,31 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('button("WeMod Enhancer: Patch WeMod","primary-action")', text)
         self.assertIn('button("Reset window size","action")', text)
 
+    def test_public_play_game_uses_platform_owner_only(self):
+        self.assertEqual(text.count('button("Play Game","action")'), 2)
+        self.assertIn('&& strcmp(s, "Play Game")', text)
+        self.assertIn('pc2_public_release_ui() ||', text)
+        native = function_body(
+            "static void on_pc2_platform_game_only(GtkButton*b,void*d){",
+            "static void on_pc2_steam_session_check(",
+        )
+        self.assertIn("on_pc2_steam_game_only(NULL,NULL);", native)
+        self.assertIn("spawn_steam_shortcut_normal(g);", native)
+        self.assertIn("spawn_heroic_normal(g);", native)
+        self.assertIn("spawn_lutris_normal(g);", native)
+        self.assertIn('if(!g->shortcut_launch_supported', native)
+        self.assertIn('if(!lutris_session_ready(g))', native)
+        self.assertNotIn("pc2_deckcheatz_flow", native)
+        self.assertNotIn("--confirm-prefix-changes", native)
+        self.assertNotIn("spawn_local_trainer", native)
+        public_launch = function_body(
+            "static void on_pc2_steam_game_only(GtkButton*b,void*d){",
+            "static void on_pc2_platform_game_only(",
+        )
+        self.assertIn("if(!pc2_public_release_ui()){", public_launch)
+        self.assertIn('"launch_enabled"', public_launch)
+        self.assertIn("if(pc2_steam_launch_busy)", public_launch)
+
     def test_public_play_with_wemod_has_no_mandatory_file_or_preview_dialog(self):
         flow = function_body(
             "static void pc2_deckcheatz_flow(int experimental_launch){",
