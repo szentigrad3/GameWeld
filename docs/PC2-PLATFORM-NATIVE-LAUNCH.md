@@ -1,0 +1,95 @@
+# GameWeld PC2 — platform-owned launch contract (RC1)
+
+**Decision:** game launch is owned by the platform where the game is installed.
+GameWeld discovers the game, starts it through that platform, then manages an
+optional trainer in the *verified same game/runtime session*.
+
+This is the direction for the normal **Play** and **Play with WeMod** controls.
+Do not replace the currently field-tested DeckCheatz 1.x direct-Proton path
+until an alternative has passed a real game + trainer + restart test. The existing
+direct path is a development compatibility fallback, not proof that all games
+work without Steam/Heroic/Lutris supervising them.
+
+## Platform ownership
+
+| Installation source | Owner | Launch request | Session proof |
+| --- | --- | --- | --- |
+| Steam Windows games | Steam | `steam -applaunch <appid>` or validated `steam://rungameid/<appid>` | Steam AppID game process/reaper, exact compatdata and selected Proton |
+| Steam non-Steam shortcuts | Steam | resolved `steam://rungameid/<shortcut-id>` | exact shortcut identity + live compatibility runtime |
+| Epic / GOG / Amazon via Heroic | Heroic | existing `gameweld-heroic-launch` helper using Heroic's installed-game identity | Heroic-managed game PID, prefix and Wine/Proton owner |
+| Lutris | Lutris | existing validated `gameweld-lutris-session` helper | Lutris game ID, launch URI, prefix, configured runner and live game PID |
+| Standalone | User-selected install | selected executable via configured Wine/Proton | exact executable, compatible prefix and live PID |
+
+Never choose an arbitrary similar executable from another installation. Never
+launch a second copy of a game after the platform has successfully started it.
+
+## One-click sequence
+
+1. User clicks **Play with WeMod** once.
+2. Resolve **provider and installed game identity**. Do not open an EXE picker,
+   display raw JSON, or require an extra confirmation for an already-established
+   provider. First-time provider installation or risky changes still require
+   consent. Do not silently modify a Wine prefix if that user consent has not
+   yet been established.
+3. Send a single launch request to the owning platform. Returning zero from
+   `steam -applaunch` / a URI handler confirms only the request, **not** that
+   the game started.
+4. Observe and verify the *actual* game session: identity, live process,
+   selected runtime and exact game-specific prefix. Allow for launchers and
+   child-process handoff; do not mistake Steam/Proton wrappers for the game.
+5. Only if the WeMod provider supports it, start/attach the trainer in the
+   verified session. A trainer window alone is not a successful attachment.
+6. Present honest states: `starting_game` → `game_verified` →
+   `trainer_attaching` → `trainer_verified`; or a precise actionable failure.
+
+**Release requirement:** the status must not say "Play with WeMod succeeded"
+when only Steam, DeckCheatz or WeMod started. Check an actual trainer-in-game
+session with the packaged AppImage.
+
+## DeckCheatz 1.x limitation
+
+The upstream DeckCheatz 1.x documented Steam integration is a wrapper of
+Steam's `%command%`. Its current direct-Proton mode in GameWeld invokes
+a manually constructed `proton waitforexitandrun game.exe` command, which
+**does not use Steam as launch supervisor**. This worked for Astrometica in a
+specific user test, but it cannot be assumed reliable for DRM/authentication,
+Steam APIs, or every title.
+
+Do **not** simply replace that command with `steam -applaunch` and then claim
+the trainer attaches; Steam owns a separate process tree. A separately verified
+same-session injection/attach route is needed. If no supported attach route
+exists for an installation, show an honest unsupported status rather than
+launching a trainer into another prefix or pretending a game launch was enough.
+
+No user should need to manually edit Steam Launch Options in the default flow;
+neither should GameWeld silently change Launch Options to get DeckCheatz working.
+
+## Existing code paths (as of the release cleanup branch)
+
+- `on_play_normal`: Steam `-applaunch`, Steam shortcut `rungameid`,
+  `spawn_heroic_normal`, `spawn_lutris_normal`.
+- `on_pc2_steam_game_only`: separately gated/validated game-only request.
+- `pc2_deckcheatz_flow`: currently validates and executes the direct-Proton
+  DeckCheatz route. **Not platform-owned**.
+- `scripts/gameweld-deckcheatz-direct.py`: constructs direct Proton command
+  with `will_invoke_steam_client: false`.
+
+Reuse the existing provider/session helpers; do not create a second universal
+launch implementation without verified compatibility checks.
+
+## RC1 test matrix (not yet complete)
+
+- [x] Previous packaged local PC2 build: Astrometica game + WeMod launched;
+      user exited early. This was **direct Proton**, not platform-native.
+- [ ] Steam-owned Astrometica launch with correct Steam AppID and live game PID.
+- [ ] WeMod trainer starts/attaches in that *same* Steam game/prefix session.
+- [ ] Already-running game: no duplicate launch or prefix collision.
+- [ ] Game-only launch remains usable when WeMod attach is unavailable.
+- [ ] Heroic Epic/GOG/Amazon installed-game launch through Heroic.
+- [ ] Lutris game launch through Lutris with correct runner and prefix.
+- [ ] Steam shortcut uses its exact `rungameid` identifier.
+- [ ] No Steam Launch Options changes, no unnecessary EXE picker and no raw JSON.
+- [ ] Package integrity, cross-distribution compatibility and license audit.
+
+Keep this gate open for GitHub RC1 promotion until platform ownership and
+trainer-session attachment have real-game evidence.
