@@ -172,7 +172,14 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.assertFalse(result["trainer_verified"])
         self.assertEqual(len(invocations), 1)
         self.assertEqual(invocations[0][0], "wemod")
-        self.assertEqual(invocations[0][1], [str(self.wine), str(self.wemod)])
+        self.assertEqual(
+            invocations[0][1],
+            [str(self.wine), str(self.wemod),
+             *tool.WEMOD_SOFTWARE_RENDER_SWITCHES],
+        )
+        self.assertIn("--disable-gpu", invocations[0][1])
+        self.assertIn("--disable-gpu-compositing", invocations[0][1])
+        self.assertNotIn("--no-sandbox", invocations[0][1])
         self.assertEqual(invocations[0][2]["env"]["WINEPREFIX"],
                          str(self.compat / "pfx"))
         self.assertEqual(invocations[0][2]["env"]["WINESERVER"], str(self.wineserver))
@@ -297,7 +304,49 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.assertEqual(result["state"], "WEMOD_PROCESS_REQUESTED")
         self.assertEqual(command[0][0], str(self.wine))
         self.assertNotIn("runinprefix", command[0])
-        self.assertEqual(command[0][-1], str(self.wemod))
+        self.assertEqual(command[0][1], str(self.wemod))
+        self.assertEqual(command[0][2:], list(tool.WEMOD_SOFTWARE_RENDER_SWITCHES))
+
+    def test_renderer_error_loop_is_not_reported_as_wemod_success(self):
+        plan = self.prepare()
+        class Observer:
+            @staticmethod
+            def matching_game_processes(*args):
+                return [889]
+        output = self.root / "render-loop.proton.log"
+        def spawn(argv, **kwargs):
+            self.assertEqual(argv[:2], [str(self.wine), str(self.wemod)])
+            self.assertIn("--disable-gpu", argv)
+            stream = kwargs["stdout"]
+            stream.write(("GPU process launch failed: error_code=43\\n" * 14))
+            stream.flush()
+            return SimpleNamespace(pid=892, poll=lambda: None)
+        with patch.object(tool.time, "sleep", return_value=None):
+            result = tool.launch(plan, observer=Observer(), spawn=spawn,
+                                 proton_output=output, log=lambda msg: None)
+        self.assertEqual(result["state"], "WEMOD_GPU_RENDERER_RETRY_LOOP")
+        self.assertFalse(result["trainer_verified"])
+
+    def test_render_flags_never_sent_to_steam_game_launch(self):
+        plan = self.prepare()
+        calls = []
+        class Observer:
+            ticks = 0
+            @classmethod
+            def matching_game_processes(cls, *_args):
+                cls.ticks += 1
+                return [100] if cls.ticks > 1 else []
+        def spawn(argv, **kwargs):
+            calls.append(("wemod", argv))
+            return SimpleNamespace(pid=893, poll=lambda: None)
+        with patch.object(tool.time, "sleep", return_value=None):
+            result = tool.launch(plan, observer=Observer(),
+                                 start_steam=lambda appid: calls.append(("steam", appid)),
+                                 spawn=spawn, timeout=3, log=lambda msg: None)
+        self.assertEqual(result["state"], "WEMOD_PROCESS_REQUESTED")
+        self.assertEqual(calls[0], ("steam", "2353250"))
+        self.assertEqual(calls[1][1][2:], list(tool.WEMOD_SOFTWARE_RENDER_SWITCHES))
+        self.assertFalse(result["trainer_verified"])
 
     def test_no_game_never_starts_trainer(self):
         plan = self.prepare()
