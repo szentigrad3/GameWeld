@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -138,6 +139,55 @@ def ensure_configure(source: Path, log) -> None:
         blocked("Wine autogen.sh finished without producing configure; inspect build-output.log")
 
 
+
+def diagnose_build_log(work: Path, *, max_errors: int = 16) -> int:
+    """Read only the latest build attempt; do not retry make or alter the tree.
+
+    Wine's parallel make logs can interleave error lines. Preserve source
+    excerpts plus the final output so no guessed dependency fix is applied.
+    """
+    log_path = work / "build-output.log"
+    if not log_path.is_file():
+        print("No build-output.log found at " + str(log_path))
+        return 2
+    if log_path.is_symlink():
+        blocked("Refusing symlinked build log")
+    # Read a bounded suffix; the log itself can be large after a Wine build.
+    with log_path.open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        stream.seek(max(0, stream.tell() - 4 * 1024 * 1024))
+        log = stream.read().decode("utf-8", errors="replace")
+    section = "\n=== GameWeld Wine pinned source build/resume ===\n"
+    if section in log:
+        log = log.rsplit(section, 1)[-1]
+    lines = log.splitlines()
+    pattern = re.compile(
+        r"(?i)(?:\berror:|\bfatal error:|undefined reference|"
+        r"no rule to make target|make(?:\[\d+\])?: \*\*\*|"
+        r"collect2:|ld: cannot find|killed signal|out of memory|"
+        r"cannot find -l|linker command failed|cannot execute)"
+    )
+    matches = [i for i, line in enumerate(lines) if pattern.search(line)]
+    print("GameWeld PC2 Test 21 — failed Wine build diagnostics")
+    print("Mode: READ ONLY; no Wine/Proton/make processes started")
+    print("Source log: " + str(log_path))
+    print("Latest attempt lines: " + str(len(lines)) +
+          ", likely error lines: " + str(len(matches)))
+    for index in matches[-max_errors:]:
+        lo, hi = max(0, index - 2), min(len(lines), index + 3)
+        print("--- Possible failure at build line " + str(index + 1) + " ---")
+        for offset in range(lo, hi):
+            print(f"{offset+1}: {lines[offset][:700]}")
+    print("--- Last 45 lines of latest attempt ---")
+    for line in lines[-45:]:
+        print(line[:700])
+    if not matches:
+        print("No standard compiler/linker errors matched; see last lines above.")
+    print("Nothing was rebuilt or installed. Share these diagnostics to identify "
+          "the actual missing dependency or compilation failure.")
+    return 0
+
+
 def compile_only(work: Path) -> int:
     source = work / "wine-source"
     build = work / "wine-build"
@@ -175,10 +225,14 @@ def compile_only(work: Path) -> int:
             jobs = max(1, min(os.cpu_count() or 4, 12))
             run_log(["make", "-j" + str(jobs)], log, cwd=build)
     except (OSError, subprocess.CalledProcessError) as exc:
-        blocked("Isolated Wine build failed (" + type(exc).__name__ +
-                "). See " + str(log_path) +
-                ". Existing checkout, applied patch and build directory are preserved; "
-                "no installed Proton binaries were touched.")
+        print("Isolated Wine build exited (" + type(exc).__name__ + ").", file=sys.stderr)
+        try:
+            diagnose_build_log(work)
+        except (OSError, ValueError) as diagnostic_exc:
+            print("Log inspection failed: " + str(diagnostic_exc), file=sys.stderr)
+        blocked("Wine build failed. Preserve the existing source/build tree. "
+                "No installed Proton binaries were touched. "
+                "Run --diagnose to redisplay the compiler errors.")
 
     outputs = {}
     for arch, expected in HISTORIC.items():
@@ -217,8 +271,13 @@ def main(argv: list[str] | None = None) -> int:
     group = p.add_mutually_exclusive_group()
     group.add_argument("--preflight", action="store_true")
     group.add_argument("--build", action="store_true")
+    group.add_argument("--diagnose", action="store_true", help="read only the existing latest build error log")
     p.add_argument("--confirm", action="store_true")
     args = p.parse_args(argv)
+    if args.diagnose:
+        if args.confirm:
+            blocked("--diagnose does not accept --confirm")
+        return diagnose_build_log(WORK)
     if args.build:
         if not args.confirm:
             blocked("--build requires explicit --confirm; only --preflight is read-only")
