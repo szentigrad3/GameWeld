@@ -27,6 +27,16 @@ import time
 STEAM_APPID = re.compile(r"[1-9][0-9]{0,9}\Z")
 GAME_TIMEOUT = 90
 POLL_SECONDS = 0.75
+# Chromium/Electron's GPU child repeatedly failed under the verified KDE
+# XWayland + active Wine server session (error_code=43). Disable acceleration
+# for WeMod only: never pass these switches to the Steam game or Proton.
+WEMOD_SOFTWARE_RENDER_SWITCHES = (
+    "--disable-gpu",
+    "--disable-gpu-compositing",
+    "--enable-logging=stderr",
+)
+GPU_RETRY_ERROR = b"GPU process launch failed: error_code=43"
+GPU_RETRY_THRESHOLD = 8
 
 
 def load_observer():
@@ -308,7 +318,11 @@ def active_wine_handoff(plan: dict, game_pid: int,
     environment["PROTON_USE_X11_EXCLUSIVE"] = Path(plan["wemod_exe"]).name
     environment.pop("LD_PRELOAD", None)
     environment.pop("MANGOHUD", None)
-    return [str(wine), plan["wemod_exe"]], environment
+    # These Electron switches affect only the WeMod executable, not the
+    # already-running Astrometica game. Avoid disabling Chromium sandboxing
+    # or setting global Wine/Steam variables to change the game's renderer.
+    return [str(wine), plan["wemod_exe"],
+            *WEMOD_SOFTWARE_RENDER_SWITCHES], environment
 
 
 def launch(plan: dict, *, observer=None, start_steam=begin_steam,
@@ -342,6 +356,7 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
          environment.pop("GAMEWELD_X11_DISPLAY_SOURCE", "verified-local-X11") +
          " display (Xauthority cookie never logged)")
     emit("WEMOD_ACTIVE_WINESERVER_JOIN_REQUESTED: game-owned prefix; no second Proton bootstrap")
+    emit("WEMOD_RENDERER_MODE: WeMod-only software Chromium renderer; game GPU unchanged")
     # Never discard Wine/WeMod errors in field builds. Only the selected
     # helper's stdout/stderr is captured (not the entire Steam/game environment).
     # Each session gets a new owner-only log, not a reusable public /tmp file.
@@ -369,6 +384,21 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
     # never claim an attached trainer or visible window from exit status alone.
     time.sleep(1.0)
     early_returncode = proc.poll()
+    # A Wine launcher can stay alive while Electron enters a repeated GPU
+    # child-process failure loop. Detect the user's observed signature and
+    # never mislabel that as a verified WeMod window. Read only this session's
+    # owner-only output log, not other Wine/Steam processes or game files.
+    if proton_output is not None:
+        try:
+            with proton_output.open("rb") as gpu_log:
+                recent_output = gpu_log.read(262144)
+            if recent_output.count(GPU_RETRY_ERROR) >= GPU_RETRY_THRESHOLD:
+                emit("WEMOD_GPU_RENDERER_RETRY_LOOP: repeated Chromium GPU "
+                     "error_code=43; trainer/window UNVERIFIED")
+                return {"state": "WEMOD_GPU_RENDERER_RETRY_LOOP",
+                        "trainer_verified": False, "pid": proc.pid}
+        except OSError:
+            pass
     if early_returncode is not None:
         if early_returncode != 0:
             emit("WEMOD_STARTUP_EXITED_WITH_ERROR: exit=" + str(early_returncode))
