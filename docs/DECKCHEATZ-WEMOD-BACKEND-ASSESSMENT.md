@@ -198,3 +198,23 @@ After the screenshot-driven Library responsiveness/UX fixes, PC2 gains a more co
 The private AppDir deliberately does not contain DeckCheatz AGPL source, a WeMod binary, game art, trainers or DLL payloads. It uses host GTK3 libraries rather than deploying bundled GTK, is **NOT a distributable AppImage or license-cleared release**, and has not been launched or reverified on a fresh target system. PC1 packaging scripts and existing user installations remain unchanged. CI now stages the internal AppDir and checks launcher/helper presence and absence of symlinks/external DeckCheatz source.
 
 **Gate interpretation:** Successful preflight and staging establishes compiled source and file placement, **not** runtime GUI behavior, real-world trainer compatibility, publication rights or first-use internet install success. Next validation on the user's CachyOS machine is to run the preflight once, inspect its report, and verify narrow/wide Library behavior in the PC2 source runner. Do not publish or rename the private AppDir to an AppImage before distribution/runtime/license review.
+
+
+## User-verified PC2 RC1 offline preflight — 2026-10-24
+
+The user ran `bash scripts/pc2-rc1-preflight.sh` on CachyOS and uploaded `rc1-preflight-report.txt` for exact checkout commit `39de025385088fafe88dd9444dfea3743826900a`. **Result: PASS (OFFLINE SOURCE BUILD + FIXTURES ONLY)**. The workspace had one previously known uncommitted modification to `scripts/run-pc2-source-frontend.sh`; the preflight did not overwrite or discard it.
+
+Observed test results:
+- 20/20 managed DeckCheatz installer, updater and adoption fixtures passed.
+- 5/5 Proton discovery fixtures passed.
+- 8/8 direct launch consent, duplicate detection and Steam configuration preservation fixtures passed.
+- 8/8 static PC2 GUI layout and safeguard assertions passed.
+- GTK frontend source syntax passed.
+- Source helper AppDir link layout passed.
+- Go backend tests passed; a complete backend binary built.
+- Complete GTK frontend compiled and **linked** into an executable; SHA256 hashes for both binaries were recorded.
+- Existing DeckCheatz 1.x installation reports `installed: true`, `managed_install: true`, revision `f9094b31ee79afe8af8d78c7767b957307ec33ee`. Git, Python3, Tkinter and venv detected. No updater or game launched by the preflight.
+- Backend binary SHA256: `455f78c6adb7256406f973c2ceb8ae063131916ad597d271a1acd51a62ba013c`.
+- GTK binary SHA256: `553f49a2cadef04fe31b0b6461e0895dba75b31d118185134e4970f8012255f5`.
+
+**Important distinction:** This establishes the precise offline **preflight** gate, not successful staging of the standalone AppDir. The report has no AppDir-staging success line and no real GTK runtime resize evidence. The next gate is a successful `scripts/pc2-stage-standalone-appdir.sh` run followed by actual UI opening/narrow and wide Library checks. Existing Astrometica field validation is independent of this offline build result. Do not yet promote to RC1 or publish any AppImage.
