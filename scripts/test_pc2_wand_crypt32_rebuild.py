@@ -27,7 +27,7 @@ class WineRebuildSafetyTests(unittest.TestCase):
                     compile.assert_not_called()
                     run.assert_not_called()
                 self.assertIn("Mode: READ ONLY", capture.getvalue())
-                self.assertIn("No Steam", capture.getvalue()) if "No Steam" in capture.getvalue() else None
+                self.assertIn('This builder does not use sudo', capture.getvalue())
 
     def test_build_is_never_selected_without_explicit_confirmation(self):
         with patch.object(builder, "compile_only") as compile:
