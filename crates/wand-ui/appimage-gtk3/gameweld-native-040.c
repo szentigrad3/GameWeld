@@ -1848,18 +1848,54 @@ static int pc2_load_window_size(int *out_w,int *out_h,int max_w,int max_h){
     *out_w=w;*out_h=h;
     return 1;
 }
+/* Record the LAST live normal-window size when GTK configures the window.
+ * Reading geometry inside the "destroy" signal is too late on KWin/GTK3:
+ * the window may already be unmapped and GTK may return its original size.
+ * A short coalesced save captures a completed manual resize before quit. */
+static int pc2_window_last_w=0,pc2_window_last_h=0;
+static int pc2_window_observation_ready=0;
+static int pc2_window_save_queued=0;
+
 static void pc2_save_window_size(void){
-    if(!pc2_discovery_only()||!G.window||
-       gtk_window_is_maximized((GtkWindow*)G.window))return;
-    int w=0,h=0;
-    gtk_window_get_size((GtkWindow*)G.window,&w,&h);
+    if(!pc2_discovery_only())return;
+    int w=pc2_window_last_w,h=pc2_window_last_h;
     if(w<640||h<480||w>8192||h>8192)return;
     char path[4096]={0};
     if(!pc2_window_state_path(path,sizeof path,1))return;
-    int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,0600);
+    /* Write through a temporary file and rename after close: a failed or
+     * interrupted write cannot leave a partially parsed preference. */
+    char temp[4096]={0};
+    int n=snprintf(temp,sizeof temp,"%s.tmp-%ld",path,(long)getpid());
+    if(n<=0||n>=(int)sizeof temp)return;
+    int fd=open(temp,O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,0600);
     if(fd<0)return;
-    dprintf(fd,"%d %d\n",w,h);
-    close(fd);
+    char value[64];
+    int size=snprintf(value,sizeof value,"%d %d\n",w,h);
+    ssize_t actual=write(fd,value,(size_t)size);
+    if(close(fd)!=0||actual!=size){unlink(temp);return;}
+    if(rename(temp,path)!=0){unlink(temp);return;}
+}
+static gboolean pc2_window_save_after_resize(void *unused){
+    (void)unused;
+    pc2_window_save_queued=0;
+    pc2_save_window_size();
+    return FALSE;
+}
+static gboolean pc2_window_configure(GtkWidget *window,void *event,void *unused){
+    (void)event;(void)unused;
+    if(!pc2_discovery_only()||!pc2_window_observation_ready||!window||
+       gtk_window_is_maximized((GtkWindow*)window))return FALSE;
+    int w=0,h=0;
+    gtk_window_get_size((GtkWindow*)window,&w,&h);
+    if(w<640||h<480||w>8192||h>8192)return FALSE;
+    if(w==pc2_window_last_w && h==pc2_window_last_h)return FALSE;
+    pc2_window_last_w=w;
+    pc2_window_last_h=h;
+    if(!pc2_window_save_queued){
+        pc2_window_save_queued=1;
+        g_timeout_add(750,pc2_window_save_after_resize,NULL);
+    }
+    return FALSE;
 }
 
 static void recommended_window_geometry(int *out_w,int *out_h){
@@ -1929,6 +1965,11 @@ static gboolean pc2_startup_fit_window(void *unused){
             gtk_window_unmaximize((GtkWindow*)G.window);
         gtk_window_resize((GtkWindow*)G.window,ww,hh);
         gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);
+        /* Programmatic startup adjustment happens before tracking real user
+         * resizing, so a stale KWin initial allocation is never persisted. */
+        pc2_window_last_w=ww;pc2_window_last_h=hh;
+        pc2_window_observation_ready=1;
+        log_line("PC2 active window size: %dx%d; future manual resizes will be remembered.",ww,hh);
     }
     return FALSE;
 }
@@ -1945,7 +1986,10 @@ static void on_pc2_window_size_reset(GtkButton *button,void *unused){
         gtk_window_unmaximize((GtkWindow*)G.window);
     gtk_window_resize((GtkWindow*)G.window,ww,hh);
     gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);
-    log_line("PC2 window reset: %dx%d normal window; manual resize remains enabled.",ww,hh);
+    pc2_window_last_w=ww;pc2_window_last_h=hh;
+    pc2_window_observation_ready=1;
+    pc2_save_window_size();
+    log_line("PC2 window reset: %dx%d normal window; next launch uses reset dimensions.",ww,hh);
 }
 static void spawn_detached(const char *a,const char *b,const char *c){pid_t p=fork();if(p==0){clear_desktop_activation_env();if(c)execlp(a,a,b,c,(char*)NULL);else if(b)execlp(a,a,b,(char*)NULL);else execlp(a,a,(char*)NULL);_exit(127);}}
 static void set_label(GtkWidget *w,const char *s){ if(w)gtk_label_set_text((GtkLabel*)w,s?s:""); }
@@ -5120,7 +5164,7 @@ static void build_ui(void){
         log_line("PC2 monitor sizing: windowed %dx%d logical; physical monitor %dx%d. Resize/maximize only by user choice.",
             initial_w,initial_h,physical_w,physical_h);
     }
-    G.window=gtk_window_new(GTK_WINDOW_TOPLEVEL);gtk_window_set_title((GtkWindow*)G.window,"GameWeld");gtk_window_set_icon_name((GtkWindow*)G.window,"gameweld");gtk_window_set_default_size((GtkWindow*)G.window,initial_w,initial_h);gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);gtk_window_set_decorated((GtkWindow*)G.window,TRUE);g_signal_connect_data(G.window,"destroy",(GCallback)on_destroy,NULL,NULL,0);
+    G.window=gtk_window_new(GTK_WINDOW_TOPLEVEL);gtk_window_set_title((GtkWindow*)G.window,"GameWeld");gtk_window_set_icon_name((GtkWindow*)G.window,"gameweld");gtk_window_set_default_size((GtkWindow*)G.window,initial_w,initial_h);gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);gtk_window_set_decorated((GtkWindow*)G.window,TRUE);g_signal_connect_data(G.window,"destroy",(GCallback)on_destroy,NULL,NULL,0);if(pc2_discovery_only())g_signal_connect_data(G.window,"configure-event",(GCallback)pc2_window_configure,NULL,NULL,0);
     GtkWidget*titlebar=box(GTK_ORIENTATION_HORIZONTAL,12);gtk_widget_set_name(titlebar,"app-titlebar");gtk_widget_set_size_request(titlebar,-1,54);gtk_widget_set_margin_start(titlebar,14);gtk_widget_set_margin_end(titlebar,10);
     GtkWidget*titlebrand=box(GTK_ORIENTATION_HORIZONTAL,10);gtk_widget_set_name(titlebrand,"title-brand");GtkWidget*wm=asset_image("gameweld-app-icon.png",36,36);if(!wm){wm=label("GW",NULL);gtk_widget_set_name(wm,"wandmark");}pack(titlebrand,wm,0);GtkWidget*bt=box(GTK_ORIENTATION_VERTICAL,0);GtkWidget*brand=label("GameWeld",NULL);gtk_widget_set_name(brand,"brand");pack(bt,brand,0);GtkWidget*ver=label(pc2_discovery_only()?"PC2 DISCOVERY TEST":"0.7.0",NULL);gtk_widget_set_name(ver,"brandver");pack(bt,ver,0);pack(titlebrand,bt,0);pack(titlebar,titlebrand,0);
     GtkWidget*grow=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow,1);GtkWidget*searchwrap=box(GTK_ORIENTATION_HORIZONTAL,0);gtk_widget_set_name(searchwrap,"global-search-wrap");G.search_scope=gtk_combo_box_text_new();gtk_widget_set_name(G.search_scope,"global-search-scope");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"all","All games");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"steam","Steam");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"shortcut","Steam shortcuts");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"heroic","Heroic");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"lutris","Lutris");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"trainers","Trainers");gtk_combo_box_set_active_id((GtkComboBox*)G.search_scope,"all");gtk_widget_set_size_request(G.search_scope,126,36);g_signal_connect_data(G.search_scope,"changed",(GCallback)on_search_scope_changed,NULL,NULL,0);pack(searchwrap,G.search_scope,0);G.search=gtk_entry_new();gtk_widget_set_name(G.search,"global-search-entry");gtk_entry_set_placeholder_text((GtkEntry*)G.search,"Search all games…");gtk_entry_set_icon_from_icon_name((GtkEntry*)G.search,GTK_ENTRY_ICON_PRIMARY,"system-search-symbolic");gtk_widget_set_size_request(G.search,250,36);g_signal_connect_data(G.search,"changed",(GCallback)on_search,NULL,NULL,0);pack(searchwrap,G.search,0);pack(titlebar,searchwrap,0);GtkWidget*grow2=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow2,1);G.top_steam_status=label("Detecting Steam, Heroic and Lutris…","muted");pack(titlebar,G.top_steam_status,0);pack(titlebar,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);GtkWidget*mi=button("—","windowctl");GtkWidget*ma=button("□","windowctl");GtkWidget*cl=button("×","windowctl");gtk_widget_set_name(cl,"closectl");g_signal_connect_data(mi,"clicked",(GCallback)on_minimize,NULL,NULL,0);g_signal_connect_data(ma,"clicked",(GCallback)on_maximize,NULL,NULL,0);g_signal_connect_data(cl,"clicked",(GCallback)on_close_btn,NULL,NULL,0);pack(titlebar,mi,0);pack(titlebar,ma,0);pack(titlebar,cl,0);gtk_window_set_titlebar((GtkWindow*)G.window,titlebar);
