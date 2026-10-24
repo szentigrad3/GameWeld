@@ -56,3 +56,24 @@ Read-only plan for an explicitly confirmed game, after filling in the paths to a
 An experimental direct-launch option exists, but is **not enabled as a one-click PC2 GTK play button**; the launcher is not yet field-verified with Steam DRM, Proton prefix ownership, game process readiness or actual trainer injection. It requires both the explicit flags `--launch --confirm-prefix-changes --experimental-direct-launch` and all validated paths. A no-op preview cannot launch even if flags are accidentally supplied. External upstream may modify the selected game prefix or download WeMod, and its own behavior is outside GameWeld's control. GameWeld never runs `sudo`, edits Steam LaunchOptions, or disables its separate managed Wand crypt32 hash validation.
 
 IMPORTANT: DeckCheatz upstream documents Steam/Lutris prefix commands and warns that manually running outside a launcher is difficult. A manually reconstructed Proton argv is **experimental** and not equivalent to Steam's actual native launcher or guaranteed SteamAPI initialization. The UI will offer per-game settings, preview, consent and live launch only when this provider has successfully completed end-to-end field validation. For now, the new GUI control is **read-only detection**, not a false 'Play' button.
+
+
+## PC2 read-only preview and opt-in field test (2026-10-24)
+
+The GTK PC2 Overview and Library now have three separate DeckCheatz controls:
+
+- **Detect (no Steam options)**: source-layout inspection only.
+- **Preview selected game (read-only)**: validates selected Steam AppID, EXE, Proton, existing compatdata and the Steam client root, then shows the exact JSON launch plan. Missing EXE or unresolved Proton uses an explicit file picker; Proton auto-resolution reuses Steam compatibility mapping and prefix config evidence.
+- **Test game + WeMod (experimental)**: runs the same read-only preview first, then shows a second confirmation identifying the game, AppID, prefix mutation risk, and lack of real-launch verification. Choosing No causes no external launch. Choosing Yes creates a private log and asynchronously starts the separately installed DeckCheatz backend using the Python helper's two required consent flags.
+
+The experimental test is **not** the default Play action, has **not** passed any live game/trainer validation, and cannot claim success merely when its subprocess is queued. It uses no Steam launch option edits or shell string concatenation. The backend rechecks selected paths and refuses same-AppID active Proton sessions. Upstream may alter the selected game prefix or download trainer components. The operator should back up the prefix before opting in; GameWeld does not automatically snapshot or roll back that prefix in this prototype.
+
+For the field test, select **Astrometica** on the PC2 GUI; verify the read-only preview, close any running Astrometica session, make a prefix backup if desired, then explicitly choose the experimental button and approve only if willing to accept prefix changes. See a log under `$XDG_STATE_HOME/gameweld/deckcheatz` or `~/.local/state/gameweld/deckcheatz`. Record separately: (1) helper starts, (2) game process/window, (3) WeMod window/login, (4) trainer recognizes Astrometica, (5) a safe single-player trainer toggle operates. A launcher exit status by itself never verifies steps (2)–(5).
+
+Observed user preview has:
+- Steam AppID 2353250;
+- executable `/mnt/games/Steam/steamapps/common/ASTROMETICA/Astrometica.exe`;
+- Proton `/mnt/games/Steam/steamapps/common/Proton - Experimental/proton`;
+- existing compatdata `/home/szentigrade/.steam/root/steamapps/compatdata/2353250`.
+
+These are **user-supplied, validated paths**, not proof of live launch. The Proton tool directory and game install library differ from the Steam client root/prefix; this is permissible for preview but needs field validation. GameWeld's managed Wand and custom crypt32 work remain isolated and unmodified.
