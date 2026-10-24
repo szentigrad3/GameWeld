@@ -121,6 +121,24 @@ collects bounded .NET v4 Full registry evidence from installed Steam libraries,
 without starting the game, installing dependencies or changing the prefix.
 A missing registry key is *not* proof that .NET is absent.
 
+The user's 25 October 2026 read-only report found a single Astrometica prefix
+at `/mnt/games/Steam/steamapps/compatdata/2353250` with .NET v4 Full
+`Install=1` and `Release=528049` (registry indicates .NET 4.8-or-later),
+and a WeMod 11.6.0 embedded app without an installed Enhancer `version.dll`
+or original ASAR backup. These findings reduce the likelihood of missing
+registry prerequisites or an Enhancer DLL override conflict; they **do not**
+verify .NET health, Electron rendering or complete WeMod provenance.
+
+The next read-only diagnostic compares the **currently running** game PID and
+WeMod Wine launcher PID recorded in the latest session log:
+`gameweld-steam-wemod-runtime-audit.py --appid 2353250`. It checks mount
+namespace and filtered Steam runtime indicators without dumping credentials,
+starting a process or modifying Steam/Proton. A different mount namespace
+supports a runtime-context mismatch hypothesis; the same namespace does not
+prove a compatible Electron/Proton runtime. PIDs may have exited or been reused.
+Don't change the game Proton runner or install .NET based solely on this probe.
+
+
 The client audit now also reports whether a native `version.dll` proxy and
 original ASAR backup are present. If an Enhancer patch is installed, the
 separate WeMod subprocess needs native-first `version=n,b` DLL selection.
