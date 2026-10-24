@@ -165,6 +165,43 @@ class DeckCheatzInstallerTests(unittest.TestCase):
         self.assertFalse((backup / "UPSTREAM-FIX").exists())
         self.assertFalse(list(self.target.parent.glob(".deckcheatz-staging-*")))
 
+    def test_adopt_clean_manual_checkout_for_managed_updates(self):
+        self.git("clone", str(self.origin), str(self.target), cwd=self.root)
+        self.assertFalse(installer.status()["managed_install"])
+        result = installer.adopt_existing()
+        self.assertEqual(result["result"], "adopted")
+        self.assertTrue(result["managed_install"])
+        self.assertEqual(installer.inspect_managed_checkout(self.target),
+                         result["upstream_revision"])
+        new = self.next_upstream_commit()
+        updated = installer.update()
+        self.assertEqual(updated["upstream_revision"], new)
+
+    def test_adopt_refuses_dirty_manual_checkout(self):
+        self.git("clone", str(self.origin), str(self.target), cwd=self.root)
+        marker = self.target / "KEEP-ME"
+        marker.write_text("personal file")
+        with self.assertRaisesRegex(installer.InstallError, "local files or edits"):
+            installer.adopt_existing()
+        self.assertTrue(marker.is_file())
+        self.assertFalse((self.target / installer.MANAGED_MARKER).exists())
+
+    def test_adopt_rejects_wrong_origin(self):
+        other = self.root / "unknown-repo"
+        other.mkdir()
+        (other / "src").mkdir()
+        (other / "src/wemod.py").write_text("# source\\n")
+        (other / "wemod").symlink_to("src/wemod.py")
+        (other / "README.md").write_text("WeMod Launcher fixture")
+        (other / "LICENSE").write_text("GNU AFFERO GENERAL PUBLIC LICENSE")
+        self.git("init", "-b", "main", str(other), cwd=self.root)
+        self.git("add", ".", cwd=other)
+        self.git("-c", "user.name=Fixture", "-c", "user.email=test@example.invalid",
+                 "commit", "-m", "fixture", cwd=other)
+        self.git("clone", str(other), str(self.target), cwd=self.root)
+        with self.assertRaisesRegex(installer.InstallError, "not the official"):
+            installer.adopt_existing()
+
     def test_update_noop_when_already_current(self):
         installer.install()
         result = installer.update()
