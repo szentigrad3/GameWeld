@@ -138,6 +138,23 @@ supports a runtime-context mismatch hypothesis; the same namespace does not
 prove a compatible Electron/Proton runtime. PIDs may have exited or been reused.
 Don't change the game Proton runner or install .NET based solely on this probe.
 
+**25 Oct, 10:30 AEST user report:** in GameWeld's Settings >
+WeMod Enhancer, the selected client was
+`~/.local/share/gameweld/deckcheatz/wemod_data/wemod_bin` and the upstream
+**Patch WeMod** action reported success. This is *not* a confirmed WeMod
+rendering or trainer attachment test. The earlier read-only process-context
+report found that both recorded PIDs were no longer available, so no
+runtime/namespace conclusion can be drawn from that report.
+
+RC1's Steam-owned WeMod handoff now calls the **existing pinned upstream
+Enhancer file verifier** (original ASAR backup, modified ASAR, installed
+`version.dll` equals helper proxy) before adding `version=n,b` to only the
+WeMod child process's `WINEDLLOVERRIDES`. It does not add a DLL override to
+Steam or the game, and refuses incomplete/unverified patch files. User must
+confirm file checks via Settings > Detect and then retest **Play with WeMod**.
+Do not mark RC1 trainer support complete until the client UI renders and a
+trainer actually works in game.
+
 
 The client audit now also reports whether a native `version.dll` proxy and
 original ASAR backup are present. If an Enhancer patch is installed, the
