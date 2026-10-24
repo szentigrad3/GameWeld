@@ -59,11 +59,18 @@ trap 'rm -rf -- "$TEMP"' EXIT
         usr/libexec/gameweld-deckcheatz-install.py \
         usr/libexec/gameweld-deckcheatz-proton.py \
         usr/share/applications/gameweld.desktop \
-        usr/share/icons/hicolor/scalable/apps/gameweld.svg \
-        PC2-DEVELOPMENT-ONLY.txt; do
+        usr/share/icons/hicolor/scalable/apps/gameweld.svg; do
         [[ -f "$APP/$item" ]] || { echo "FAIL: missing $item" >&2; exit 4; }
         echo "OK: $item"
     done
+    if [[ -f "$APP/PC2-RC1-CANDIDATE.txt" ]]; then
+        echo 'Candidate metadata present: clean RC1 presentation (not approved for public release).'
+    elif [[ -f "$APP/PC2-DEVELOPMENT-ONLY.txt" ]]; then
+        echo 'Development metadata present: local private test.'
+    else
+        echo 'FAIL: missing development/candidate identity notice' >&2
+        exit 4
+    fi
     [[ -x "$APP/AppRun" && -x "$APP/usr/bin/gameweld" &&
        -x "$APP/usr/libexec/wand-native-backend" ]] || {
         echo 'FAIL: missing executable permissions' >&2
