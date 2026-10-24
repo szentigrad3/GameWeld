@@ -145,22 +145,29 @@ def _known_recovery_archives() -> list[Path]:
 
 
 def _verify_isolated_tool(root: Path) -> Path:
+    """Verify the actual proven 0.1.41 crypt32 code before trusting metadata.
+
+    A missing old WAND-HYBRID.json is recoverable WITHOUT WRITING IT if
+    both on-disk patched DLLs match the exact field-tested release hashes.
+    Existing-but-invalid metadata is NOT silently ignored. The Steam tool
+    declaration must still identify the expected isolated compatibility tool.
+    """
     proton = root / "proton"
     metadata = root / "WAND-HYBRID.json"
     descriptor = root / "compatibilitytool.vdf"
     if not (proton.is_file() and os.access(proton, os.X_OK)):
         raise Blocked("Proton launcher is missing/not executable")
-    if not metadata.is_file() or metadata.is_symlink():
-        raise Blocked("WAND-HYBRID.json metadata is missing or symlinked")
     if not descriptor.is_file() or descriptor.is_symlink():
         raise Blocked("Steam compatibilitytool.vdf is missing or symlinked")
     try:
-        obj = json.loads(metadata.read_text(encoding="utf-8"))
         description = descriptor.read_text(encoding="utf-8")
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise Blocked("Cannot parse compatibility-tool metadata") from exc
-    if obj.get("tool_id") != TOOL or PROTON_DISPLAY not in description:
-        raise Blocked("Installed tool identification/manifest does not match")
+    except (OSError, UnicodeError) as exc:
+        raise Blocked("Cannot read Steam compatibility-tool manifest") from exc
+    if not re.search(r'"display_name"\s+"GE Proton Wand SHA256"', description):
+        raise Blocked("Steam compatibility-tool manifest does not identify GE Proton Wand SHA256")
+
+    # Inspect the *real code-bearing DLLs* even if the historical metadata is
+    # missing. A JSON file alone is not proof of modified crypt32 behavior.
     for arch, fingerprint in EXPECTED.items():
         matches = list((root / "files").glob("**/" + arch + "/crypt32.dll"))
         if len(matches) != 1 or matches[0].is_symlink():
@@ -172,8 +179,28 @@ def _verify_isolated_tool(root: Path) -> Path:
         if found_hash != fingerprint:
             raise Blocked(arch + " crypt32 SHA-256 mismatch (expected " +
                           fingerprint + ", found " + found_hash + ")")
-        if obj.get("patched_" + arch.split("-")[0] + "_crypt32_sha256") != fingerprint:
-            raise Blocked(arch + " WAND-HYBRID.json payload hash does not match the proven release")
+
+    if metadata.is_symlink():
+        raise Blocked("WAND-HYBRID.json is symlinked; refusing unsafe metadata")
+    if metadata.exists():
+        if not metadata.is_file():
+            raise Blocked("WAND-HYBRID.json is not a regular file")
+        try:
+            obj = json.loads(metadata.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise Blocked("Existing WAND-HYBRID.json cannot be parsed") from exc
+        if not isinstance(obj, dict) or obj.get("tool_id") != TOOL:
+            raise Blocked("Existing WAND-HYBRID.json tool identity does not match")
+        for arch, fingerprint in EXPECTED.items():
+            if obj.get("patched_" + arch.split("-")[0] + "_crypt32_sha256") != fingerprint:
+                raise Blocked(arch + " WAND-HYBRID.json payload hash does not match proven release")
+        print("GE Proton Wand SHA256: both patched crypt32 DLLs and metadata VERIFIED", flush=True)
+    else:
+        # This is sufficient cryptographic release evidence. Do not modify
+        # an installation just to satisfy our own earlier JSON-only gate.
+        print("GE Proton Wand SHA256: WAND-HYBRID.json ABSENT; BOTH exact proven "
+              "crypt32 DLL hashes VERIFIED. Proceeding read-only without "
+              "inventing/replacing metadata.", flush=True)
     return proton.resolve(strict=True)
 
 
