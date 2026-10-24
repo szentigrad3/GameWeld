@@ -148,6 +148,10 @@ jobs:
           grep -Fq 'Result: PASS (OFFLINE SOURCE BUILD + FIXTURES ONLY)' build/pc2-source/rc1-preflight/rc1-preflight-report.txt
           test -s build/pc2-source/rc1-preflight/gameweld
           test -s build/pc2-source/rc1-preflight/wand-native-backend
+      - name: Validate local PC2 RC1 AppImage packager (syntax only)
+        run: |
+          bash -n scripts/pc2-build-local-appimage.sh
+          grep -Fq 'PC2 Steam game-only launch: disabled' scripts/pc2-build-local-appimage.sh
       - name: Stage local PC2 test AppDir with runtime helpers
         run: |
           bash -n scripts/pc2-stage-standalone-appdir.sh
