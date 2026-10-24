@@ -109,7 +109,7 @@ class DeckCheatzDirectTests(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     self.assertEqual(backend.main([
                         "--launch", *self.flags,
-                        "--game-arg", "--windowed",
+                        "--game-arg=--windowed",
                         "--confirm-prefix-changes", "--experimental-direct-launch",
                     ]), 0)
         args, kwargs = process.call_args
