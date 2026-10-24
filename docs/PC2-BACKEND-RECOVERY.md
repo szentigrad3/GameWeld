@@ -617,3 +617,19 @@ On CachyOS continue:
     python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
 
 The outputs are only candidate binaries in `build/pc2-source/crypt32-source-rebuild/candidate`. The historical binary hashes remain required for the old GameWeld runtime; if rebuilt hashes differ, do not copy them into an installed Steam compatibility tool or loosen the old hash guard. Validate crypt32 property correctness in a disposable Wine/Proton environment before any explicitly reviewed new tool release.
+
+
+### Test 21 target-only build success evidence and read-only `--status`
+
+After switching to targeted `make` for only x86_64/i386 `crypt32.dll`, the maintainer's read-only `--diagnose` output reported 144 log lines and **zero compiler/linker errors**. The last lines are Wine's x86_64 and i386 `winegcc` DLL link commands. This is promising **but not conclusive evidence that both DLLs were copied into `candidate/`**. The older `--diagnose` routine simply prints the latest log tail and says 'failed build diagnostics' irrespective of outcome.
+
+Test 21 now includes `python3 scripts/pc2-wand-crypt32-rebuild.py --status` to report whether x86_64 and i386 candidate DLLs are staged, display their actual SHA-256 hashes and PE architecture, validate both against `candidate/SHA256SUMS`, and distinguish the historical 0.1.41 hashes from a newly rebuilt (UNVERIFIED) binary. If only raw compiled DLLs exist in the build tree, `--status` reports 'compiled but not yet staged'. This is strictly read-only: no `make`, download, file copy, Proton installation, or Wine process. `--diagnose` now has an accurate neutral title and recommends `--status` when the latest log has no errors.
+
+Field command:
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-wand-crypt32-rebuild.py --status
+
+If STATUS confirms both staged DLLs, do NOT run `--build --confirm` again because the successful builder intentionally refuses to overwrite its candidate directory. Move to isolated ABI/functionality validation; never disable the installed runtime's historical DLL hash requirement just because new candidate SHA256SUMS self-checks pass.
