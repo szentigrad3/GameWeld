@@ -2777,6 +2777,11 @@ typedef struct {
     int stacked;
 } PC2LibraryAdaptive;
 
+static void pc2_library_adaptive_free(void *data,void *closure){
+    (void)closure;
+    free(data);
+}
+
 static void pc2_library_size_allocate(GtkWidget *body,const void *allocation,void *userdata){
     PC2LibraryAdaptive *layout=(PC2LibraryAdaptive*)userdata;
     if(!pc2_discovery_only()||!body||!allocation||!layout)return;
@@ -2784,7 +2789,9 @@ static void pc2_library_size_allocate(GtkWidget *body,const void *allocation,voi
     const int *bounds=(const int*)allocation;
     int available=bounds[2];
     if(available<=0)return;
-    int stacked=(available<990);
+    /* Small hysteresis avoids repeated flips when window width is close
+     * to the layout breakpoint while GTK is recalculating requests. */
+    int stacked=(layout->stacked==1)?(available<1070):(available<990);
     if(stacked==layout->stacked)return;
     layout->stacked=stacked;
     gtk_orientable_set_orientation(body,stacked?GTK_ORIENTATION_VERTICAL:GTK_ORIENTATION_HORIZONTAL);
@@ -2835,7 +2842,7 @@ static GtkWidget *build_library(void){
             adaptive->inspector=inspect;
             adaptive->stacked=-1;
             g_signal_connect_data(body,"size-allocate",(GCallback)pc2_library_size_allocate,
-                adaptive,(void (*)(void*,void*))free,0);
+                adaptive,pc2_library_adaptive_free,0);
         }
     }
     pack(p,body,1);return pc2_outer?pc2_outer:p;
