@@ -68,7 +68,7 @@ def preflight() -> int:
         print("BUILD-DEPENDENCY " + name + ": " +
               ("FOUND" if shutil.which(name) else "NOT FOUND (configure may require it)"))
     print("This builder does not use sudo, pacman, make install, Proton managers or DLL injection.")
-    print("Actual full Wine builds can be resource-intensive and require development packages.")
+    print("Only the two crypt32 PE DLL targets are built, not all of Wine.")
     print("An interrupted source build can be resumed with the SAME --build --confirm command.")
     print("The pinned Wine Git checkout requires autogen.sh to generate configure.")
     print("To opt in: python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm")
@@ -224,6 +224,14 @@ def diagnose_build_log(work: Path, *, max_errors: int = 16) -> int:
     return 0
 
 
+def crypt32_targets() -> list[str]:
+    """Wine multi-arch Makefile targets for the ONLY two PE DLLs we need."""
+    return [
+        "dlls/crypt32/x86_64-windows/crypt32.dll",
+        "dlls/crypt32/i386-windows/crypt32.dll",
+    ]
+
+
 def compile_only(work: Path) -> int:
     source = work / "wine-source"
     build = work / "wine-build"
@@ -259,8 +267,17 @@ def compile_only(work: Path) -> int:
                     blocked("Wine configure finished without Makefile; inspect build-output.log")
             else:
                 print("Wine build Makefile already exists; resuming compilation", flush=True)
+            # A default full Wine 'make' unnecessarily builds winedmo and its
+            # bundled FFmpeg code. On current CachyOS that fails because
+            # libavcodec/pcm_byte_order_reverse_bsf.c references removed
+            # AVBSFInternal / AVBSFContext.internal FFmpeg APIs. Only build
+            # the two crypt32 PE output targets needed for Wand; make still
+            # resolves their genuine dependencies from the configured tree.
             jobs = max(1, min(os.cpu_count() or 4, 12))
-            run_log(["make", "-j" + str(jobs)], log, cwd=build)
+            targets = crypt32_targets()
+            print("Building only verified crypt32 targets (NOT all Wine): " +
+                  ", ".join(targets), flush=True)
+            run_log(["make", "-j" + str(jobs), *targets], log, cwd=build)
     except (OSError, subprocess.CalledProcessError) as exc:
         print("Isolated Wine build exited (" + type(exc).__name__ + ").", file=sys.stderr)
         try:
