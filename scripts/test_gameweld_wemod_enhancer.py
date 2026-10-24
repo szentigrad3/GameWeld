@@ -75,6 +75,17 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertIn("WeMod Enhancer CLI: READY", response.stdout)
         self.assertEqual(before, (self.client / "resources/app.asar").read_bytes())
 
+    def test_discover_managed_deckcheatz_client(self):
+        from unittest.mock import patch
+        managed = self.home / ".local/share/gameweld/deckcheatz/wemod_data/wemod_bin"
+        (managed / "resources").mkdir(parents=True)
+        (managed / "WeMod.exe").write_bytes(b"MZ-FIXTURE")
+        (managed / "resources/app.asar").write_bytes(b"TEST-ASAR")
+        with patch.dict(os.environ, self.environment):
+            with patch.object(bridge, "discover_existing_clients", return_value=[]):
+                clients = bridge.available_clients()
+        self.assertEqual(clients, [managed.resolve()])
+
     def test_patch_then_restore_both_require_confirmation(self):
         source = self.client / "resources/app.asar"
         for action in ("patch", "restore"):
