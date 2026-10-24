@@ -28,6 +28,7 @@ for helper in "$ROOT"/scripts/gameweld-*.py "$ROOT"/scripts/gameweld-*.sh \
 done
 for required in gameweld-deckcheatz-direct.py gameweld-deckcheatz-proton.py \
                 gameweld-deckcheatz-install.py gameweld-steam-game-exe.py \
+                gameweld-platform-session.py \
                 gameweld-steam-shortcuts.py \
                 gameweld-heroic-provider.py gameweld-lutris-provider.py; do
     test -s "$APP/usr/libexec/$required" || {
