@@ -106,7 +106,7 @@ class SteamOwnedWeModTests(unittest.TestCase):
             invocations.append(("steam", appid))
         def spawn(args, **kwargs):
             invocations.append(("wemod", args, kwargs))
-            return SimpleNamespace(pid=890)
+            return SimpleNamespace(pid=890, poll=lambda: None)
         messages = []
         result = tool.launch(plan, observer=Observer(), start_steam=start,
                              spawn=spawn, log=messages.append)
@@ -132,7 +132,7 @@ class SteamOwnedWeModTests(unittest.TestCase):
         invocations = []
         def spawn(args, **kwargs):
             invocations.append(kwargs)
-            return SimpleNamespace(pid=890)
+            return SimpleNamespace(pid=890, poll=lambda: None)
         result = tool.launch(
             plan, observer=Observer(),
             start_steam=lambda _appid: self.fail("Duplicate Steam launch"),
@@ -163,6 +163,27 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.assertEqual(output.stat().st_mode & 0o777, 0o600)
         self.assertTrue(any("WEMOD_START_FAILED" in s for s in statuses))
 
+    def test_wine_exits_with_error_and_never_claims_success(self):
+        plan = self.prepare()
+        class Observer:
+            @staticmethod
+            def matching_game_processes(*args):
+                return [889]
+        output = self.root / "failed-start.proton.log"
+        events = []
+        with patch.object(tool.time, "sleep", return_value=None):
+            result = tool.launch(
+                plan, observer=Observer(),
+                spawn=lambda argv, **kwargs:
+                    SimpleNamespace(pid=891, poll=lambda: 12),
+                log=events.append, proton_output=output,
+            )
+        self.assertEqual(result["state"], "WEMOD_STARTUP_EXITED_WITH_ERROR")
+        self.assertEqual(result["returncode"], 12)
+        self.assertFalse(result["trainer_verified"])
+        self.assertTrue(output.exists())
+        self.assertTrue(any("WEMOD_STARTUP_EXITED_WITH_ERROR" in e for e in events))
+
     def test_game_must_appear_before_wemod(self):
         plan = self.prepare()
         calls = []
@@ -176,7 +197,7 @@ class SteamOwnedWeModTests(unittest.TestCase):
             calls.append(("steam", appid))
         def spawn(args, **kwargs):
             calls.append(("wemod", args))
-            return SimpleNamespace(pid=101)
+            return SimpleNamespace(pid=101, poll=lambda: None)
         with patch.object(tool.time, "sleep", return_value=None):
             result = tool.launch(plan, observer=Observer(), start_steam=start,
                                  spawn=spawn, log=lambda msg: None, timeout=3)
@@ -212,7 +233,7 @@ class SteamOwnedWeModTests(unittest.TestCase):
         command = []
         def spawn(argv, **kwargs):
             command.append(argv)
-            return SimpleNamespace(pid=890)
+            return SimpleNamespace(pid=890, poll=lambda: None)
         result = tool.launch(plan, observer=Observer(), spawn=spawn,
                              log=lambda _message: None)
         self.assertEqual(result["state"], "WEMOD_PROCESS_REQUESTED")
