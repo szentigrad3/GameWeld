@@ -39,7 +39,22 @@ def matching_game_processes(appid: str, game_exe: Path, compatdata: Path,
     result: list[int] = []
     expected_id = {f"{key}={appid}".encode() for key in
                    ("SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID")}
-    expected_prefix = ("STEAM_COMPAT_DATA_PATH=" + prefix).encode()
+    expected_pfx = str((compatdata / "pfx").resolve())
+    def exact_prefix_match(variables: set[bytes]) -> bool:
+        # Steam/Proton may pass an XDG symlink path or WINEPREFIX instead of
+        # STEAM_COMPAT_DATA_PATH to the actual Wine child. Require realpath
+        # equality to the precise selected game's prefix, never a substring.
+        for raw in variables:
+            key, sep, value = raw.partition(b"=")
+            if not sep or key not in (b"STEAM_COMPAT_DATA_PATH", b"WINEPREFIX"):
+                continue
+            raw_value = os.fsdecode(value)
+            if not raw_value.startswith("/"):
+                continue
+            target = prefix if key == b"STEAM_COMPAT_DATA_PATH" else expected_pfx
+            if os.path.realpath(raw_value) == target:
+                return True
+        return False
     for path in entries[:MAX_PID]:
         try:
             if path.stat().st_uid != os.getuid():
@@ -48,7 +63,7 @@ def matching_game_processes(appid: str, game_exe: Path, compatdata: Path,
             if len(env) > MAX_ENV:
                 continue
             variables = set(env.split(b"\0"))
-            if not variables.intersection(expected_id) or expected_prefix not in variables:
+            if not variables.intersection(expected_id) or not exact_prefix_match(variables):
                 continue
             comm = (path / "comm").read_text(errors="replace").strip().casefold()
             if not comm or len(name) < 5:
