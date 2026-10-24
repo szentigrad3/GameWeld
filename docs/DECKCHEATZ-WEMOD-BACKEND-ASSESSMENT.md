@@ -159,7 +159,7 @@ User supplied `deckcheatz-aio-report.txt` from `bash scripts/pc2-deckcheatz-aio.
 
 ## PC2 game-first navigation and provider settings cleanup (2026-10-24)
 
-Following the successful player-reported Astrometica live trainer test, managed-checkout adoption/update check and 33/33 previous offline suite, the PC2 GTK interface now prioritises the **Play with WeMod — DeckCheatz (experimental)** action.
+Following the successful player-reported Astrometica live trainer test, managed-checkout adoption/update check and 33/33 previous offline suite, the PC2 GTK interface now prioritises the **Play with WeMod** action.
 
 - **Overview:** The prominent action appears under the selected game. Earlier PC1 play-profile controls are still initialized for existing code but hidden only under PC2 discovery mode. Read-only preview, DeckCheatz discovery/install and Steam/Wand engineering controls remain available inside the collapsed **Advanced Steam / WeMod diagnostics** expander.
 - **Library:** The selected-game inspector contains the prominent Play with WeMod action and a per-game readiness sentence. Diagnostic controls are behind **Advanced trainer / launch diagnostics**. The existing PC1 library buttons remain active only outside PC2.
