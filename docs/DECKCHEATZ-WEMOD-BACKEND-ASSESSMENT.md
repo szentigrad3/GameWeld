@@ -186,3 +186,15 @@ Eight user-provided CachyOS desktop screenshots show the development GUI renderi
 The test suite `scripts/test_gameweld_deckcheatz_gui_layout.py` includes static regression assertions for responsive Library orientation, page scrolling, the revised About page and the compatibility-scope description. These tests run from the existing `scripts/pc2-deckcheatz-aio.sh`.
 
 **Gate still required:** Updated GTK syntax compilation, resize testing on the user's real desktop (wide and narrow window), and fresh AIO output. This source change has not yet been proven visually by screenshots. Do not change the already-validated Steam/DeckCheatz launch path merely because a GUI viewport was adjusted.
+
+
+## PC2 RC1 offline compile preflight and private runtime AppDir staging (2026-10-24)
+
+After the screenshot-driven Library responsiveness/UX fixes, PC2 gains a more complete compile and packaging-boundary gate. Two new source scripts are available:
+
+- `bash scripts/pc2-rc1-preflight.sh`: runs the DeckCheatz offline AIO, verifies AppDir helper links in the source runner, executes Go backend tests, builds a Go backend executable and fully **links** the GTK3 frontend (previous AIO covered only C source syntax). It records SHA-256 hashes of the resulting frontend/backend and writes `build/pc2-source/rc1-preflight/rc1-preflight-report.txt`.
+- `bash scripts/pc2-stage-standalone-appdir.sh`: first runs the RC1 preflight, then assembles a private source-built `build/pc2-source/pc2-test-AppDir` with the **compiled binaries and copied runtime helpers** (rather than the symlinked scripts from the source runner). The `AppRun` entrypoint sets `APPDIR` and `WAND_NATIVE_BACKEND`. Existing staging destinations are **never overwritten** without an explicit manual removal/move.
+
+The private AppDir deliberately does not contain DeckCheatz AGPL source, a WeMod binary, game art, trainers or DLL payloads. It uses host GTK3 libraries rather than deploying bundled GTK, is **NOT a distributable AppImage or license-cleared release**, and has not been launched or reverified on a fresh target system. PC1 packaging scripts and existing user installations remain unchanged. CI now stages the internal AppDir and checks launcher/helper presence and absence of symlinks/external DeckCheatz source.
+
+**Gate interpretation:** Successful preflight and staging establishes compiled source and file placement, **not** runtime GUI behavior, real-world trainer compatibility, publication rights or first-use internet install success. Next validation on the user's CachyOS machine is to run the preflight once, inspect its report, and verify narrow/wide Library behavior in the PC2 source runner. Do not publish or rename the private AppDir to an AppImage before distribution/runtime/license review.
