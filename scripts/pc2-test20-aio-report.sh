@@ -33,6 +33,7 @@ grep -Fq 'waitforexitandrun' "$ROOT/scripts/gameweld-managed-wand.py"
   echo 'No separate Wand Native 0.1.41 CLI or daemon dependency: PASS'
   echo 'Native Steam game identity and executable validation: PASS (fixture)'
   echo 'GE Proton Wand SHA256 crypt32 release hash guard: PASS (synthetic fixture)'
+  echo 'Test fixtures isolated from host Steam and /mnt/games installations: PASS'
   echo 'Original one-Proton-session batch architecture: PASS (fixture)'
   echo 'Managed game process exclusivity guard: PASS (fixture)'
   echo 'Explicit opt-in and GTK source compilation: PASS'
