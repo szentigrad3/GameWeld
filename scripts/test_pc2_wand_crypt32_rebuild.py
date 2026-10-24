@@ -51,7 +51,7 @@ class WineRebuildSafetyTests(unittest.TestCase):
             with patch.object(builder, "PATCH", Path(__file__)), \
                  patch.object(builder, "safe_dirs"), \
                  patch.object(builder.subprocess, "run") as run:
-                with self.assertRaisesRegex(ValueError, "Source directory already exists"):
+                with self.assertRaisesRegex(ValueError, "Source directory exists without Git metadata"):
                     builder.compile_only(root)
                 run.assert_not_called()
 
