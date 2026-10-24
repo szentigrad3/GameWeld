@@ -4748,9 +4748,7 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         pc2_deckcheatz_request_install(experimental_launch);
         return;
     }
-    if(g->executable[0] && pc2_deckcheatz_file(g->executable))
-        snprintf(exe,sizeof exe,"%s",g->executable);
-    if(!exe[0] && pc2_public_release_ui()){
+    if(pc2_public_release_ui()){
         /* Safe, bounded, read-only EXE discovery; no picker for normal Play. */
         char resolver[4096]={0},lookup_output[8192]={0};
         const char *appdir=getenv("APPDIR");
@@ -4784,7 +4782,9 @@ static void pc2_deckcheatz_flow(int experimental_launch){
             return;
         }
         log_line("WeMod: automatically identified game executable %s",exe);
-    }else if(!exe[0] && !pc2_deckcheatz_choose("Select the Windows game EXE",0,
+    }else if(g->executable[0] && pc2_deckcheatz_file(g->executable))
+        snprintf(exe,sizeof exe,"%s",g->executable);
+    else if(!pc2_deckcheatz_choose("Select the Windows game EXE",0,
                                   g->install_dir,exe,sizeof exe)){
         log_line("DeckCheatz preview cancelled: no game EXE selected.");return;
     }
