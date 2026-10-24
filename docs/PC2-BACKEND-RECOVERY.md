@@ -710,3 +710,18 @@ Run AFTER git pull --ff-only (no rebuilding/recompilation necessary):
     python3 scripts/pc2-crypt32-validation.py --runtime-probes --confirm --proton /mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton
 
 This command makes a brand-new disposable prefix and leaves previous logs intact. On failure `python3 scripts/pc2-crypt32-validation.py --diagnose-runtime` produces a read-only report of the newest session. A previously linked EXE and an exported DLL are NOT enough evidence of Windows loader compatibility; do not install either DLL until functional API tests pass.
+
+
+### Test22 triage follow-up — diagnostic output hidden by +module traces, whole Wine output retained
+
+The maintainer's 24 October Test22 `--diagnose-runtime` output for `isolated-60c628d87fa7` confirms new native-only test logs plus `x86_64-builtin-control.log` and `i386-builtin-control.log` were produced. However the old reader prints the last 40 lines matching a broad expression containing the word 'module'. Wine +module emits thousands of routine LdrShutdown/InitDLL traces, swamping the **actual first loader error, native crypt32 load lines and GW_ test markers**. Because report.txt exists in that run and the new baseline gate refuses to copy candidates if the built-in checks fail, the built-in controls may have passed despite their markers being invisible in the last-40 display. NEVER conclude baseline failed from a trace tail.
+
+The Test22 script now reads the **complete** saved session logs (up to a conservative per-file size limit), classifies GW_ test markers, actual err/fatal loader messages, and crypt32.dll/import references separately, prints their first 20–30 useful lines even if thousands of uninteresting Wine trace lines follow, and summarizes whether probe main was reached. It no longer labels ordinary module detaches as errors. The runtime subprocess now preserves all Wine output rather than previously slicing stdout to its final 250,000 characters, which could discard GW_ markers near the beginning. Synthetic fixtures guard both cases.
+
+READ-ONLY next command (do this before recompiling or creating any new runtime session):
+
+    cd /mnt/other/github/GameWeld
+    git pull --ff-only
+    python3 scripts/pc2-crypt32-validation.py --diagnose-runtime
+
+Upload or paste that focused result. The goal is to name the exact missing import or module, or show that probes executed with a wrong calculated certificate property. The compiled x86_64/i386 candidates remain STAGED and NOT approved for live Proton/Wand use; do not disable the historical binary hash check.
