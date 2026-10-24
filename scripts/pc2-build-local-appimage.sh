@@ -131,7 +131,7 @@ APPRUN
     test -x "$APP/usr/bin/gameweld"
     test -s "$APP/usr/libexec/wand-native-backend"
     for helper in gameweld-deckcheatz-install.py gameweld-deckcheatz-direct.py \
-                  gameweld-deckcheatz-proton.py; do
+                  gameweld-deckcheatz-proton.py gameweld-steam-game-exe.py; do
         test -s "$APP/usr/libexec/$helper" || { echo "Missing helper $helper" >&2; exit 5; }
     done
     if find "$APP/usr/libexec" -type f \( -iname '*.exe' -o -iname '*.dll' \) -print -quit | grep -q .; then
