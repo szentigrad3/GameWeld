@@ -212,8 +212,12 @@ def existing_game_process(appid: str, game_dir: Path) -> bool:
             if any((key + appid).encode() in raw.split(b"\0") for key in
                    ("SteamAppId=", "SteamGameId=", "STEAM_COMPAT_APP_ID=")):
                 name = (entry / "comm").read_text(errors="replace").strip().lower()
-                if (name.endswith(".exe") and name not in
-                    ("services.exe", "explorer.exe", "wineboot.exe", "steam.exe")):
+                if (name.endswith(".exe") and name not in {
+                    "services.exe", "explorer.exe", "wineboot.exe", "steam.exe",
+                    "svchost.exe", "rpcss.exe", "plugplay.exe", "conhost.exe",
+                    "crashpad.exe", "crashreport.exe", "start.exe",
+                    "rundll32.exe", "msiexec.exe", "reg.exe",
+                }):
                     return True
             cwd = (entry / "cwd").resolve()
             if cwd.is_relative_to(game_dir):
@@ -343,6 +347,9 @@ def play(p: Plan) -> None:
     p.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     batch = p.state_dir / ("appid-" + p.appid + "-launch.bat")
     stage = p.state_dir / ("appid-" + p.appid + "-stage.txt")
+    log = p.state_dir / ("appid-" + p.appid + "-proton.log")
+    if any(x.is_symlink() for x in (batch, stage, log)):
+        raise Blocked("Managed session refuses symlinked batch/stage/log output")
     body = build_batch(p, batch, stage)
     batch.write_bytes(body.encode("utf-8"))
     os.chmod(batch, 0o600)
@@ -363,7 +370,6 @@ def play(p: Plan) -> None:
         "STEAM_COMPAT_LIBRARY_PATHS": str(p.game_dir.parents[2]),
         "STEAM_COMPAT_INSTALL_PATH": str(p.game_dir),
     })
-    log = p.state_dir / ("appid-" + p.appid + "-proton.log")
     with log.open("w", encoding="utf-8") as stream:
         stream.write("GameWeld managed Wand one-session request (not game/trainer proof)\n")
         stream.flush()
