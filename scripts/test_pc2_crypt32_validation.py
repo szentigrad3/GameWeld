@@ -128,7 +128,10 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                 for part in ("system32", "syswow64"):
                     dest = pfx / "drive_c/windows" / part
                     dest.mkdir(parents=True, exist_ok=True)
-                markers = ("\nGW_SHA256_OK\nGW_SHA1_OK\nGW_SHA256_AFTER_SET_OK\n"
+                windows_dir = ("syswow64" if "i386" in exe.name
+                               else "system32")
+                markers = ("\nGW_CRYPT32_MODULE=C:\\windows\\" + windows_dir +
+                           "\\crypt32.dll\nGW_SHA256_OK\nGW_SHA1_OK\nGW_SHA256_AFTER_SET_OK\n"
                            "GW_CRYPT32_CERT_SHA256_RESULT=PASS\n")
                 logfile.write_text(markers)
                 return 0, markers
@@ -142,7 +145,7 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                                     self.assertEqual(mod.runtime_probes(original_proton), 0)
             self.assertEqual(len(calls), 3)  # once to bootstrap; once per architecture
             self.assertEqual(calls[0][1], "crypt32=b")
-            self.assertEqual([c[1] for c in calls[1:]], ["crypt32=n,b", "crypt32=n,b"])
+            self.assertEqual([c[1] for c in calls[1:]], ["crypt32=n", "crypt32=n"])
             self.assertIn("API FUNCTIONAL PASS", output.getvalue())
             for arch in mod.ARCHS:
                 self.assertEqual((candidate_dir / "candidate" / arch / "crypt32.dll")
