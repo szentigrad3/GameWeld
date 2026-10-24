@@ -264,3 +264,16 @@ Updated PC2 policy:
 The native offline `scripts/test-pc2-window-policy.c` and static `scripts/test_gameweld_deckcheatz_gui_layout.py` have been updated to **reject automatic maximize** and check sensible, bounded restored window dimensions across eight monitor configurations. The arithmetic was cross-checked but a fresh local **C compilation and GTK runtime screenshot are still needed** on the user's CachyOS build.
 
 The next AppDir should use a new stage directory so a previously built, auto-maximizing executable is not accidentally reused. For release evaluation, confirm that launch stays in a normal resizable window, without covering the full 4K screen.
+
+
+## PC2 user-sized window defaults and preference persistence (2026-10-24)
+
+The screenshot review established that both prior extremes were unsuitable for typical users: a very small initial window made the UI hard to browse, while the earlier maximized 4K layout consumed too much desktop. The user validated a **non-fullscreen** PC2 development window, and continuation work now makes the out-of-box size moderately larger with the **explicitly user-controlled** option to resize.
+
+Changes:
+- The GTK-independent sizing policy keeps `maximize=0` for **every** display. The example 1080p logical workarea 1920×1040 defaults to **1632×884**; 1440p 2560×1380 to **1850×1100**; and 4K 1× 3840×2100 to **2200×1280**. The caps are designed to leave substantial desktop space, not set minimum monitor requirements. Tiny screens remain clamped within the actual visible workarea; GTK monitor scale still determines physical-vs-logical geometry.
+- PC2 stores only the **last normal-window width/height** in `${XDG_CONFIG_HOME:-~/.config}/gameweld/pc2-window-size.txt` (depending on the user's HOME and XDG config settings). Saving occurs when its GUI window is destroyed, but **not** while the window is maximized. Loading refuses malformed or implausibly large values and clamps the saved dimensions to the currently usable monitor. The preference is separate from Steam launch settings, Wine, games, and the external DeckCheatz checkout.
+- Settings → Quick Start adds a **Reset window size** action, which removes the PC2 dimension preference and returns the current window to the computed non-maximized default. The existing Maximize/Restore control continues to work at user request; PC2 does not persist or force maximized state on subsequent launches.
+- Static PC2 GUI regressions now cover persistence, clamping, reset action, and unchanged external game launch consent. Native C sizing tests have been updated for the larger defaults at eight synthetic resolutions.
+
+These source changes are committed but **the revised linked GTK binary and runtime preference round trip are not yet verified** on the user's desktop. The next gate is staging a new development AppDir with a unique destination, opening GameWeld, resizing it, closing/relaunching the same AppDir, and confirming the saved dimensions return. It should still never automatically maximize. Verify the offline AIO/preflight tests before declaring the preference feature complete.
