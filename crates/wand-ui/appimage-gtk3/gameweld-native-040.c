@@ -4340,20 +4340,28 @@ static void pc2_deckcheatz_request_install(int resume_mode){
 static void on_pc2_deckcheatz_install(GtkButton*b,void*d){
     (void)b;(void)d;pc2_deckcheatz_request_install(-1);
 }
-static void pc2_deckcheatz_request_update(int check_only){
+static void pc2_deckcheatz_request_update(int operation){
     if(!pc2_discovery_only())return;
     if(pc2_deckcheatz_install_busy){
         log_line("DeckCheatz install/update operation already in progress.");return;
     }
-    if(!check_only){
+    if(operation!=1){
         GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
-            "Update the GameWeld-managed DeckCheatz 1.x checkout from upstream?\n\n"
-            "Close WeMod and any running DeckCheatz sessions before updating. "
-            "Existing manually installed checkouts and local changes will not be overwritten.\n\n"
-            "The working checkout is kept as a rollback backup. Steam launch "
-            "options and game Wine prefixes will not be changed by the update.\n\n"
-            "The new upstream version still needs gameplay testing. Continue?");
+            "%s",
+            operation==3?
+                "Manage this existing DeckCheatz 1.x checkout in GameWeld?\n\n"
+                "This adds only a small version metadata file; it does not download or "
+                "replace DeckCheatz source. The checkout must be an unchanged official "
+                "main-branch clone at GameWeld's managed path.\n\n"
+                "Close WeMod before enrolling. If files are modified or the source is "
+                "unrecognized, GameWeld refuses to adopt it. Continue?":
+                "Update the GameWeld-managed DeckCheatz 1.x checkout from upstream?\n\n"
+                "Close WeMod and any running DeckCheatz sessions before updating. "
+                "Existing manually installed checkouts and local changes will not be overwritten.\n\n"
+                "The working checkout is kept as a rollback backup. Steam launch "
+                "options and game Wine prefixes will not be changed by the update.\n\n"
+                "The new upstream version still needs gameplay testing. Continue?");
         int yes=(gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES);
         gtk_widget_destroy(dlg);
         if(!yes){log_line("DeckCheatz managed update cancelled.");return;}
@@ -4366,13 +4374,15 @@ static void pc2_deckcheatz_request_update(int check_only){
     else snprintf(j->helper,sizeof j->helper,"gameweld-deckcheatz-install.py");
     j->resume_mode=-1;
     j->selected_index=G.selected;
-    j->operation=check_only?1:2;
+    j->operation=operation;
     pc2_deckcheatz_install_busy=1;
-    log_line("%s",check_only?
+    log_line("%s",operation==1?
         "Checking official DeckCheatz upstream revision (read-only)...":
+        operation==3?"Validating clean existing DeckCheatz checkout for adoption...":
         "Updating managed DeckCheatz after consent; retaining a backup...");
     if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
-        check_only?"Checking official 1.x update status...":
+        operation==1?"Checking official 1.x update status...":
+        operation==3?"Inspecting existing source before managed enrolment...":
         "Verifying new checkout while preserving the previous installation...");
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_deckcheatz_install_worker,j)==0)
@@ -4386,7 +4396,10 @@ static void on_pc2_deckcheatz_check_update(GtkButton*b,void*d){
     (void)b;(void)d;pc2_deckcheatz_request_update(1);
 }
 static void on_pc2_deckcheatz_update(GtkButton*b,void*d){
-    (void)b;(void)d;pc2_deckcheatz_request_update(0);
+    (void)b;(void)d;pc2_deckcheatz_request_update(2);
+}
+static void on_pc2_deckcheatz_adopt(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_deckcheatz_request_update(3);
 }
 
 /* DeckCheatz PC2 preview stays strictly read-only. The separately labelled
@@ -4710,6 +4723,9 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         g_signal_connect_data(check,"clicked",(GCallback)on_pc2_deckcheatz_check_update,NULL,NULL,0);
         g_signal_connect_data(update,"clicked",(GCallback)on_pc2_deckcheatz_update,NULL,NULL,0);
         pack(bar,check,1);pack(bar,update,1);pack(dc,bar,0);
+        GtkWidget*adopt=button("Manage existing DeckCheatz checkout","action");
+        g_signal_connect_data(adopt,"clicked",(GCallback)on_pc2_deckcheatz_adopt,NULL,NULL,0);
+        pack(dc,adopt,0);
         pc2_deckcheatz_update_status=label("No check performed yet. Existing installs are unchanged.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_deckcheatz_update_status,TRUE);
         pack(dc,pc2_deckcheatz_update_status,0);pack(left,dc,0);
