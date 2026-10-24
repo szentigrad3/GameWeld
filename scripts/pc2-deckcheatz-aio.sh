@@ -25,6 +25,8 @@ REPORT="$OUT/deckcheatz-aio-report.txt"
   python3 scripts/test_gameweld_deckcheatz_proton.py -v
   printf '%s\n' '=== Launch preview and consent synthetic cases ==='
   python3 scripts/test_gameweld_deckcheatz_direct.py -v
+  printf '%s\\n' '=== Game-first GUI layout + launch safeguards ==='
+  python3 scripts/test_gameweld_deckcheatz_gui_layout.py -v
   printf '%s\n' '=== GTK GUI source syntax ==='
   if pkg-config --exists gtk+-3.0 && command -v gcc >/dev/null; then
       gcc -fsyntax-only -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
