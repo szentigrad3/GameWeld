@@ -2005,7 +2005,7 @@ static void refresh_ui(void) {
         const char *message=pc2_public_release_ui()?
             (!g?"Select a game to see its launch options.":
              !allowed?"Play with WeMod supports installed Steam Windows games.":
-             "Review the launch plan and approve prefix changes before starting."):
+             "Play with WeMod starts the game; DeckCheatz may modify its Proton prefix."):
             !g?"Select an installed Steam game to use WeMod.":
             !allowed?"DeckCheatz direct play supports installed Steam Windows games only.":
             !strcmp(g->appid,"2353250")?
@@ -4947,12 +4947,16 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     }else{
         log_line("DeckCheatz read-only preview generated for %s; no game/trainer launched.",g->name);
     }
-    pc2_deckcheatz_show_preview(output);
+    /* The read-only validator still runs, but Play no longer opens a raw
+     * launch-plan popup. Developer Preview explicitly opens it on demand. */
+    if(!pc2_public_release_ui() || !experimental_launch)
+        pc2_deckcheatz_show_preview(output);
     if(!ok || !experimental_launch)return;
 
     /* This provider has no real-game field validation. The preview is always
      * presented first and game/prefix changes require an explicit Yes. */
-    GtkWidget*consent=gtk_message_dialog_new((GtkWindow*)G.window,
+    GtkWidget*consent=NULL;
+    if(!pc2_public_release_ui())consent=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
         pc2_public_release_ui()?
         "Play with WeMod — %s (Steam AppID %s).\n\n"
@@ -4969,8 +4973,14 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         "using this prefix, and only test offline/single-player.\n\n"
         "GameWeld will NOT edit Steam Launch Options. Continue?",
         g->name,g->appid,compat);
-    int approved=(gtk_dialog_run((GtkDialog*)consent)==GTK_RESPONSE_YES);
-    gtk_widget_destroy(consent);
+    /* Click on Play with WeMod is the explicit launch action in the public
+     * interface; Settings explains that DeckCheatz may modify the prefix.
+     * Development UI retains its existing extra confirmation dialog. */
+    int approved=1;
+    if(consent){
+        approved=(gtk_dialog_run((GtkDialog*)consent)==GTK_RESPONSE_YES);
+        gtk_widget_destroy(consent);
+    }
     if(!approved){
         log_line(pc2_public_release_ui()?"WeMod launch cancelled; prefix and Steam settings left untouched.":"DeckCheatz experimental test cancelled; prefix and Steam settings left untouched.");return;
     }
@@ -5066,6 +5076,12 @@ static GtkWidget *build_settings(void){
         GtkWidget*tabs=gtk_notebook_new();
         GtkWidget*quick=box(GTK_ORIENTATION_VERTICAL,12);
         GtkWidget*first=card("Play with WeMod",
+            pc2_public_release_ui()?
+            "Select an installed Steam Windows game and press Play with WeMod. "
+            "GameWeld identifies the game and Proton automatically, validates its launch plan, "
+            "and starts the external DeckCheatz launcher. The Play action authorizes the launch; "
+            "DeckCheatz may download components or modify that game's Wine prefix. "
+            "An initial DeckCheatz installation requires separate consent.":
             "Select an installed Steam Windows game in Library or Overview, then choose Play with WeMod. "
             "GameWeld automatically offers to install DeckCheatz 1.x if it is missing. "
             "It checks game and Proton paths, shows a launch preview and asks before any Wine prefix changes.",
