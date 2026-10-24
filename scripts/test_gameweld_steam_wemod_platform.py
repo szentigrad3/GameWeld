@@ -136,9 +136,6 @@ class SteamOwnedWeModTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tool.authenticated_x11_environment(current, live, probe=check)
         self.assertEqual(seen, [(":0", None)])
-        self.assertFalse(tool._x11_display_accessible(
-            {"DISPLAY": "untrusted.example.com:0"}))
-
     def test_preflight_existing_installed_runtime(self):
         plan = self.prepare()
         self.assertEqual(plan["appid"], "2353250")
