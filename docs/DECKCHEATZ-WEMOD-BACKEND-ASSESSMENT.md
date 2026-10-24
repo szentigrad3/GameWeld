@@ -218,3 +218,18 @@ Observed test results:
 - GTK binary SHA256: `553f49a2cadef04fe31b0b6461e0895dba75b31d118185134e4970f8012255f5`.
 
 **Important distinction:** This establishes the precise offline **preflight** gate, not successful staging of the standalone AppDir. The report has no AppDir-staging success line and no real GTK runtime resize evidence. The next gate is a successful `scripts/pc2-stage-standalone-appdir.sh` run followed by actual UI opening/narrow and wide Library checks. Existing Astrometica field validation is independent of this offline build result. Do not yet promote to RC1 or publish any AppImage.
+
+
+## PC2 4K/HiDPI screen-aware startup correction (2026-10-24)
+
+The user's latest real desktop screenshot still showed a tiny, narrow restored GameWeld window on a 4K monitor. The user specifically asked for automatic window sizing based on the current screen instead of opening narrow. The previous UI implementation used a capped 2200x1400 recommended size and 2 delayed KWin resize callbacks, leading to a confusing start/restore experience.
+
+**Fix committed to PC2 GTK only:**
+- On PC2 startup, request **maximized** state from the window manager, automatically using the current monitor work area. Issue this request both before map and once in GTK idle, without subsequent forced resize timers. This is intentionally not fullscreen; taskbars and panels remain visible.
+- Compute PC2 restored default size as approximately **90% × 88% of the GTK monitor work area**, with conservative margins and no hard upper 2200x1400 pixel cap. GTK work areas are in logical screen units on HiDPI/KWin, not unconditionally physical 3840x2160 pixels.
+- Replace the old click-count based maximization toggle with a query of the actual GTK maximized state, correctly handling manual desktop-titlebar maximization and the new initial state.
+- Preserve original PC1 window geometry and its one-shot/delayed legacy sizing. Preserve manually resized PC2 windows after startup.
+- The responsive Library's stacked mode remains a narrow-window fallback; it is no longer a substitute for proper monitor-aware startup. The existing WeMod/DeckCheatz game launch and installer flow are unmodified.
+- Add 2 static GUI regression tests, increasing the UI subset from 8 to 10. All actual build/runtime results must be obtained using the user's new AIO/preflight and desktop AppDir.
+
+**User validation:** Pull the new PC2 commit, build and stage under a **new** unique AppDir name so an existing old 4K-unaware binary is not reused, and launch its `AppRun`. Verify the app opens maximized on 4K, manual restore gives a comfortable centered 90%-ish window, the maximize button toggles properly, and the Library game names remain readable when restored. Do not interpret old-window screenshots or an already-staged binary as verification of the new build.
