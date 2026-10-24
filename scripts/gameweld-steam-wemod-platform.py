@@ -275,9 +275,21 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
     finally:
         if output_stream is not None:
             output_stream.close()
-    # A launched WeMod process does NOT establish that a trainer attached.
-    emit("WEMOD_PROCESS_REQUESTED: pid " + str(proc.pid)
-         + "; trainer attach/render remains UNVERIFIED")
+    # The previous implementation reported success immediately after Popen,
+    # even when Proton/Wine failed at startup. Detect an early nonzero exit.
+    # A zero exit may still represent a Wine parent handing off to a child:
+    # never claim an attached trainer or visible window from exit status alone.
+    time.sleep(1.0)
+    early_returncode = proc.poll()
+    if early_returncode is not None:
+        if early_returncode != 0:
+            emit("WEMOD_STARTUP_EXITED_WITH_ERROR: exit=" + str(early_returncode))
+            return {"state": "WEMOD_STARTUP_EXITED_WITH_ERROR",
+                    "returncode": early_returncode, "trainer_verified": False}
+        emit("WEMOD_LAUNCHER_EXITED_CLEANLY: child/window status UNVERIFIED")
+    else:
+        emit("WEMOD_LAUNCHER_RUNNING: pid " + str(proc.pid)
+             + "; trainer attach/render remains UNVERIFIED")
     return {"state": "WEMOD_PROCESS_REQUESTED", "pid": proc.pid,
             "game_pid": matched[0], "trainer_verified": False}
 
