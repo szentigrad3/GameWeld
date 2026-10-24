@@ -13,9 +13,13 @@ pkg-config --exists gtk+-3.0
 python3 -m py_compile \
     "$ROOT/scripts/gameweld-managed-wand.py" \
     "$ROOT/scripts/gameweld-wand-native-bridge.py" \
-    "$ROOT/scripts/test_gameweld_wand_native_bridge.py"
+    "$ROOT/scripts/test_gameweld_wand_native_bridge.py" \
+    "$ROOT/scripts/pc2-wand-crypt32-recovery-audit.py" \
+    "$ROOT/scripts/test_pc2_wand_crypt32_recovery_audit.py"
 python3 -m unittest discover -s "$ROOT/scripts" \
     -p 'test_gameweld_wand_native_bridge.py' -v
+python3 -m unittest discover -s "$ROOT/scripts" \
+    -p 'test_pc2_wand_crypt32_recovery_audit.py' -v
 bash "$ROOT/scripts/run-pc2-source-frontend.sh" --check-layout
 test -L "$OUT/dev-AppDir/usr/libexec/gameweld-managed-wand.py"
 gcc -fsyntax-only -Werror=implicit-function-declaration -pthread \
@@ -34,6 +38,7 @@ grep -Fq 'waitforexitandrun' "$ROOT/scripts/gameweld-managed-wand.py"
   echo 'Native Steam game identity and executable validation: PASS (fixture)'
   echo 'GE Proton Wand SHA256 crypt32 release hash guard: PASS (synthetic fixture)'
   echo 'Test fixtures isolated from host Steam and /mnt/games installations: PASS'
+  echo 'Read-only historical crypt32 archive / DLL recovery audit: PASS (synthetic fixtures)'
   echo 'Original one-Proton-session batch architecture: PASS (fixture)'
   echo 'Managed game process exclusivity guard: PASS (fixture)'
   echo 'Explicit opt-in and GTK source compilation: PASS'
