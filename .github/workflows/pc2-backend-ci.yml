@@ -135,6 +135,12 @@ jobs:
           grep -Fq 'Manage existing DeckCheatz checkout' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
           grep -Fq 'pc2_deckcheatz_request_install(experimental_launch)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
           grep -Fq -- '--confirm-prefix-changes","--experimental-direct-launch' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+      - name: DeckCheatz one-command offline validation report
+        run: |
+          bash -n scripts/pc2-deckcheatz-aio.sh
+          bash scripts/pc2-deckcheatz-aio.sh
+          grep -Fq 'Result: PASS (OFFLINE FIXTURES + GUI SYNTAX ONLY)' build/pc2-source/deckcheatz-aio-report.txt
+          grep -Fq 'Real game / WeMod launched: NO' build/pc2-source/deckcheatz-aio-report.txt
       - name: Integrated WeMod Enhancer GUI helper fixtures
         run: |
           python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_enhancer.py' -v
