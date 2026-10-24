@@ -215,6 +215,26 @@ def _safe_replace_prefix_dll(pfx: Path, arch: str, binary: Path) -> Path:
     return target
 
 
+
+def print_loader_failures(log: str) -> None:
+    """Give actionable startup errors, not just 100 Wine DLL trace lines."""
+    matches = [
+        line.strip()[:900] for line in log.splitlines()
+        if re.search(
+            r"(?i)(?:err:module|err:.*(?:dll|import|load)|"
+            r"c0000135|c000007b|status_dll_not_found|"
+            r"Library [^ ]+.*not found|failed to load|"
+            r"could not load|ImportError|GW_.*FAIL)",
+            line)
+    ]
+    print("Windows loader/probe diagnostic lines:")
+    if not matches:
+        print("  No specific loader error found; inspect the sandbox *.log file.")
+    for line in matches[-16:]:
+        print("  " + line)
+    if not re.search(r"(?m)^GW_CRYPT32_MODULE=", log):
+        print("  Probe produced no GW_CRYPT32_MODULE marker: main() did not reach module reporting.")
+
 def runtime_probes(proton: Path) -> int:
     audit()
     safe_workdir()
@@ -255,13 +275,37 @@ def runtime_probes(proton: Path) -> int:
         raise ValidationBlocked("Proton did not create a valid disposable prefix. "
                                 "Bootstrap rc=" + str(rc0) + "; inspect " +
                                 str(session / "bootstrap.log"))
+    # Check the SAME Win32 probe with Proton's own built-in crypt32 first.
+    # A baseline probe can legitimately fail ID 107; the purpose here is to
+    # establish that its main() executes and prints the DLL module path.
+    # If it cannot even enter main(), don't blame newly rebuilt crypt32.
+    baseline_reached_main = {}
+    for arch in ARCHS:
+        control_rc, control_output = run_proton(
+            proton, probe_path(arch), session, steam,
+            {"WINEDLLOVERRIDES": "crypt32=b",
+             "WINEDEBUG": "-all,+module,+loaddll,+seh"},
+            session / (ARCHS[arch][2] + "-builtin-control.log"))
+        baseline_reached_main[arch] = bool(re.search(
+            r"(?m)^GW_CRYPT32_MODULE=", control_output))
+        print(arch + " built-in Wine control: exit=" + str(control_rc) +
+              ", reached probe main=" + str(baseline_reached_main[arch]))
+        if not baseline_reached_main[arch]:
+            print_loader_failures(control_output)
+    if not all(baseline_reached_main.values()):
+        raise ValidationBlocked(
+            "Baseline Win32 executable failed before main() with unmodified built-in crypt32; "
+            "no candidate DLLs copied. Examine *-builtin-control.log in this disposable session.")
+
     for arch in ARCHS:
         _safe_replace_prefix_dll(pfx, arch, candidate(arch))
     checked = {}
     for arch in ARCHS:
         rc, output = run_proton(
             proton, probe_path(arch), session, steam,
-            {"WINEDLLOVERRIDES": "crypt32=n"}, session / (ARCHS[arch][2] + ".log"))
+            {"WINEDLLOVERRIDES": "crypt32=n",
+             "WINEDEBUG": "-all,+module,+loaddll,+seh"},
+            session / (ARCHS[arch][2] + ".log"))
         markers = ["GW_SHA256_OK", "GW_SHA1_OK",
                    "GW_SHA256_AFTER_SET_OK", "GW_CRYPT32_CERT_SHA256_RESULT=PASS"]
         print(arch + ": exit=" + str(rc) +
@@ -278,6 +322,8 @@ def runtime_probes(proton: Path) -> int:
         checked[arch] = rc == 0 and all(x in output for x in markers) and located_in_sandbox
         print(arch + " native-only DLL module path: " +
               (module.group(1) if module else "MISSING"))
+        if not checked[arch]:
+            print_loader_failures(output)
         print(arch + (" CERTIFICATE API: PASS" if checked[arch] else
                        " CERTIFICATE API: FAILED/UNVERIFIED (see sandbox log)"))
     passed = all(checked.values())
@@ -331,7 +377,8 @@ def diagnose_runtime_logs() -> int:
         r"cannot|can't|module|c0000135|c000007b|status_dll|"
         r"GW_|steam[_ ]compat|proton:|wine:)"
     )
-    for name in ("bootstrap.log", "x86_64.log", "i386.log", "report.txt"):
+    for name in ("bootstrap.log", "x86_64-builtin-control.log",
+                 "i386-builtin-control.log", "x86_64.log", "i386.log", "report.txt"):
         path = session / name
         print("\n========== " + name + " ==========")
         if path.is_symlink() or not path.is_file():
@@ -356,8 +403,8 @@ def diagnose_runtime_logs() -> int:
                 print(line[:900])
         elif not selected:
             print(content[-3000:])
-    print("\nSTATUS: No new tests were run. Exit code 53 + no GW_ markers "
-          "cannot identify a crypt32 API defect without loader diagnostics.")
+    print("\nSTATUS: No new tests were run. Exit code 53 may indicate a Windows "
+          "DLL load failure, but exact imports and module errors determine cause.")
     print("Do not install the staged DLLs into the existing GE Proton Wand tool.")
     return 0
 
