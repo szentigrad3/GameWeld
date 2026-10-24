@@ -24,6 +24,7 @@ HISTORIC = {
 }
 ROOT = Path(__file__).resolve().parent.parent
 PATCH = ROOT / "patches/wine-crypt32-cert-sha256-prop.patch"
+HEADER_PATCH = ROOT / "patches/wine-crypt32-cert-sha256-header.patch"
 WORK = ROOT / "build/pc2-source/crypt32-source-rebuild"
 
 
@@ -53,9 +54,10 @@ def preflight() -> int:
     print("GE-Proton baseline: GE-Proton11-7 (source revision checked below)")
     print("ValveSoftware/wine source revision: " + REV)
     print("Original patch: " + str(PATCH))
+    print("Wine wincrypt.h property 107 compatibility patch: " + str(HEADER_PATCH))
     print("Build outputs ONLY in: " + str(WORK))
-    if not PATCH.is_file():
-        blocked("The original Wine SHA256 patch is missing")
+    if not PATCH.is_file() or not HEADER_PATCH.is_file():
+        blocked("Wine SHA256 implementation or header compatibility patch is missing")
     safe_dirs(WORK)
     required = ("git", "make", "file", "sha256sum", "autoreconf", "sh")
     optional = ("clang", "gcc", "x86_64-w64-mingw32-gcc",
@@ -117,6 +119,40 @@ def ensure_pinned_source(source: Path, log) -> None:
     if ("case CERT_SHA256_HASH_PROP_ID:" not in cert or
             "CALG_SHA_256" not in cert):
         blocked("Patched Wine cert.c does not contain CERT_SHA256_HASH_PROP_ID/CALG_SHA_256")
+
+
+
+def ensure_sha256_header(source: Path, log) -> None:
+    """Idempotently add the Windows SDK crypt32 property constant 107.
+
+    The historic 0.1.41 cert.c patch references CERT_SHA256_HASH_PROP_ID
+    but the pinned Valve Wine wincrypt.h lacks its declaration. Apply the
+    *separate* documented header patch; never rewrite the user's cert.c.
+    """
+    header = source / "include/wincrypt.h"
+    if not HEADER_PATCH.is_file() or not header.is_file():
+        blocked("Missing Wine SHA256 header patch or pinned include/wincrypt.h")
+    contents = header.read_text(encoding="utf-8")
+    lines = [
+        line for line in contents.splitlines()
+        if re.match(r"\s*#\s*define\s+CERT_SHA256_HASH_PROP_ID\b", line)
+    ]
+    if lines:
+        if len(lines) != 1 or not re.fullmatch(
+            r"\s*#\s*define\s+CERT_SHA256_HASH_PROP_ID\s+107\s*", lines[0]
+        ):
+            blocked("Wine wincrypt.h defines CERT_SHA256_HASH_PROP_ID incompatibly; refusing to overwrite")
+        print("Wine wincrypt.h: SHA256 property ID 107 already defined", flush=True)
+        return
+
+    # Validate on-disk context using a real unified-diff patch first.
+    run_log(["git", "-C", str(source), "apply", "--check", str(HEADER_PATCH)], log)
+    run_log(["git", "-C", str(source), "apply", str(HEADER_PATCH)], log)
+    contents = header.read_text(encoding="utf-8")
+    if not re.search(r"(?m)^#define CERT_SHA256_HASH_PROP_ID\s+107\s*$", contents):
+        blocked("Wine header compatibility patch did not define SHA256 property 107")
+    print("Wine wincrypt.h: applied missing CERT_SHA256_HASH_PROP_ID = 107", flush=True)
+
 
 
 def ensure_configure(source: Path, log) -> None:
@@ -193,8 +229,8 @@ def compile_only(work: Path) -> int:
     build = work / "wine-build"
     output = work / "candidate"
     log_path = work / "build-output.log"
-    if not PATCH.is_file():
-        blocked("Historical crypt32 patch source missing")
+    if not PATCH.is_file() or not HEADER_PATCH.is_file():
+        blocked("Historical crypt32 implementation/header patch source missing")
     if not all(shutil.which(name) for name in ("git", "make", "file")):
         blocked("git, make and file are required before a Wine source build")
     safe_dirs(work)
@@ -212,6 +248,7 @@ def compile_only(work: Path) -> int:
             log.write("\n=== GameWeld Wine pinned source build/resume ===\n")
             log.flush()
             ensure_pinned_source(source, log)
+            ensure_sha256_header(source, log)
             ensure_configure(source, log)
             if not build.exists():
                 build.mkdir()
