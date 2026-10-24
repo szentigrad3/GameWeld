@@ -5254,10 +5254,10 @@ static GtkWidget *build_settings(void){
         GtkWidget*first=card("Play with WeMod",
             pc2_public_release_ui()?
             "Select an installed Steam Windows game and press Play with WeMod. "
-            "GameWeld identifies the game and Proton automatically, validates its launch plan, "
-            "and starts the external DeckCheatz launcher. The Play action authorizes the launch; "
-            "DeckCheatz may download components or modify that game's Wine prefix. "
-            "An initial DeckCheatz installation requires separate consent.":
+            "Steam owns the game launch. GameWeld verifies the running game's AppID and "
+            "Proton prefix, then requests WeMod in that same prefix. This avoids a direct "
+            "game EXE launch, but successful trainer attachment still needs validation. "
+            "First-time provider setup requires separate consent.":
             "Select an installed Steam Windows game in Library or Overview, then choose Play with WeMod. "
             "GameWeld automatically offers to install DeckCheatz 1.x if it is missing. "
             "It checks game and Proton paths, shows a launch preview and asks before any Wine prefix changes.",
@@ -5270,8 +5270,9 @@ static GtkWidget *build_settings(void){
                 "Steam Launch Options remain untouched by this direct workflow.",NULL),0);
         else
             pack(quick,card("Game compatibility",
-                "GameWeld checks the selected game and Proton paths, then asks before launching WeMod. "
-                "Some games require additional compatibility setup, and success can differ by system.",NULL),0);
+                "GameWeld uses Steam to launch Steam games before requesting WeMod inside "
+                "the matching Proton prefix. A running WeMod process does not guarantee the "
+                "trainer attached; some titles require additional compatibility setup.",NULL),0);
         pack(quick,card("Keep your installation working",
             "DeckCheatz downloads, version checks and opt-in updates are under the DeckCheatz tab. "
             "Source-level trainer providers, compatibility fixes and patch diagnostics are under Advanced Providers. "
