@@ -1932,6 +1932,21 @@ static gboolean pc2_startup_fit_window(void *unused){
     }
     return FALSE;
 }
+/* A settings action to recover a preferred default size after resizing or
+ * changing monitors. It deletes only PC2's small width/height preferences. */
+static void on_pc2_window_size_reset(GtkButton *button,void *unused){
+    (void)button;(void)unused;
+    if(!pc2_discovery_only()||!G.window)return;
+    char path[4096]={0};
+    if(pc2_window_state_path(path,sizeof path,0))unlink(path);
+    int ww=1280,hh=760;
+    recommended_window_geometry(&ww,&hh);
+    if(gtk_window_is_maximized((GtkWindow*)G.window))
+        gtk_window_unmaximize((GtkWindow*)G.window);
+    gtk_window_resize((GtkWindow*)G.window,ww,hh);
+    gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);
+    log_line("PC2 window reset: %dx%d normal window; manual resize remains enabled.",ww,hh);
+}
 static void spawn_detached(const char *a,const char *b,const char *c){pid_t p=fork();if(p==0){clear_desktop_activation_env();if(c)execlp(a,a,b,c,(char*)NULL);else if(b)execlp(a,a,b,(char*)NULL);else execlp(a,a,(char*)NULL);_exit(127);}}
 static void set_label(GtkWidget *w,const char *s){ if(w)gtk_label_set_text((GtkLabel*)w,s?s:""); }
 static void selected_changed(GtkListBox *list,GtkListBoxRow *row,void *data){(void)list;(void)data;if(!row)return; int idx=gtk_list_box_row_get_index(row); if(idx>=0&&idx<G.game_count){G.selected=idx;refresh_ui();trainer_update_context_refresh();}}
@@ -4966,6 +4981,12 @@ static GtkWidget *build_settings(void){
             "DeckCheatz downloads, version checks and opt-in updates are under the DeckCheatz tab. "
             "Source-level trainer providers, compatibility fixes and patch diagnostics are under Advanced Providers. "
             "GameWeld does not perform background DeckCheatz updates.",NULL),0);
+        pack(quick,card("Window size",
+            "GameWeld remembers your last normal-window size and opens in a comfortable "
+            "window on each display. Restore the default after changing monitors or scaling.",NULL),0);
+        GtkWidget*window_reset=button("Reset window size","action");
+        g_signal_connect_data(window_reset,"clicked",(GCallback)on_pc2_window_size_reset,NULL,NULL,0);
+        pack(quick,window_reset,0);
         deckpage=box(GTK_ORIENTATION_VERTICAL,12);
         GtkWidget*advancedpage=box(GTK_ORIENTATION_VERTICAL,12);
         pack(advancedpage,cols,1);
