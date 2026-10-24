@@ -512,3 +512,11 @@ bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
 ```
 
 Test 20 fixture AIO checks the integrated launcher, exact game/AppID and Proton runtime contracts, confirms the OS is not used to launch any real game or Wand, and compiles the GTK GUI. It **does not** attest that the real SHA256 Proton tool is installed or that the trainer works for Astrometica.
+
+### Test 20 field recovery — 0.1.41 tool exists, only hybrid metadata absent
+
+The maintainer's 24 October 2026 Astrometica read-only check located the isolated tool at `/mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256` but failed on `WAND-HYBRID.json metadata is missing or symlinked`. This **does not establish that the two compiled crypt32 DLLs are missing**. GameWeld previously required a JSON evidence file before hashing the actual Wine DLLs, which could reject a valid installed legacy tool without examining the evidence that matters.
+
+Correction: `gameweld-managed-wand.py::_verify_isolated_tool` now verifies an executable Proton script, an exact Steam compatibility-tool display name, and **both** on-disk crypt32 patched DLL SHA-256 hashes first. Known 0.1.41 x86_64=`2d613ab5f0f03c77c9434e9c201be629e21f51d5e5eed9139d68e54c759aa775`; i386=`6efa5676914916dd79dee7618340984d5dcf51873d73b28cb974d03f8ece50da`. If and only if those hashes match, a **missing** `WAND-HYBRID.json` is accepted as a legacy installation *without generating any metadata*. An existing **malformed/mismatched/symlinked** JSON still blocks the session. Any DLL mismatch blocks even when JSON is absent. No files are changed by the read-only check.
+
+After pulling, run `bash scripts/pc2-test20-aio-report.sh`, restart GameWeld and choose **Astrometica (2353250)**, **Check GameWeld Managed Wand (read-only)**. Its Activity result now says either both hashes verified (possibly with absent metadata) or which exact DLL failed verification. Actual Wand rendering and in-game trainer integration remain field-validation tasks.
