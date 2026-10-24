@@ -4750,7 +4750,41 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     }
     if(g->executable[0] && pc2_deckcheatz_file(g->executable))
         snprintf(exe,sizeof exe,"%s",g->executable);
-    else if(!pc2_deckcheatz_choose("Select the Windows game EXE",0,
+    if(!exe[0] && pc2_public_release_ui()){
+        /* Safe, bounded, read-only EXE discovery; no picker for normal Play. */
+        char resolver[4096]={0},lookup_output[8192]={0};
+        const char *appdir=getenv("APPDIR");
+        if(appdir&&*appdir)
+            snprintf(resolver,sizeof resolver,"%s/usr/libexec/gameweld-steam-game-exe.py",appdir);
+        else snprintf(resolver,sizeof resolver,"gameweld-steam-game-exe.py");
+        int lookupfd[2];
+        if(pipe(lookupfd)!=0){
+            log_line("Play with WeMod: could not initialize game EXE detection.");return;
+        }
+        pid_t lookup=fork();
+        if(lookup==0){
+            close(lookupfd[0]);setsid();
+            dup2(lookupfd[1],STDOUT_FILENO);dup2(lookupfd[1],STDERR_FILENO);
+            close(lookupfd[1]);clear_desktop_activation_env();
+            execlp("python3","python3",resolver,
+                "--appid",g->appid,"--install-dir",g->install_dir,
+                "--title",g->name,"--preferred",g->executable,(char*)NULL);
+            _exit(127);
+        }
+        close(lookupfd[1]);
+        if(lookup<0){close(lookupfd[0]);log_line("WeMod: executable resolver could not start.");return;}
+        int found=bounded_child_output(lookup,lookupfd[0],lookup_output,sizeof lookup_output,15);
+        if(found)json_string(lookup_output,"selected",exe,sizeof exe);
+        if(!pc2_deckcheatz_file(exe)){
+            log_line("Play with WeMod blocked: cannot safely identify one Windows game EXE for %s. Nothing launched or changed.",g->name);
+            if(G.pc2_deckcheatz_overview_status)set_label(G.pc2_deckcheatz_overview_status,
+                "Cannot identify a unique game EXE. Verify the Steam installation.");
+            if(G.pc2_deckcheatz_library_status)set_label(G.pc2_deckcheatz_library_status,
+                "No safe game EXE identified. Nothing launched.");
+            return;
+        }
+        log_line("WeMod: automatically identified game executable %s",exe);
+    }else if(!exe[0] && !pc2_deckcheatz_choose("Select the Windows game EXE",0,
                                   g->install_dir,exe,sizeof exe)){
         log_line("DeckCheatz preview cancelled: no game EXE selected.");return;
     }
@@ -4782,6 +4816,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     }
     snprintf(candidate,sizeof candidate,"%s/steamapps",steam);
     if(!steam[0] || !pc2_deckcheatz_folder(candidate)){
+        if(pc2_public_release_ui()){
+            log_line("Play with WeMod blocked: Steam installation was not detected. Nothing launched.");
+            return;
+        }
         if(!pc2_deckcheatz_choose("Select Steam root folder (containing steamapps)",1,
                                  NULL,steam,sizeof steam)){
             log_line("DeckCheatz preview cancelled: Steam root not selected.");return;
@@ -4798,10 +4836,16 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         snprintf(candidate,sizeof candidate,"%s/../../compatdata/%s",g->install_dir,g->appid);
         if(pc2_deckcheatz_folder(candidate))snprintf(compat,sizeof compat,"%s",candidate);
     }
-    if(!compat[0] && !pc2_deckcheatz_choose(
-            "Select existing compatdata folder for this Steam AppID",1,
-            NULL,compat,sizeof compat)){
-        log_line("DeckCheatz preview cancelled: no existing game prefix selected.");return;
+    if(!compat[0]){
+        if(pc2_public_release_ui()){
+            log_line("Play with WeMod blocked: Steam Proton prefix for %s is missing. Start the game normally once.",g->name);
+            return;
+        }
+        if(!pc2_deckcheatz_choose(
+                "Select existing compatdata folder for this Steam AppID",1,
+                NULL,compat,sizeof compat)){
+            log_line("DeckCheatz preview cancelled: no existing game prefix selected.");return;
+        }
     }
 
     if(!pc2_deckcheatz_file(proton)){
@@ -4848,6 +4892,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         }
     }
     if(!pc2_deckcheatz_file(proton)){
+        if(pc2_public_release_ui()){
+            log_line("Play with WeMod blocked: selected Proton runtime unresolved. Choose a Proton version in Steam Compatibility settings.");
+            return;
+        }
         char browse[4096]={0};
         if(pc2_deckcheatz_folder(g->compat_tool_path))
             snprintf(browse,sizeof browse,"%s",g->compat_tool_path);
