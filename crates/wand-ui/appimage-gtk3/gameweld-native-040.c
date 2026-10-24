@@ -5004,6 +5004,87 @@ static void pc2_deckcheatz_flow(int experimental_launch){
        !pc2_deckcheatz_file(proton)){
         log_line("DeckCheatz preview blocked: select the launcher file literally named proton.");return;
     }
+    if(pc2_public_release_ui() && experimental_launch){
+        /* Real Play with WeMod must ask Steam to start the game; the old
+         * direct-proton helper is retained ONLY for the developer test UI.
+         * The new helper observes the real game AppID/exe/prefix, and then
+         * requests a WeMod process via Proton runinprefix. It cannot claim
+         * an attached trainer merely because the process was requested. */
+        char native_helper[4096]={0},check_result[8192]={0};
+        const char *bundle=getenv("APPDIR");
+        if(bundle && *bundle)
+            snprintf(native_helper,sizeof native_helper,
+                "%s/usr/libexec/gameweld-steam-wemod-platform.py",bundle);
+        else snprintf(native_helper,sizeof native_helper,
+            "gameweld-steam-wemod-platform.py");
+        int checkpipe[2];
+        if(pipe(checkpipe)!=0){
+            log_line("Play with WeMod: Steam-native launch preflight unavailable.");return;
+        }
+        pid_t checked=fork();
+        if(checked==0){
+            close(checkpipe[0]);setsid();
+            dup2(checkpipe[1],STDOUT_FILENO);dup2(checkpipe[1],STDERR_FILENO);
+            close(checkpipe[1]);clear_desktop_activation_env();
+            execlp("python3","python3",native_helper,"probe",
+                "--appid",g->appid,"--game-exe",exe,
+                "--install-dir",g->install_dir,"--compatdata",compat,
+                "--proton",proton,"--steam-root",steam,
+                "--launcher",launcher,(char*)NULL);
+            _exit(127);
+        }
+        close(checkpipe[1]);
+        if(checked<0){close(checkpipe[0]);
+            log_line("Play with WeMod: could not start Steam-native preflight.");return;}
+        if(!bounded_child_output(checked,checkpipe[0],
+                                 check_result,sizeof check_result,12)){
+            log_line("Play with WeMod blocked: Steam-native preflight failed: %.1500s",
+                check_result[0]?check_result:"No matching WeMod runtime was found.");
+            if(G.pc2_deckcheatz_overview_status)set_label(
+                G.pc2_deckcheatz_overview_status,
+                "WeMod not ready for Steam-native launch; see Activity.");
+            if(G.pc2_deckcheatz_library_status)set_label(
+                G.pc2_deckcheatz_library_status,
+                "Steam-native WeMod setup is incomplete; nothing launched.");
+            return;
+        }
+        pid_t first=fork();
+        if(first==0){
+            pid_t child=fork();
+            if(child<0)_exit(126);
+            if(child>0)_exit(0);
+            setsid();
+            int dn=open("/dev/null",O_RDWR);
+            if(dn>=0){
+                dup2(dn,STDIN_FILENO);dup2(dn,STDOUT_FILENO);
+                dup2(dn,STDERR_FILENO);if(dn>2)close(dn);
+            }
+            clear_desktop_activation_env();
+            execlp("python3","python3",native_helper,"launch",
+                "--appid",g->appid,"--game-exe",exe,
+                "--install-dir",g->install_dir,"--compatdata",compat,
+                "--proton",proton,"--steam-root",steam,
+                "--launcher",launcher,(char*)NULL);
+            _exit(127);
+        }
+        if(first<0){log_line("Play with WeMod: could not start Steam-native handoff.");return;}
+        int outcome=0;pid_t done=0;
+        do {done=waitpid(first,&outcome,0);}
+        while(done<0 && errno==EINTR);
+        if(done!=first || !WIFEXITED(outcome) || WEXITSTATUS(outcome)!=0){
+            log_line("Steam-native WeMod handoff failed to queue for %s.",g->name);return;
+        }
+        log_line("Steam-native Play with WeMod REQUESTED for %s via Steam AppID %s. "
+            "Game and trainer verification pending; check the game and WeMod windows. "
+            "Detailed log: ~/.local/state/gameweld/steam-wemod/",g->name,g->appid);
+        if(G.pc2_deckcheatz_overview_status)set_label(
+            G.pc2_deckcheatz_overview_status,
+            "Steam launch requested; waiting for the game and WeMod.");
+        if(G.pc2_deckcheatz_library_status)set_label(
+            G.pc2_deckcheatz_library_status,
+            "Steam-owned launch requested. Check the game and WeMod windows.");
+        return;
+    }
     const char *appdir=getenv("APPDIR");char helper[4096]={0};
     if(appdir && *appdir)snprintf(helper,sizeof helper,
         "%s/usr/libexec/gameweld-deckcheatz-direct.py",appdir);
