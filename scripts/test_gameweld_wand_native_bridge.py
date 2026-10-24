@@ -69,6 +69,16 @@ class IntegratedManagedSessionTests(unittest.TestCase):
                                           "XDG_STATE_HOME": str(self.root / "state")})
         self.env.start()
         self.addCleanup(self.env.stop)
+        # ALL fixture tests must inspect only the disposable Proton root.
+        # Without this guard, discovery also scans real /mnt/games/Steam;
+        # mocked crypt32 hashes then falsely mark the user's *real* DLLs
+        # as valid and can mask invalid fixture metadata. Never hash or
+        # inspect a host Steam compatibility tool from a unit test.
+        self.original_proton_candidates = mod._proton_candidates
+        self.fixture_discovery = patch.object(
+            mod, "_proton_candidates", return_value=[self.protonroot])
+        self.fixture_discovery.start()
+        self.addCleanup(self.fixture_discovery.stop)
 
     def fake_sha(self, path):
         arch = path.parent.name
@@ -219,13 +229,37 @@ class IntegratedManagedSessionTests(unittest.TestCase):
         self.assertIn("x86_64-windows", str(error.exception))
 
     def test_tool_discovery_reports_other_steam_library_and_resolves_duplicates(self):
+        # Production discovery must find the Steam-library fixture while
+        # managed-session tests verify ONLY our disposable Proton instance.
+        # Do not let the real discovery results enter a mocked hash check.
+        discovered = self.original_proton_candidates(self.apps)
+        self.assertIn(self.protonroot, discovered)
+        self.assertEqual(
+            len(discovered),
+            len({str(x.resolve(strict=False)) for x in discovered}),
+        )
+        self.assertEqual(mod._proton_candidates(self.apps), [self.protonroot])
         with self.healthy():
-            paths = mod._proton_candidates(self.apps)
-            self.assertIn(self.protonroot, paths)
             tool, root = mod.find_proton(self.apps)
             self.assertEqual(tool, self.proton.resolve())
             self.assertTrue(root.is_dir())
-        self.assertEqual(len(paths), len({str(x.resolve(strict=False)) for x in paths}))
+
+    def test_fixture_hash_mocks_never_verify_host_steam_installations(self):
+        # Regression for a real CachyOS machine with a second installed tool
+        # in /mnt/games/Steam: no host paths can reach the mock verifier.
+        checked_roots = []
+        original = mod._verify_isolated_tool
+
+        def inspect(root):
+            checked_roots.append(root)
+            if root != self.protonroot.resolve():
+                raise AssertionError("Unit test inspected a real Steam tool: " + str(root))
+            return original(root)
+
+        with self.healthy(), patch.object(mod, "_verify_isolated_tool", side_effect=inspect):
+            proton, _steam_root = mod.find_proton(self.apps)
+        self.assertEqual(proton, self.proton.resolve())
+        self.assertEqual(checked_roots, [self.protonroot.resolve()])
 
     def test_ambiguous_executable_fails_closed(self):
         (self.game / "Extras").mkdir()
