@@ -54,8 +54,8 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("geometry.height*scale", text)
         self.assertIn("GameWeldPC2WindowPolicy size=gameweld_pc2_window_policy(", text)
         self.assertIn("GameWeldPC2WindowPolicy result = {w, h, 0};", policy)
-        self.assertIn("int soft_max_w = 1650, soft_max_h = 980;", policy)
-        self.assertIn("soft_max_w = 1800; soft_max_h = 1120;", policy)
+        self.assertIn("int soft_max_w = 1720, soft_max_h = 1020;", policy)
+        self.assertIn("soft_max_w = 2200; soft_max_h = 1280;", policy)
         self.assertIn("PC2 monitor sizing: windowed", text)
 
     def test_no_automatic_maximize_and_manual_maximize_remains(self):
