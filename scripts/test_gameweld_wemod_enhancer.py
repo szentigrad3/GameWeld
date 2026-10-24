@@ -316,6 +316,17 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         proton = runtime / "proton"
         proton.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         proton.chmod(0o755)
+        wine_bin = runtime / "files" / "bin"
+        wine_bin.mkdir(parents=True)
+        wine = wine_bin / "wine"
+        wine.write_text('#!/bin/sh\n'
+                        'printf "%s\\n%s\\n%s\\n%s\\n" "$WINEDLLOVERRIDES" "$WINEPREFIX" '
+                        '"$WINE_GRAPHICS_DRIVER" "$PROTON_USE_X11_EXCLUSIVE" > "$GAMEWELD_TEST_CAPTURE"\n',
+                        encoding="utf-8")
+        wine.chmod(0o755)
+        wine_server = wine_bin / "wineserver"
+        wine_server.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        wine_server.chmod(0o755)
         for pid, process in ((701, comm), (702, "reaper")):
             directory = proc / str(pid)
             directory.mkdir(parents=True, exist_ok=True)
@@ -356,7 +367,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Multiple live Proton prefixes"):
             bridge.live_steam_proton_session("2353250", proc)
 
-    def test_live_launch_uses_running_game_proton_and_native_dll_override(self):
+    def test_live_launch_joins_active_proton_wineserver_with_wand_only_x11(self):
         from unittest.mock import patch
         proc, prefix, proton = self.make_live_proton_fixture()
         capture = self.root / "proton-capture.txt"
@@ -371,7 +382,8 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertEqual(self.cmd("patch", "--install-dir", str(self.client),
                                   "--confirm").returncode, 0)
         with patch.dict(os.environ, {"GAMEWELD_TEST_CAPTURE": str(capture),
-                                    "XDG_STATE_HOME": str(self.root / "state")}):
+                                    "XDG_STATE_HOME": str(self.root / "state"),
+                                    "DISPLAY": ":0"}):
             with self.assertRaisesRegex(ValueError, "Steam game installation directory"):
                 bridge.launch_wand_in_live_game(
                     self.client, self.helper, "2353250", "", proc)
@@ -379,11 +391,25 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
                 self.client, self.helper, "2353250", str(game_dir), proc)
         self.assertTrue(capture.exists(), "Exact fake Proton was not invoked")
         self.assertEqual(capture.read_text().splitlines(), [
-            "version=n,b", str(prefix.resolve()), "2353250",
+            "version=n,b", str(prefix.resolve() / "pfx"), "x11", "WeMod.exe",
         ])
         # Nothing about the request certifies a trainer is attached.
         self.assertEqual((self.client / "resources/app.asar").read_bytes(),
                          b"PATCHED-FIXTURE")
+
+    def test_live_x11_join_fails_closed_when_proton_wine_is_missing(self):
+        from unittest.mock import patch
+        proc, _prefix, proton = self.make_live_proton_fixture()
+        (proton.parent / "files" / "bin" / "wine").unlink()
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        self.assertEqual(self.cmd("patch", "--install-dir",
+                                  str(self.client), "--confirm").returncode, 0)
+        with patch.dict(os.environ, {"DISPLAY": ":0",
+                                    "XDG_STATE_HOME": str(self.root / "state")}):
+            with self.assertRaisesRegex(ValueError, "files/bin/wine"):
+                bridge.launch_wand_in_live_game(
+                    self.client, self.helper, "2353250", str(game_dir), proc)
 
     def test_live_gpu_off_retry_passes_chromium_flags_and_captures_proton_log(self):
         from unittest.mock import patch
