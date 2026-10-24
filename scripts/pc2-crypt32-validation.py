@@ -247,16 +247,25 @@ def runtime_probes(proton: Path) -> int:
     for arch in ARCHS:
         rc, output = run_proton(
             proton, probe_path(arch), session, steam,
-            {"WINEDLLOVERRIDES": "crypt32=n,b"}, session / (ARCHS[arch][2] + ".log"))
+            {"WINEDLLOVERRIDES": "crypt32=n"}, session / (ARCHS[arch][2] + ".log"))
         markers = ["GW_SHA256_OK", "GW_SHA1_OK",
                    "GW_SHA256_AFTER_SET_OK", "GW_CRYPT32_CERT_SHA256_RESULT=PASS"]
         print(arch + ": exit=" + str(rc) +
               ", API markers=" + str(sum(x in output for x in markers)) + "/" + str(len(markers)))
-        # Wine may log library loads differently across builds. A successful
-        # API probe with native override is the primary functional evidence.
-        checked[arch] = rc == 0 and all(x in output for x in markers)
+        # Require native-only crypt32 loading, never native-then-builtin
+        # fallback. The probe names the actual DLL module it imported.
+        module = re.search(r"(?m)^GW_CRYPT32_MODULE=([^\r\n]+)", output)
+        expected_subdir = ("system32" if arch == "x86_64-windows" else "syswow64")
+        located_in_sandbox = bool(
+            module and
+            ("\\windows\\" + expected_subdir + "\\crypt32.dll") in
+            module.group(1).replace("/", "\\").lower()
+        )
+        checked[arch] = rc == 0 and all(x in output for x in markers) and located_in_sandbox
+        print(arch + " native-only DLL module path: " +
+              (module.group(1) if module else "MISSING"))
         print(arch + (" CERTIFICATE API: PASS" if checked[arch] else
-                       " CERTIFICATE API: FAILED (see sandbox log)"))
+                       " CERTIFICATE API: FAILED/UNVERIFIED (see sandbox log)"))
     passed = all(checked.values())
     report = [
         "GameWeld PC2 Test 22 — isolated Proton crypt32 certificate SHA256 smoke",
