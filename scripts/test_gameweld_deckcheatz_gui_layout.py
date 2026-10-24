@@ -15,6 +15,7 @@ SOURCE = Path(__file__).resolve().parents[1] / (
     "crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
 )
 text = SOURCE.read_text(encoding="utf-8")
+policy = SOURCE.with_name("gameweld-pc2-window-policy.h").read_text(encoding="utf-8")
 
 
 def function_body(signature: str, following: str) -> str:
@@ -51,7 +52,8 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gdk_screen_get_monitor_scale_factor(screen,monitor)", text)
         self.assertIn("geometry.width*scale", text)
         self.assertIn("geometry.height*scale", text)
-        self.assertIn("return w>=3840 && h>=2160;", text)
+        self.assertIn("gameweld_pc2_window_policy(1280,720,w,h).maximize", text)
+        self.assertIn("physical_w >= 3840 && physical_h >= 2160", policy)
 
     def test_4k_maximizes_but_other_resolutions_remain_windowed(self):
         self.assertIn("static gboolean pc2_startup_fit_monitor(void *unused)", text)
@@ -64,13 +66,14 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
             text,
         )
         self.assertIn("g_idle_add(pc2_startup_fit_monitor,NULL)", text)
-        self.assertIn("int width_pct=90,height_pct=88;", text)
-        self.assertIn("width_pct=95;height_pct=93;", text)
-        self.assertIn("width_pct=92;height_pct=90;", text)
-        self.assertIn("int ww=(sw*width_pct)/100;", text)
-        self.assertIn("int wh=(sh*height_pct)/100;", text)
-        self.assertIn("if(ww>maxw)ww=maxw;", text)
-        self.assertIn("if(wh>maxh)wh=maxh;", text)
+        self.assertIn("GameWeldPC2WindowPolicy size=gameweld_pc2_window_policy(", text)
+        self.assertIn("int width_pct = 90, height_pct = 88;", policy)
+        self.assertIn("width_pct = 95; height_pct = 93;", policy)
+        self.assertIn("width_pct = 92; height_pct = 90;", policy)
+        self.assertIn("int w = (logical_w * width_pct) / 100;", policy)
+        self.assertIn("int h = (logical_h * height_pct) / 100;", policy)
+        self.assertIn("if (w > maxw) w = maxw;", policy)
+        self.assertIn("if (h > maxh) h = maxh;", policy)
 
     def test_4k_does_not_force_old_window_geometry_after_startup(self):
         self.assertIn("if(gtk_window_is_maximized((GtkWindow*)G.window))", text)
