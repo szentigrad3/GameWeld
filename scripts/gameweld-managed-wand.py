@@ -348,6 +348,11 @@ def play(p: Plan) -> None:
     os.chmod(batch, 0o600)
     stage.unlink(missing_ok=True)
     env = dict(os.environ)
+    # Pin only this managed Wine child to native-first version.dll loading.
+    # Leave unrelated DLL overrides unchanged and avoid global modifications.
+    overrides = [part for part in env.get("WINEDLLOVERRIDES", "").split(";")
+                 if part and not part.lower().startswith("version=")]
+    env["WINEDLLOVERRIDES"] = ";".join(overrides + ["version=n,b"])
     env.update({
         "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(p.steam_root),
         "STEAM_COMPAT_DATA_PATH": str(p.compat),
