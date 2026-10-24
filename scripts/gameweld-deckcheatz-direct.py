@@ -68,10 +68,15 @@ def installed_candidates() -> list[Path]:
     custom = os.environ.get("GAMEWELD_DECKCHEATZ_LAUNCHER", "")
     if custom:
         choices.append(Path(custom).expanduser())
+    # Respect the freedesktop per-user data directory used by GameWeld's
+    # managed installer, while preserving the historical default checkout.
+    xdg = os.environ.get("XDG_DATA_HOME", "")
+    if xdg and os.path.isabs(xdg):
+        choices.append(Path(xdg) / "gameweld/deckcheatz/wemod")
     choices.extend((
+        home / ".local/share/gameweld/deckcheatz/wemod",
         home / "wemod-launcher/wemod",
         home / "Games/wemod-launcher/wemod",
-        home / ".local/share/gameweld/deckcheatz/wemod",
     ))
     return list(dict.fromkeys(choices))
 
