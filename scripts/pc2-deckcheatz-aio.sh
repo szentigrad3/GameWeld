@@ -22,6 +22,8 @@ REPORT="$OUT/deckcheatz-aio-report.txt"
       scripts/gameweld-steam-game-exe.py
   printf '%s\n' '=== Automatic Steam game EXE resolution (no file picker) ==='
   python3 -m unittest scripts/test_gameweld_steam_game_exe.py -v
+  printf '%s\n' '=== Steam game-process identity fixture tests ==='
+  python3 -m unittest scripts/test_gameweld_platform_session.py -v
   printf '%s\n' '=== Managed install/update/adoption synthetic cases ==='
   python3 scripts/test_gameweld_deckcheatz_install.py -v
   printf '%s\n' '=== Per-game Proton resolution synthetic cases ==='
