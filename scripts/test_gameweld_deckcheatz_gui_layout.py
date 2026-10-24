@@ -16,6 +16,7 @@ SOURCE = Path(__file__).resolve().parents[1] / (
 )
 text = SOURCE.read_text(encoding="utf-8")
 policy = SOURCE.with_name("gameweld-pc2-window-policy.h").read_text(encoding="utf-8")
+window_state = SOURCE.with_name("gameweld-pc2-window-state.h").read_text(encoding="utf-8")
 
 
 def function_body(signature: str, following: str) -> str:
@@ -75,8 +76,8 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("pc2-window-size.txt", text)
         self.assertIn('getenv("XDG_CONFIG_HOME")', text)
         self.assertIn("pc2_load_window_size(&ww,&hh,maxw,maxh)", text)
-        self.assertIn("if(w>max_w)w=max_w", text)
-        self.assertIn("if(h>max_h)h=max_h", text)
+        self.assertIn("if(w>max_w)w=max_w", window_state)
+        self.assertIn("if(h>max_h)h=max_h", window_state)
         self.assertIn('"configure-event",(GCallback)pc2_window_configure', text)
         self.assertIn("static gboolean pc2_window_configure(", text)
         self.assertIn("gtk_window_get_size((GtkWindow*)window,&w,&h)", text)
