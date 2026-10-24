@@ -542,3 +542,29 @@ python3 scripts/pc2-wand-crypt32-recovery-audit.py
 The audit checks known historical build/download directories, `/mnt/other/JASON/DOWNLOADS/Compressed`, and existing isolated Proton locations, reading crypt32 DLLs directly and selectively inspecting Wand Native/GE Proton Wand ZIP/tar.gz archives. It compares streamed SHA-256s with **both** original field-tested fingerprints (x64 `2d613ab5f0f03c77c9434e9c201be629e21f51d5e5eed9139d68e54c759aa775`; i386 `6efa5676914916dd79dee7618340984d5dcf51873d73b28cb974d03f8ece50da`) and produces `build/pc2-source/pc2-crypt32-recovery-report.txt`. It does **not** extract archives, install/patch a tool, delete files, or execute any Wine/Proton binaries. You can narrow the locations by passing `--root /absolute/path` repeatedly.
 
 If no verified DLL pair is found, use the RC source Wine patch for a controlled two-architecture rebuild against the historically documented matching **GE-Proton11-7**/Wine revision baseline, or recover the **final non-source** 0.1.41 release archive. The source ZIPs by themselves cannot satisfy cryptographic binary validation. Do not remove the hash gate, edit a JSON file to fake a match, or install the untested currently mismatched `crypt32.dll`.
+
+
+## PC2 Test 21 — No original binaries located; isolated source rebuild only
+
+The maintainer's `pc2-crypt32-recovery-report.txt` checked 59 local archives/DLLs on 24 October 2026 and found zero matching x86_64 and zero matching i386 historical 0.1.41 `crypt32.dll` binaries. The RC1–RC3 source ZIPs (and 0.1.40/0.1.42/0.1.44 archives) contain only the `wine-crypt32-cert-sha256-prop.patch`, not the final compiled payload. The installed `GE-Proton-Wand-SHA256` x86_64 crypt32 hash is `5cf0ab2dfdaaa6d82661e8d24ec9ddee01bf896fcd661c94b877aa8d5c23432f`, not the pinned original `2d613ab5f0f03c77c9434e9c201be629e21f51d5e5eed9139d68e54c759aa775`. **Do not modify that active tool based on synthetic tests.**
+
+Upstream GE-Proton11-7 published 16 September 2026 and identifies Wine source commit `46b29104e3741fe23bf5e2547196a253aab88c89`. The original Wine SHA-256 `CERT_SHA256_HASH_PROP_ID` patch is retained in `patches/wine-crypt32-cert-sha256-prop.patch`. Test 21 adds `scripts/pc2-wand-crypt32-rebuild.py` as a strictly isolated, optional path for rebuilding candidate Wine PE DLLs from that pinned revision.
+
+**Read-only dependency check (default, no network or file writes):**
+
+```bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+python3 scripts/pc2-wand-crypt32-rebuild.py --preflight
+```
+
+**Explicit build (large source download and full Wine compile, never automatically run):**
+
+```bash
+python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
+```
+
+The build uses a separate `build/pc2-source/crypt32-source-rebuild` directory, fetches the exact Valve Wine commit, checks and applies the original source patch, invokes an out-of-tree Wine `--enable-archs=i386,x86_64` build, and records two candidate PE DLL SHA256 values with compilation logs. It does **not** execute `make install`, install a compatibility tool, overwrite existing `crypt32.dll`, touch Steam launch options, change a game prefix, restart Steam, or launch a trainer. It refuses to reuse or overwrite a partial source/build/candidate directory. If the original patch doesn't apply cleanly to that revision, it refuses to force it. The developer may have to provide missing compilers/dependencies or adapt the build recipe to the release's original GE-Proton packaging environment.
+
+**Critical:** Valve Wine at pinned commit plus this patch is **not guaranteed** to reproduce byte-identical 0.1.41 binaries, because the original GE packaging toolchain, release build flags and other GE patches may differ. Unless both DLL hashes exactly match the known original x64/i386 fingerprints, those files are unvalidated candidate output, not eligible for the existing GameWeld runtime hash gate. Any new non-identical build must undergo explicit ABI, `CERT_SHA256_HASH_PROP_ID` correctness and actual Wand trainer-functionality validation in a separate disposable Proton clone before a user-approved installation. No hash-bypass is provided. Test 21's AIO checks only preflight/consent safety, never downloads or compiles real Wine in CI.
