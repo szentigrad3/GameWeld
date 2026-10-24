@@ -4133,10 +4133,10 @@ static void on_pc2_deckcheatz_detect(GtkButton*b,void*d){
 }
 
 
-/* DeckCheatz PC2 preview is a strictly read-only, per-game action.
- * Never synthesize an executable name or touch Steam LaunchOptions. The user
- * selects any missing EXE/Proton/prefix explicitly. Only --preview reaches
- * the independent Python provider; no launch consent flags are exposed here. */
+/* DeckCheatz PC2 preview stays strictly read-only. The separately labelled
+ * experimental button reuses the same validated plan, displays the preview,
+ * then requires explicit permission for game launch/prefix modifications.
+ * Neither path edits Steam LaunchOptions or invokes a shell. */
 static int pc2_deckcheatz_folder(const char *p){
     struct stat st;
     return p && *p && stat(p,&st)==0 && S_ISDIR(st.st_mode);
