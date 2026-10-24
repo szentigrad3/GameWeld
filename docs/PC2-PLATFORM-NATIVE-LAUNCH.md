@@ -109,6 +109,24 @@ A repeated error-code-43 loop is now reported as unverified/failed rather
 than a successful client startup. **The renderer fix still needs a live
 packaged retest.** Logs must not record or copy Xauthority cookies.
 
+The latest installed-client audit reports an embedded WeMod application version
+of **11.6.0**, DWriteCore.dll present, and a readable app.asar. This does not
+prove the downloaded binary's provenance, but rules out a simple assumption
+that this particular installed app is WeMod 12.x. Coproton's independently
+reported WeMod 11.6.0 success uses a prefix with real .NET Framework 4.8.
+Our Steam-native route bypasses DeckCheatz's normal `init()` prefix setup:
+whether Astrometica's actual Steam Proton prefix has .NET 4.8 is still
+**unverified**. The read-only `gameweld-wemod-prefix-readiness.py --appid 2353250`
+collects bounded .NET v4 Full registry evidence from installed Steam libraries,
+without starting the game, installing dependencies or changing the prefix.
+A missing registry key is *not* proof that .NET is absent.
+
+The client audit now also reports whether a native `version.dll` proxy and
+original ASAR backup are present. If an Enhancer patch is installed, the
+separate WeMod subprocess needs native-first `version=n,b` DLL selection.
+Do not enable an unknown proxy or modify the client's files automatically.
+
+
 When runtime or matching game-process evidence is missing, it does not launch a
 second standalone game EXE or claim success. The existing direct DeckCheatz 1.x
 launch remains available in developer-only builds as a regression fallback.
