@@ -88,6 +88,17 @@ installed WeMod.exe/Wand.exe. The earlier second `proton runinprefix` invocation
 did not display WeMod in the Astrometica live test and was replaced. This
 requires no Steam Launch Options edits. **Trainer attachment and Electron
 rendering remain unverified**.
+In a subsequent live CachyOS/KDE Wayland test, Astrometica launched through
+Steam and the exact game process was observed. An active Wine-server handoff
+requested WeMod, but its Electron log contained
+`Authorization required, but no authorization protocol specified` and
+`FATAL:hwnd_util.cc(64) 1400`; the WeMod window did not open. To address
+the X11 authorization failure, GameWeld now tests each exact XWayland
+DISPLAY/XAUTHORITY pair via a read-only `XOpenDisplay` probe, prioritizes
+the live game's own display, and refuses mixed-server or unauthorized
+handoffs. **This X11 fix still needs a live packaged retest.** Logs must not
+record or copy Xauthority cookies.
+
 When runtime or matching game-process evidence is missing, it does not launch a
 second standalone game EXE or claim success. The existing direct DeckCheatz 1.x
 launch remains available in developer-only builds as a regression fallback.
