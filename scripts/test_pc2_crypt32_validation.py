@@ -102,6 +102,47 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                 mod._safe_replace_prefix_dll(pfx, "x86_64-windows", candidate)
             self.assertEqual(list(outside.iterdir()), [])
 
+
+    def test_runtime_log_diagnostics_reports_existing_exit_without_launching(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-diagnose-") as temp:
+            root = Path(temp)
+            older = root / "runtime/isolated-aaaaaaaaaaaa"
+            newer = root / "runtime/isolated-bbbbbbbbbbbb"
+            for session in (older, newer):
+                session.mkdir(parents=True)
+                (session / "bootstrap.log").write_text("prefix bootstrap ok\n")
+                (session / "x86_64.log").write_text("err:module:load_dll c0000135\n")
+                (session / "i386.log").write_text("wine: process exited 53\n")
+                (session / "report.txt").write_text("RESULT: BLOCKED\n")
+            # stable explicit mtime ordering for the selected session
+            import os
+            os.utime(older, (100, 100))
+            os.utime(newer, (200, 200))
+            with patch.object(mod, "TESTROOT", root):
+                with patch.object(mod.subprocess, "run") as runner:
+                    with redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(mod.main(["--diagnose-runtime"]), 0)
+                    runner.assert_not_called()
+                    self.assertIn(str(newer), output.getvalue())
+                    self.assertIn("c0000135", output.getvalue())
+                    self.assertIn("RESULT: BLOCKED", output.getvalue())
+                    with self.assertRaisesRegex(mod.ValidationBlocked, "read-only"):
+                        mod.main(["--diagnose-runtime", "--confirm"])
+
+    def test_runtime_log_diagnostics_refuses_symlinked_session(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-loglink-") as temp:
+            root = Path(temp)
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "x86_64.log").write_text("private data\n")
+            runtime = root / "runtime"
+            runtime.mkdir()
+            (runtime / "isolated-cccccccccccc").symlink_to(outside, target_is_directory=True)
+            with patch.object(mod, "TESTROOT", root):
+                with redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(mod.diagnose_runtime_logs(), 2)
+                self.assertIn("No previous Test22 disposable runtime session", output.getvalue())
+
     def test_runtime_requires_probes_and_never_touches_game_prefix(self):
         with tempfile.TemporaryDirectory(prefix="gw-test22-live-") as temp:
             root = Path(temp)
