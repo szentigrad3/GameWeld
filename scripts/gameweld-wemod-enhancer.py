@@ -615,12 +615,20 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         # previously caused Wand startup/window failures on CachyOS. Run Wine
         # from the game's OWN selected Proton tool and join its active server.
         proton_root = Path(session["proton"]).parent
-        wine = proton_root / "files/bin/wine"
-        wine_server = proton_root / "files/bin/wineserver"
-        if not wine.is_file() or not os.access(wine, os.X_OK):
-            raise ValueError("Live Proton tool does not expose files/bin/wine; safe X11 join blocked")
-        if not wine_server.is_file() or not os.access(wine_server, os.X_OK):
-            raise ValueError("Live Proton tool does not expose files/bin/wineserver; safe X11 join blocked")
+        # Mirror crates/wand-runtime::proton_wine_binary / wineserver_binary.
+        wine = next((p for p in (
+            proton_root / "files/bin/wine",
+            proton_root / "files/bin/wine64",
+            proton_root / "files/lib/wine/x86_64-unix/wine",
+        ) if p.is_file() and os.access(p, os.X_OK)), None)
+        wine_server = next((p for p in (
+            proton_root / "files/bin/wineserver",
+            proton_root / "files/lib/wine/x86_64-unix/wineserver",
+        ) if p.is_file() and os.access(p, os.X_OK)), None)
+        if wine is None:
+            raise ValueError("Live Proton tool exposes no executable Wine binary (files/bin/wine or old equivalents); X11 join blocked")
+        if wine_server is None:
+            raise ValueError("Live Proton tool exposes no executable wineserver binary; X11 join blocked")
         if not environment.get("DISPLAY"):
             raise ValueError("An X11/XWayland DISPLAY is required for the proven Wand X11 launch; none found")
 
