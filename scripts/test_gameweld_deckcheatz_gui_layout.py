@@ -46,44 +46,28 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", text)
         self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", text)
 
-    def test_screen_policy_uses_monitor_geometry_and_hidpi_scale(self):
+    def test_screen_policy_is_windowed_at_every_resolution(self):
         self.assertIn("static void pc2_primary_monitor_pixels(", text)
         self.assertIn("gdk_screen_get_monitor_geometry(screen,monitor,&geometry)", text)
         self.assertIn("gdk_screen_get_monitor_scale_factor(screen,monitor)", text)
         self.assertIn("geometry.width*scale", text)
         self.assertIn("geometry.height*scale", text)
-        self.assertIn("gameweld_pc2_window_policy(1280,720,w,h).maximize", text)
-        self.assertIn("physical_w >= 3840 && physical_h >= 2160", policy)
-        self.assertIn("PC2 monitor sizing: GTK restored logical size", text)
-        self.assertIn("maximized (UHD)", text)
-        self.assertIn("proportional window", text)
-
-    def test_4k_maximizes_but_other_resolutions_remain_windowed(self):
-        self.assertIn("static gboolean pc2_startup_fit_monitor(void *unused)", text)
-        self.assertIn(
-            "if(pc2_discovery_only()&&G.window&&pc2_primary_monitor_is_4k())",
-            text,
-        )
-        self.assertIn(
-            "if(pc2_discovery_only()&&pc2_primary_monitor_is_4k())gtk_window_maximize",
-            text,
-        )
-        self.assertIn("g_idle_add(pc2_startup_fit_monitor,NULL)", text)
         self.assertIn("GameWeldPC2WindowPolicy size=gameweld_pc2_window_policy(", text)
-        self.assertIn("int width_pct = 90, height_pct = 88;", policy)
-        self.assertIn("width_pct = 95; height_pct = 93;", policy)
-        self.assertIn("width_pct = 92; height_pct = 90;", policy)
-        self.assertIn("int w = (logical_w * width_pct) / 100;", policy)
-        self.assertIn("int h = (logical_h * height_pct) / 100;", policy)
-        self.assertIn("if (w > maxw) w = maxw;", policy)
-        self.assertIn("if (h > maxh) h = maxh;", policy)
+        self.assertIn("GameWeldPC2WindowPolicy result = {w, h, 0};", policy)
+        self.assertIn("int soft_max_w = 1650, soft_max_h = 980;", policy)
+        self.assertIn("soft_max_w = 1800; soft_max_h = 1120;", policy)
+        self.assertIn("PC2 monitor sizing: windowed", text)
 
-    def test_4k_does_not_force_old_window_geometry_after_startup(self):
+    def test_no_automatic_maximize_and_manual_maximize_remains(self):
+        self.assertIn("static gboolean pc2_startup_fit_window(void *unused)", text)
+        self.assertIn("g_timeout_add(180,pc2_startup_fit_window,NULL);", text)
+        self.assertIn("gtk_window_resize((GtkWindow*)G.window,ww,hh);", text)
+        self.assertNotIn("pc2_primary_monitor_is_4k", text)
+        self.assertNotIn("g_idle_add(pc2_startup_fit_monitor,NULL)", text)
+        self.assertNotIn("if(pc2_discovery_only())gtk_window_maximize", text)
         self.assertIn("if(gtk_window_is_maximized((GtkWindow*)G.window))", text)
         self.assertIn("gtk_window_unmaximize((GtkWindow*)G.window)", text)
-        self.assertIn("g_idle_add(force_mockup_geometry,NULL);", text)
-        self.assertIn("g_timeout_add(180,force_mockup_geometry,NULL);", text)
-        self.assertIn("if(pc2_discovery_only()){\n        /* Exactly one conditional UHD maximization", text)
+        self.assertIn("gtk_window_maximize((GtkWindow*)G.window);", text)
         self.assertIn("/* Preserve the former PC1 window sizing", text)
 
     def test_library_adapts_and_keeps_game_list_readable(self):
