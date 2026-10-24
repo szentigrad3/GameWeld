@@ -22,17 +22,17 @@ static GameWeldPC2WindowPolicy gameweld_pc2_window_policy(
     if(physical_w <= 0) physical_w = logical_w;
     if(physical_h <= 0) physical_h = logical_h;
 
-    int width_pct = 82, height_pct = 82;
-    int soft_max_w = 1650, soft_max_h = 980;
+    int width_pct = 85, height_pct = 85;
+    int soft_max_w = 1720, soft_max_h = 1020;
     if(physical_w <= 1600 || physical_h <= 900){
         width_pct = 90; height_pct = 88;
         soft_max_w = 1350; soft_max_h = 820;
     }else if(physical_w >= 3840 && physical_h >= 2160){
-        width_pct = 75; height_pct = 80;
-        soft_max_w = 1800; soft_max_h = 1120;
+        width_pct = 78; height_pct = 83;
+        soft_max_w = 2200; soft_max_h = 1280;
     }else if(physical_w >= 2560 && physical_h >= 1440){
-        width_pct = 78; height_pct = 82;
-        soft_max_w = 1750; soft_max_h = 1050;
+        width_pct = 80; height_pct = 83;
+        soft_max_w = 1850; soft_max_h = 1100;
     }
 
     int maxw = logical_w > 40 ? logical_w - 24 : logical_w;
