@@ -140,6 +140,52 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
             with self.assertRaisesRegex(mod.ValidationBlocked, "Unsupported Proton invocation"):
                 mod.run_proton(proton, exe, root / "scratch", steam, {}, logfile, verb="waitforexitandrun")
 
+
+    def test_crypt32_error_extraction_not_swamped_by_module_traces(self):
+        huge_trace = "".join(
+            f"000c:trace:module:MODULE_InitDLL ({i:016x},PROCESS_DETACH) - RETURN 1\n"
+            for i in range(3000))
+        raw = (
+            "GW_CRYPT32_MODULE=C:\\windows\\system32\\crypt32.dll\n"
+            "err:module:import_dll Library msvcrt.dll not found (0xc0000135)\n"
+            "trace:loaddll:build_module Loaded L\"C:\\windows\\system32\\crypt32.dll\": native\n"
+            + huge_trace
+        )
+        lines = mod.summarize_runtime_log(raw, name="x86_64.log")
+        text = "\n".join(lines)
+        self.assertIn("GW_CRYPT32_MODULE=", text)
+        self.assertIn("msvcrt.dll not found", text)
+        self.assertIn("crypt32.dll", text)
+        self.assertNotIn("3000:trace:module:MODULE_InitDLL", text)
+        self.assertIn("PROBE MAIN REACHED; API NOT PASSING", text)
+
+    def test_all_probe_stdout_preserved_when_traces_exceed_old_tail_limit(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-marker-retention-") as temp:
+            root = Path(temp)
+            proton = root / "proton"
+            proton.write_text("#!/bin/sh\n")
+            proton.chmod(0o755)
+            probe = root / "probe.exe"
+            probe.write_bytes(b"MZ")
+            steam = root / "Steam"
+            steam.mkdir()
+            out = root / "output.log"
+            raw = "GW_CRYPT32_MODULE=C:\\windows\\system32\\crypt32.dll\n" + \
+                  ("00a8:trace:module:MODULE_InitDLL\n" * 9500)
+            self.assertGreater(len(raw), 250000)
+
+            def fake_proc(command, **kwargs):
+                return SimpleNamespace(returncode=53, stdout=raw)
+
+            with patch.object(mod.subprocess, "run", side_effect=fake_proc):
+                rc, stdout = mod.run_proton(
+                    proton, probe, root / "scratch", steam, {}, out)
+            self.assertEqual(rc, 53)
+            self.assertEqual(stdout, raw)
+            self.assertEqual(out.read_text(), raw)
+            self.assertIn("GW_CRYPT32_MODULE=", "\n".join(
+                mod.summarize_runtime_log(stdout, name="x86_64.log")))
+
     def test_runtime_log_diagnostics_reports_existing_exit_without_launching(self):
         with tempfile.TemporaryDirectory(prefix="gw-test22-diagnose-") as temp:
             root = Path(temp)
