@@ -320,8 +320,9 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         wine_bin.mkdir(parents=True)
         wine = wine_bin / "wine"
         wine.write_text('#!/bin/sh\n'
-                        'printf "%s\\n%s\\n%s\\n%s\\n" "$WINEDLLOVERRIDES" "$WINEPREFIX" '
-                        '"$WINE_GRAPHICS_DRIVER" "$PROTON_USE_X11_EXCLUSIVE" > "$GAMEWELD_TEST_CAPTURE"\n',
+                        'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$WINEDLLOVERRIDES" "$WINEPREFIX" '
+                        '"$WINE_GRAPHICS_DRIVER" "$PROTON_USE_X11_EXCLUSIVE" "$WINELOADER" '+
+                       '"$WINESERVER" "$WINEFSYNC" > "$GAMEWELD_TEST_CAPTURE"\n',
                         encoding="utf-8")
         wine.chmod(0o755)
         wine_server = wine_bin / "wineserver"
@@ -336,6 +337,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
                 "STEAM_COMPAT_DATA_PATH": str(prefix),
                 "STEAM_COMPAT_TOOL_PATHS": str(runtime),
                 "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(steamroot),
+                "WINEFSYNC": "1",
             }
             (directory / "environ").write_bytes(b"\0".join(
                 (key + "=" + value).encode() for key, value in environment.items()) + b"\0")
@@ -392,6 +394,8 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertTrue(capture.exists(), "Exact fake Proton was not invoked")
         self.assertEqual(capture.read_text().splitlines(), [
             "version=n,b", str(prefix.resolve() / "pfx"), "x11", "WeMod.exe",
+            str(proton.parent / "files" / "bin" / "wine"),
+            str(proton.parent / "files" / "bin" / "wineserver"), "1",
         ])
         # Nothing about the request certifies a trainer is attached.
         self.assertEqual((self.client / "resources/app.asar").read_bytes(),
