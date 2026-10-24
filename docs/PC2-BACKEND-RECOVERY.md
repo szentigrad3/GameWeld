@@ -633,3 +633,34 @@ Field command:
     python3 scripts/pc2-wand-crypt32-rebuild.py --status
 
 If STATUS confirms both staged DLLs, do NOT run `--build --confirm` again because the successful builder intentionally refuses to overwrite its candidate directory. Move to isolated ABI/functionality validation; never disable the installed runtime's historical DLL hash requirement just because new candidate SHA256SUMS self-checks pass.
+
+
+## PC2 Test 22 — compiled candidates exist; verify real crypt32 certificate API in sandbox
+
+The Test21 field status on CachyOS reports TWO staged DLLs with self-consistent SHA256SUMS and valid PE architecture:
+
+- x86_64-windows candidate SHA256 `a5632714187ff8d4c0f13f440aeb311111d3118c2ede9c7ccc381a009915f9c1` (PE32+, not the 0.1.41 historical binary)
+- i386-windows candidate SHA256 `570056b540e2553bde99cab323c2cace0ce33874ce3f055ac7b00401bb7d7dbb` (PE32, not the 0.1.41 historical binary)
+
+These prove that compilation and packaging succeeded, NOT that the edited Wine certificate SHA256 property works. Never treat a `SHA256SUMS` match as equivalent to release attestation or trainer verification.
+
+**Test 22 new files:** `scripts/pc2-crypt32-validation.py` and `scripts/pc2-crypt32-sha256-probe.c`. The probe embeds a fixed DER X.509 test certificate and independently computed SHA-256 / SHA-1 expectations. It checks `CertCreateCertificateContext`, `CertGetCertificateContextProperty` with `CERT_SHA256_HASH_PROP_ID = 107` and SHA1 as a control, `CertSetCertificateContextProperty` for ID 107, and the second SHA256 GetProperty. Both 64-bit and 32-bit builds use installed MinGW tools. The static audit validates candidate checksum integrity, PE exports for those API calls, and digest correctness of the embedded DER fixture.
+
+**1. Read-only static/ABI validation (no Wine or files changed):**
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-crypt32-validation.py --audit
+
+**2. Build two tiny Windows API probe EXEs only under GameWeld's build directory (opt-in):**
+
+    python3 scripts/pc2-crypt32-validation.py --compile-probes --confirm
+
+**3. Optional functional test in a NEW disposable Proton prefix (opt-in, no real game):**
+
+    python3 scripts/pc2-crypt32-validation.py --runtime-probes --confirm --proton /mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton
+
+Step 3 uses the original installed Proton launcher READ ONLY, initializes a brand-new compatdata/pfx under `build/pc2-source/crypt32-validation/runtime/isolated-<id>`, then copies both DLL candidates **only into that temporary prefix's Windows system directories**, never into the installed Proton binaries or real game's compatdata. It runs the two compiled probe EXEs under a native crypt32 override, captures subprocess stdout/stderr and writes reports only under that disposable runtime folder. Strict tests guard symlinked prefixes to avoid writing through links to external Proton files. No Steam game, Wand app, trainer, or existing game's Wine prefix is used. The functional runtime will be classified FAIL/BLOCKED if the API returns incorrect bytes or the Proton bootstrap cannot create a sandbox prefix. Steam's overall runtime behaviour and trainer rendering still require further field validation. **Do not install or substitute the new candidates into the main GE Proton Wand tool, and do not edit GameWeld's historical release hash guard based on synthetic CI.**
+
+Test20 AIO includes Test22 fixture tests only; it NEVER runs real Wine/Proton in CI. Because actual Proton runtime launch involves third-party code, run Step3 only after inspecting Step1/2 outputs and agreeing to an isolated functional test.
