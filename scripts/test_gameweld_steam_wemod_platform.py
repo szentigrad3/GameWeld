@@ -92,6 +92,47 @@ class SteamOwnedWeModTests(unittest.TestCase):
         self.assertEqual(invocations[0][2]["env"]["STEAM_COMPAT_DATA_PATH"],
                          plan["compatdata"])
 
+    def test_proton_output_is_private_and_captured_without_claiming_attach(self):
+        plan = self.prepare()
+        class Observer:
+            @staticmethod
+            def matching_game_processes(*args):
+                return [889]
+        output = self.root / "wemod-session.proton.log"
+        invocations = []
+        def spawn(args, **kwargs):
+            invocations.append(kwargs)
+            return SimpleNamespace(pid=890)
+        result = tool.launch(
+            plan, observer=Observer(),
+            start_steam=lambda _appid: self.fail("Duplicate Steam launch"),
+            spawn=spawn, log=lambda _msg: None, proton_output=output,
+        )
+        self.assertEqual(result["state"], "WEMOD_PROCESS_REQUESTED")
+        self.assertFalse(result["trainer_verified"])
+        self.assertTrue(output.is_file())
+        self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+        self.assertIsNotNone(invocations[0]["stdout"])
+        self.assertEqual(invocations[0]["stderr"], tool.subprocess.STDOUT)
+
+    def test_failed_wemod_exec_retains_private_output_and_fails_closed(self):
+        plan = self.prepare()
+        class Observer:
+            @staticmethod
+            def matching_game_processes(*args):
+                return [889]
+        output = self.root / "failed-wemod.proton.log"
+        statuses = []
+        def spawn(args, **kwargs):
+            raise OSError("mock launcher unavailable")
+        result = tool.launch(plan, observer=Observer(), spawn=spawn,
+                             log=statuses.append, proton_output=output)
+        self.assertEqual(result["state"], "WEMOD_START_FAILED")
+        self.assertFalse(result["trainer_verified"])
+        self.assertTrue(output.is_file())
+        self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(any("WEMOD_START_FAILED" in s for s in statuses))
+
     def test_game_must_appear_before_wemod(self):
         plan = self.prepare()
         calls = []
