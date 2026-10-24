@@ -45,13 +45,30 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", text)
         self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", text)
 
-    def test_4k_startup_maximizes_and_restore_size_uses_workarea(self):
+    def test_screen_policy_uses_monitor_geometry_and_hidpi_scale(self):
+        self.assertIn("static void pc2_primary_monitor_pixels(", text)
+        self.assertIn("gdk_screen_get_monitor_geometry(screen,monitor,&geometry)", text)
+        self.assertIn("gdk_screen_get_monitor_scale_factor(screen,monitor)", text)
+        self.assertIn("geometry.width*scale", text)
+        self.assertIn("geometry.height*scale", text)
+        self.assertIn("return w>=3840 && h>=2160;", text)
+
+    def test_4k_maximizes_but_other_resolutions_remain_windowed(self):
         self.assertIn("static gboolean pc2_startup_fit_monitor(void *unused)", text)
-        self.assertIn("gtk_window_maximize((GtkWindow*)G.window)", text)
+        self.assertIn(
+            "if(pc2_discovery_only()&&G.window&&pc2_primary_monitor_is_4k())",
+            text,
+        )
+        self.assertIn(
+            "if(pc2_discovery_only()&&pc2_primary_monitor_is_4k())gtk_window_maximize",
+            text,
+        )
         self.assertIn("g_idle_add(pc2_startup_fit_monitor,NULL)", text)
-        self.assertIn("if(pc2_discovery_only())gtk_window_maximize", text)
-        self.assertIn("int ww=(sw*90)/100;", text)
-        self.assertIn("int wh=(sh*88)/100;", text)
+        self.assertIn("int width_pct=90,height_pct=88;", text)
+        self.assertIn("width_pct=95;height_pct=93;", text)
+        self.assertIn("width_pct=92;height_pct=90;", text)
+        self.assertIn("int ww=(sw*width_pct)/100;", text)
+        self.assertIn("int wh=(sh*height_pct)/100;", text)
         self.assertIn("if(ww>maxw)ww=maxw;", text)
         self.assertIn("if(wh>maxh)wh=maxh;", text)
 
@@ -60,7 +77,7 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_window_unmaximize((GtkWindow*)G.window)", text)
         self.assertIn("g_idle_add(force_mockup_geometry,NULL);", text)
         self.assertIn("g_timeout_add(180,force_mockup_geometry,NULL);", text)
-        self.assertIn("if(pc2_discovery_only()){\n        /* Exactly one startup maximization", text)
+        self.assertIn("if(pc2_discovery_only()){\n        /* Exactly one conditional UHD maximization", text)
         self.assertIn("/* Preserve the former PC1 window sizing", text)
 
     def test_library_adapts_and_keeps_game_list_readable(self):
