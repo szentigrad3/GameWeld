@@ -77,10 +77,20 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("pc2_load_window_size(&ww,&hh,maxw,maxh)", text)
         self.assertIn("if(w>max_w)w=max_w", text)
         self.assertIn("if(h>max_h)h=max_h", text)
-        self.assertIn("gtk_window_get_size((GtkWindow*)G.window,&w,&h)", text)
-        self.assertIn("gtk_window_is_maximized((GtkWindow*)G.window))return;", text)
+        self.assertIn('"configure-event",(GCallback)pc2_window_configure', text)
+        self.assertIn("static gboolean pc2_window_configure(", text)
+        self.assertIn("gtk_window_get_size((GtkWindow*)window,&w,&h)", text)
+        self.assertIn("pc2_window_last_w=w;", text)
+        self.assertIn("pc2_window_last_h=h;", text)
+        self.assertIn("g_timeout_add(750,pc2_window_save_after_resize,NULL)", text)
+        self.assertIn("pc2_window_save_queued=0;", text)
+        self.assertIn("pc2_window_observation_ready=1;", text)
+        self.assertIn("gtk_window_is_maximized((GtkWindow*)window))return FALSE;", text)
         self.assertIn("pc2_save_window_size();if(G.backend_pid", text)
-        self.assertIn("O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW", text)
+        self.assertIn("gameweld_pc2_state_read(path,out_w,out_h,max_w,max_h)", text)
+        self.assertIn("gameweld_pc2_state_write(path,w,h)", text)
+        self.assertIn('#include "gameweld-pc2-window-state.h"', text)
+        self.assertIn("PC2 saved live window size", text)
 
     def test_reset_window_size_is_available_without_game_side_effects(self):
         self.assertIn("static void on_pc2_window_size_reset(", text)
@@ -88,6 +98,8 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_window_resize((GtkWindow*)G.window,ww,hh);", text)
         self.assertIn("if(pc2_window_state_path(path,sizeof path,0))unlink(path);", text)
         self.assertIn("GameWeld remembers your last normal-window size", text)
+        self.assertIn("pc2_save_window_size();", text)
+        self.assertIn("pc2_window_last_w=ww;pc2_window_last_h=hh;", text)
         self.assertIn(
             'g_signal_connect_data(window_reset,"clicked",'
             '(GCallback)on_pc2_window_size_reset',
