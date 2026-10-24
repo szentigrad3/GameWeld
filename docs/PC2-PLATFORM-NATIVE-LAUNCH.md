@@ -96,8 +96,18 @@ requested WeMod, but its Electron log contained
 the X11 authorization failure, GameWeld now tests each exact XWayland
 DISPLAY/XAUTHORITY pair via a read-only `XOpenDisplay` probe, prioritizes
 the live game's own display, and refuses mixed-server or unauthorized
-handoffs. **This X11 fix still needs a live packaged retest.** Logs must not
-record or copy Xauthority cookies.
+handoffs. A subsequent packaged retest verified `WEMOD_X11_AUTHORIZATION_VERIFIED`
+and the active Wine handoff but showed repeated
+`gpu_process_host.cc(975) GPU process launch failed: error_code=43`
+for WeMod's Chromium GPU child (Astrometica still launched via Steam). This
+is an Electron renderer startup failure, **not** proof of trainer attachment.
+The latest candidate adds only WeMod executable switches
+`--disable-gpu --disable-gpu-compositing --enable-logging=stderr`,
+following the existing GameWeld software-renderer approach and documented
+WeMod support advice. The Steam game retains its graphics configuration.
+A repeated error-code-43 loop is now reported as unverified/failed rather
+than a successful client startup. **The renderer fix still needs a live
+packaged retest.** Logs must not record or copy Xauthority cookies.
 
 When runtime or matching game-process evidence is missing, it does not launch a
 second standalone game EXE or claim success. The existing direct DeckCheatz 1.x
