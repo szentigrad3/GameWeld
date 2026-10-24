@@ -148,6 +148,19 @@ jobs:
           grep -Fq 'Result: PASS (OFFLINE SOURCE BUILD + FIXTURES ONLY)' build/pc2-source/rc1-preflight/rc1-preflight-report.txt
           test -s build/pc2-source/rc1-preflight/gameweld
           test -s build/pc2-source/rc1-preflight/wand-native-backend
+      - name: Stage local PC2 test AppDir with runtime helpers
+        run: |
+          bash -n scripts/pc2-stage-standalone-appdir.sh
+          bash scripts/pc2-stage-standalone-appdir.sh
+          app="build/pc2-source/pc2-test-AppDir"
+          test -x "$app/AppRun"
+          test -s "$app/usr/bin/gameweld"
+          test -s "$app/usr/libexec/wand-native-backend"
+          test -s "$app/usr/libexec/gameweld-deckcheatz-install.py"
+          test -s "$app/usr/libexec/gameweld-deckcheatz-direct.py"
+          test -s "$app/usr/libexec/gameweld-deckcheatz-proton.py"
+          ! find "$app" -type l -print -quit | grep -q .
+          ! find "$app" -type f -name 'wemod.py' -print -quit | grep -q .
       - name: Integrated WeMod Enhancer GUI helper fixtures
         run: |
           python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_enhancer.py' -v
