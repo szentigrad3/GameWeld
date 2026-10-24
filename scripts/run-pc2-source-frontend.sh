@@ -20,6 +20,7 @@ for helper in "$ROOT"/scripts/gameweld-*.py "$ROOT"/scripts/gameweld-*.sh \
   ln -sfn -- "$helper" "$LIBEXEC/${helper##*/}"
 done
 for required in gameweld-wand-discovery.py gameweld-wand-compat-audit.py \
+                gameweld-wand-native-bridge.py \
                 gameweld-trainer-library.py gameweld-wand-patcher.py \
                 gameweld-steam-shortcuts.py gameweld-heroic-provider.py \
                 gameweld-lutris-provider.py; do
