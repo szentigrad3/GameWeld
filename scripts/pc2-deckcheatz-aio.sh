@@ -31,6 +31,10 @@ REPORT="$OUT/deckcheatz-aio-report.txt"
   gcc -std=c11 -Wall -Wextra -Werror \
       scripts/test-pc2-window-policy.c -o "$OUT/pc2-window-policy-test"
   "$OUT/pc2-window-policy-test"
+  printf '%s\n' '=== Native C window-state save / close / reopen roundtrip ==='
+  gcc -std=gnu11 -Wall -Wextra -Werror \
+      scripts/test-pc2-window-state.c -o "$OUT/pc2-window-state-test"
+  "$OUT/pc2-window-state-test"
   printf '%s\n' '=== GTK GUI source syntax ==='
   if pkg-config --exists gtk+-3.0 && command -v gcc >/dev/null; then
       gcc -fsyntax-only -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
