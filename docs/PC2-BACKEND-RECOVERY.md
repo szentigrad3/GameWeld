@@ -664,3 +664,18 @@ These prove that compilation and packaging succeeded, NOT that the edited Wine c
 Step 3 uses the original installed Proton launcher READ ONLY, initializes a brand-new compatdata/pfx under `build/pc2-source/crypt32-validation/runtime/isolated-<id>`, then copies both DLL candidates **only into that temporary prefix's Windows system directories**, never into the installed Proton binaries or real game's compatdata. It runs the two compiled probe EXEs under a native crypt32 override, captures subprocess stdout/stderr and writes reports only under that disposable runtime folder. Strict tests guard symlinked prefixes to avoid writing through links to external Proton files. No Steam game, Wand app, trainer, or existing game's Wine prefix is used. The functional runtime will be classified FAIL/BLOCKED if the API returns incorrect bytes or the Proton bootstrap cannot create a sandbox prefix. Steam's overall runtime behaviour and trainer rendering still require further field validation. **Do not install or substitute the new candidates into the main GE Proton Wand tool, and do not edit GameWeld's historical release hash guard based on synthetic CI.**
 
 Test20 AIO includes Test22 fixture tests only; it NEVER runs real Wine/Proton in CI. Because actual Proton runtime launch involves third-party code, run Step3 only after inspecting Step1/2 outputs and agreeing to an isolated functional test.
+
+
+### Test 22 field result — native DLL sandbox loader exits 53 before any API marker
+
+The user ran the 24 October 2026 Test22 static audit and dual-architecture probe build on CachyOS; both passed. The new disposable runtime session was `build/pc2-source/crypt32-validation/runtime/isolated-103b6d3f1356`, using the existing `/mnt/games/Steam/compatibilitytools.d/GE-Proton-Wand-SHA256/proton` launcher in READ-ONLY mode. Both API probes reported `exit=53` and `0/4` markers with no `GW_CRYPT32_MODULE` output. Hence the Windows certificate test did NOT emit any of its diagnostic markers and the functional result is BLOCKED; it is not evidence that ID 107 calculates the wrong digest. The Windows test EXE never returns 53 by design (its explicit return codes are 0,2,3,9,10,11,12,13,14,15), so this is likely a Proton/Wine launcher or Windows DLL loader failure, not an executed assertion failure. The actual failure cause cannot be determined without the three sandbox logs.
+
+The Test22 script now implements **read-only** `--diagnose-runtime`, which selects the latest disposable `isolated-<hex>` session and prints diagnostic excerpts and tails from `bootstrap.log`, `x86_64.log`, `i386.log` and `report.txt`, refusing symlinked paths. It launches no Wine/Proton processes, touches no game or installed Steam tool, and does not repatch or rebuild candidates.
+
+Run:
+
+    cd /mnt/other/github/GameWeld
+    git pull --ff-only
+    python3 scripts/pc2-crypt32-validation.py --diagnose-runtime
+
+Send the resulting terminal output (or paste the three log files). Once the loader error is established, adjust only the disposable runtime procedure or diagnose genuine candidate PE loader incompatibility. Do not change GameWeld's production historical crypt32 hash gate or reinstall any DLLs from these unverified candidates.
