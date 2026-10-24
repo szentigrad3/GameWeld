@@ -67,6 +67,7 @@ extern GtkWidget *gtk_window_new(int);
 extern void gtk_window_set_title(GtkWindow *, const char *);
 extern void gtk_window_set_default_size(GtkWindow *, int, int);
 extern void gtk_window_resize(GtkWindow *, int, int);
+extern void gtk_window_get_size(GtkWindow *, int *, int *);
 extern void gtk_window_set_position(GtkWindow *, int);
 extern void gtk_window_set_icon_name(GtkWindow *, const char *);
 extern GtkWidget *gtk_box_new(int, int);
@@ -1815,6 +1816,52 @@ static void pc2_primary_monitor_pixels(int *physical_w,int *physical_h){
     if(physical_w)*physical_w=w;
     if(physical_h)*physical_h=h;
 }
+/* PC2 saves ONLY last normal-window dimensions. This is independent of
+ * Steam, Wine, DeckCheatz, and the rest of GameWeld's user configuration.
+ * The state is deliberately not a requested maximize/fullscreen mode. */
+static int pc2_window_state_path(char *out,size_t cap,int create_dir){
+    const char *xdg=getenv("XDG_CONFIG_HOME");
+    const char *home=getenv("HOME");
+    char dir[4096]={0};
+    int written=-1;
+    if(xdg&&xdg[0]=='/')
+        written=snprintf(dir,sizeof dir,"%s/gameweld",xdg);
+    else if(home&&home[0]=='/')
+        written=snprintf(dir,sizeof dir,"%s/.config/gameweld",home);
+    if(written<=0||written>=(int)sizeof dir)return 0;
+    if(create_dir&&g_mkdir_with_parents(dir,0700)!=0)return 0;
+    written=snprintf(out,cap,"%s/pc2-window-size.txt",dir);
+    return written>0 && (size_t)written<cap;
+}
+static int pc2_load_window_size(int *out_w,int *out_h,int max_w,int max_h){
+    char path[4096]={0};
+    if(!out_w||!out_h||!pc2_window_state_path(path,sizeof path,0))return 0;
+    FILE *file=fopen(path,"r");
+    if(!file)return 0;
+    int w=0,h=0;
+    int ok=fscanf(file,"%d %d",&w,&h)==2;
+    fclose(file);
+    if(!ok||w<640||h<480||w>8192||h>8192)return 0;
+    if(w>max_w)w=max_w;
+    if(h>max_h)h=max_h;
+    if(w<1||h<1)return 0;
+    *out_w=w;*out_h=h;
+    return 1;
+}
+static void pc2_save_window_size(void){
+    if(!pc2_discovery_only()||!G.window||
+       gtk_window_is_maximized((GtkWindow*)G.window))return;
+    int w=0,h=0;
+    gtk_window_get_size((GtkWindow*)G.window,&w,&h);
+    if(w<640||h<480||w>8192||h>8192)return;
+    char path[4096]={0};
+    if(!pc2_window_state_path(path,sizeof path,1))return;
+    int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,0600);
+    if(fd<0)return;
+    dprintf(fd,"%d %d\\n",w,h);
+    close(fd);
+}
+
 static void recommended_window_geometry(int *out_w,int *out_h){
     /* Size GameWeld from the primary monitor work area instead of pinning the
      * UI to the old 1480x900 mock-up.  The goal is to use the extra vertical
@@ -1835,8 +1882,14 @@ static void recommended_window_geometry(int *out_w,int *out_h){
         pc2_primary_monitor_pixels(&physical_w,&physical_h);
         GameWeldPC2WindowPolicy size=gameweld_pc2_window_policy(
             sw,sh,physical_w,physical_h);
-        if(out_w)*out_w=size.width;
-        if(out_h)*out_h=size.height;
+        int ww=size.width,hh=size.height;
+        /* Prefer the user's last manually chosen normal-window size when
+         * possible, but always clamp it to the current monitor workarea. */
+        int maxw=sw>40?sw-24:sw;
+        int maxh=sh>60?sh-32:sh;
+        pc2_load_window_size(&ww,&hh,maxw,maxh);
+        if(out_w)*out_w=ww;
+        if(out_h)*out_h=hh;
         return;
     }
     /* Preserve the former PC1 window sizing, including its max bounds. */
@@ -2703,7 +2756,7 @@ static void on_search_scope_changed(GtkComboBox*w,void*d){
         apply_global_game_search(q,scope);nav_activate(G.nav_library,"library");
     }
 }
-static void on_destroy(GtkWidget*w,void*d){(void)w;(void)d;if(G.backend_pid>0)kill(G.backend_pid,SIGTERM);gtk_main_quit();}
+static void on_destroy(GtkWidget*w,void*d){(void)w;(void)d;pc2_save_window_size();if(G.backend_pid>0)kill(G.backend_pid,SIGTERM);gtk_main_quit();}
 
 static GtkWidget *card(const char *title,const char *detail,GtkWidget **detail_out){GtkWidget *c=box(GTK_ORIENTATION_VERTICAL,6);style(c,"card");margins(c,4);GtkWidget*t=label(title,"card-title");pack(c,t,0);GtkWidget*x=label(detail,"muted");gtk_label_set_line_wrap((GtkLabel*)x,TRUE);pack(c,x,0);if(detail_out)*detail_out=x;return c;}
 
