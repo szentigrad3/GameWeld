@@ -119,6 +119,9 @@ extern void gtk_window_iconify(GtkWindow *);
 extern void gtk_window_maximize(GtkWindow *);
 extern void gtk_window_unmaximize(GtkWindow *);
 extern GtkWidget *gtk_scrolled_window_new(void *, void *);
+extern GtkWidget *gtk_expander_new(const char *);
+extern void gtk_widget_set_no_show_all(GtkWidget *, gboolean);
+extern void gtk_widget_hide(GtkWidget *);
 extern void gtk_scrolled_window_set_policy(void *, int, int);
 extern GtkWidget *gtk_list_box_new(void);
 extern GtkWidget *gtk_list_box_row_new(void);
@@ -309,6 +312,10 @@ struct App {
     GtkWidget *overview_launch_custom;
     GtkWidget *overview_launch_game_only;
     GtkWidget *overview_launch_hint;
+    GtkWidget *pc2_deckcheatz_overview_play;
+    GtkWidget *pc2_deckcheatz_library_play;
+    GtkWidget *pc2_deckcheatz_overview_status;
+    GtkWidget *pc2_deckcheatz_library_status;
     GtkWidget *wand_patcher_prefix_entry;
     GtkWidget *wand_patcher_install_entry;
     GtkWidget *wand_patcher_exe_entry;
@@ -1834,6 +1841,23 @@ static void refresh_ui(void) {
         snprintf(b,sizeof b,"<span foreground=\"#f4f6fa\" weight=\"bold\">Game Sources</span>\n<span foreground=\"#28e57b\" weight=\"bold\">Steam %d • Heroic %d • Lutris %d</span>\n<span foreground=\"#aeb9c7\">%d installed manifests • %d Steam shortcuts • Lutris prefix-validation</span>",G.steam_game_count,G.heroic_game_count,G.lutris_game_count,G.steam_manifest_game_count,G.steam_shortcut_count);
         gtk_label_set_markup((GtkLabel*)G.top_steam_status,b);
     }
+    if(pc2_discovery_only()){
+        int allowed=g&&game_is_steam(g)&&!game_is_steam_shortcut(g)
+                    &&g->install_dir[0]&&g->appid[0];
+        if(G.pc2_deckcheatz_overview_play)
+            gtk_widget_set_sensitive(G.pc2_deckcheatz_overview_play,allowed);
+        if(G.pc2_deckcheatz_library_play)
+            gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,allowed);
+        const char *message= !g?"Select an installed Steam game to use WeMod.":
+            !allowed?"DeckCheatz direct play supports installed Steam Windows games only.":
+            !strcmp(g->appid,"2353250")?
+            "Astrometica: live WeMod trainer validated on this PC. A prefix consent is still required.":
+            "Experimental for this game: preview and prefix confirmation are required before starting.";
+        if(G.pc2_deckcheatz_overview_status)
+            set_label(G.pc2_deckcheatz_overview_status,message);
+        if(G.pc2_deckcheatz_library_status)
+            set_label(G.pc2_deckcheatz_library_status,message);
+    }
     if(g){
         const char *src=game_source_name(g);
         refresh_artwork(g);set_label(G.hero_name,g->name);
@@ -2672,41 +2696,51 @@ static GtkWidget *build_home(void){
     pack(copy,label("CURRENT GAME","eyebrow"),0);
     GtkWidget*idrow=box(GTK_ORIENTATION_HORIZONTAL,13);GtkWidget*cover=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(cover,"cover-frame");G.cover_image=gtk_image_new();gtk_widget_set_size_request(G.cover_image,155,220);pack(cover,G.cover_image,0);pack(idrow,cover,0);
     GtkWidget*ids=box(GTK_ORIENTATION_VERTICAL,7);G.hero_name=label("Select a game",NULL);gtk_widget_set_name(G.hero_name,"game-title");gtk_label_set_line_wrap((GtkLabel*)G.hero_name,TRUE);pack(ids,G.hero_name,0);G.hero_meta=label("Steam / Heroic • App ID —",NULL);gtk_widget_set_name(G.hero_meta,"meta");gtk_label_set_line_wrap((GtkLabel*)G.hero_meta,TRUE);pack(ids,G.hero_meta,0);pack(ids,meta_chip("LOCAL / SINGLE PLAYER"),0);G.game_detected_detail=label("Choose a game from Library to review its trainer, runtime and exact launch path before starting the session.","muted");gtk_label_set_line_wrap((GtkLabel*)G.game_detected_detail,TRUE);pack(ids,G.game_detected_detail,1);pack(idrow,ids,1);pack(copy,idrow,1);
-    GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);
     if(pc2_discovery_only()){
-        GtkWidget*safe=button("Launch Steam game only (opt-in)","primary-action");
+        GtkWidget*direct=button("Play with WeMod — DeckCheatz (experimental)","primary-action");
+        G.pc2_deckcheatz_overview_play=direct;
+        g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_deckcheatz_experimental,NULL,NULL,0);
+        pack(copy,direct,0);
+        G.pc2_deckcheatz_overview_status=label("Select an installed Steam game to use WeMod.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)G.pc2_deckcheatz_overview_status,TRUE);
+        pack(copy,G.pc2_deckcheatz_overview_status,0);
+    }
+    GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);if(pc2_discovery_only()){gtk_widget_set_no_show_all(plays,TRUE);gtk_widget_hide(plays);}
+    if(pc2_discovery_only()){
+        GtkWidget*advanced=gtk_expander_new("Advanced Steam / WeMod diagnostics");
+        GtkWidget*diagbox=box(GTK_ORIENTATION_VERTICAL,8);
+        gtk_container_add(advanced,diagbox);
+        pack(copy,advanced,0);
+        GtkWidget*safe=button("Launch Steam game only (opt-in)","action");
         gtk_widget_set_sensitive(safe,pc2_steam_launch_allowed());
         g_signal_connect_data(safe,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);
-        pack(copy,safe,0);
+        pack(diagbox,safe,0);
         GtkWidget*observe=button("Check Steam session (read-only)","action");
         g_signal_connect_data(observe,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);
-        pack(copy,observe,0);
+        pack(diagbox,observe,0);
         GtkWidget*wand_check=button("Check Wand Patch (no game launch)","action");
         g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
-        pack(copy,wand_check,0);
+        pack(diagbox,wand_check,0);
         GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");
         g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);
-        pack(copy,deckcheatz_detect,0);
+        pack(diagbox,deckcheatz_detect,0);
         GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");
         g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);
-        pack(copy,deckcheatz_install,0);
+        pack(diagbox,deckcheatz_install,0);
         GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");
         g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);
-        pack(copy,deckcheatz_preview,0);
-        GtkWidget*deckcheatz_test=button("Play with WeMod — DeckCheatz (experimental)","action");
-        g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_deckcheatz_experimental,NULL,NULL,0);
-        pack(copy,deckcheatz_test,0);
+        pack(diagbox,deckcheatz_preview,0);
         GtkWidget*native_readiness=button("Check GameWeld Managed Wand (read-only)","action");
         g_signal_connect_data(native_readiness,"clicked",(GCallback)on_pc2_native_check,NULL,NULL,0);
-        pack(copy,native_readiness,0);
+        pack(diagbox,native_readiness,0);
         GtkWidget*proven=button("Play Game + Wand (managed Proton, opt-in)","action");
         g_signal_connect_data(proven,"clicked",(GCallback)on_pc2_native_play,NULL,NULL,0);
-        pack(copy,proven,0);
+        pack(diagbox,proven,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
             "Prior PC2 handoffs produced a white Wand window. Check integrated managed readiness; CLOSE the game before using managed Play.":
             "PC2 game-only launch is disabled. Check GameWeld managed readiness, then CLOSE the selected game before managed Play.","muted");
         gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
-        pack(copy,notice,0);
+        pack(diagbox,notice,0);
     }
     pack(spot,copy,0);
     GtkWidget*art=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(art,"hero-art");G.hero_image=gtk_image_new();gtk_widget_set_size_request(G.hero_image,520,300);pack(art,G.hero_image,1);pack(spot,art,1);pack(page,spot,0);
