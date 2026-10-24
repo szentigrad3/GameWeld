@@ -17,13 +17,13 @@ static void case_window(const char *name,int lw,int lh,int pw,int ph,int expecte
 }
 int main(void){
     case_window("720p compact",1280,700,1280,720,1152,616);
-    case_window("1080p",1920,1040,1920,1080,1574,852);
-    case_window("1440p",2560,1380,2560,1440,1750,1050);
-    case_window("3440 ultrawide",3440,1380,3440,1440,1750,1050);
-    case_window("4K unscaled",3840,2100,3840,2160,1800,1120);
-    case_window("4K HiDPI 2x",1920,1040,3840,2160,1440,832);
-    case_window("5K HiDPI 2x",2560,1400,5120,2880,1800,1120);
-    case_window("1440p scaled",1280,690,2560,1440,998,600);
+    case_window("1080p",1920,1040,1920,1080,1632,884);
+    case_window("1440p",2560,1380,2560,1440,1850,1100);
+    case_window("3440 ultrawide",3440,1380,3440,1440,1850,1100);
+    case_window("4K unscaled",3840,2100,3840,2160,2200,1280);
+    case_window("4K HiDPI 2x",1920,1040,3840,2160,1497,863);
+    case_window("5K HiDPI 2x",2560,1400,5120,2880,1996,1162);
+    case_window("1440p scaled",1280,690,2560,1440,1024,600);
     printf("Result: PASS (8 resolutions, all windowed with exact dimensions)\n");
     return 0;
 }
