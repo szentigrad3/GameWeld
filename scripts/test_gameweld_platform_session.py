@@ -54,6 +54,27 @@ class PlatformSessionTests(unittest.TestCase):
         self.assertEqual(module.observe("2353250", self.exe, self.compat, self.proc)
                          ["game_process_pids"], [])
 
+    def test_exact_wineprefix_is_accepted_when_proton_child_lacks_compatdata_env(self):
+        self.proc_entry()
+        envfile = self.proc / "123" / "environ"
+        envfile.write_bytes(
+            b"SteamAppId=2353250\0WINEPREFIX=" +
+            str((self.compat / "pfx").resolve()).encode() + b"\0"
+        )
+        report = module.observe("2353250", self.exe, self.compat, self.proc)
+        self.assertEqual(report["game_process_pids"], [123])
+        self.assertFalse(report["trainer_attached_verified"])
+
+    def test_wrong_wineprefix_is_not_accepted(self):
+        self.proc_entry()
+        other = self.root / "Steam" / "steamapps" / "compatdata" / "888888" / "pfx"
+        other.mkdir(parents=True)
+        (self.proc / "123" / "environ").write_bytes(
+            b"SteamAppId=2353250\0WINEPREFIX=" + str(other).encode() + b"\0"
+        )
+        self.assertEqual(module.observe("2353250", self.exe, self.compat, self.proc)
+                         ["game_process_pids"], [])
+
     def test_different_appid_is_ignored(self):
         self.proc_entry(appid="999999")
         self.assertFalse(module.observe("2353250", self.exe, self.compat, self.proc)
