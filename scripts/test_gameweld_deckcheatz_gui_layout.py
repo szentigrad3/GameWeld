@@ -70,6 +70,25 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_window_maximize((GtkWindow*)G.window);", text)
         self.assertIn("/* Preserve the former PC1 window sizing", text)
 
+    def test_saved_window_size_is_clamped_and_respects_manual_resize(self):
+        self.assertIn("static int pc2_window_state_path(", text)
+        self.assertIn("pc2-window-size.txt", text)
+        self.assertIn('getenv("XDG_CONFIG_HOME")', text)
+        self.assertIn("pc2_load_window_size(&ww,&hh,maxw,maxh)", text)
+        self.assertIn("if(w>max_w)w=max_w", text)
+        self.assertIn("if(h>max_h)h=max_h", text)
+        self.assertIn("gtk_window_get_size((GtkWindow*)G.window,&w,&h)", text)
+        self.assertIn("gtk_window_is_maximized((GtkWindow*)G.window))return;", text)
+        self.assertIn("pc2_save_window_size();if(G.backend_pid", text)
+        self.assertIn("O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW", text)
+
+    def test_reset_window_size_is_available_without_game_side_effects(self):
+        self.assertIn("static void on_pc2_window_size_reset(", text)
+        self.assertIn('button("Reset window size","action")', text)
+        self.assertIn("gtk_window_resize((GtkWindow*)G.window,ww,hh);", text)
+        self.assertIn("if(pc2_window_state_path(path,sizeof path,0))unlink(path);", text)
+        self.assertIn("GameWeld remembers your last normal-window size", text)
+
     def test_library_adapts_and_keeps_game_list_readable(self):
         self.assertIn("static void pc2_library_size_allocate(", text)
         self.assertIn("gtk_orientable_set_orientation(body", text)
