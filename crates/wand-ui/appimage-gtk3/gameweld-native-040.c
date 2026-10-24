@@ -2676,18 +2676,15 @@ static GtkWidget *build_home(void){
         GtkWidget*wand_check=button("Check Wand Patch (no game launch)","action");
         g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         pack(copy,wand_check,0);
-        GtkWidget*live_wand=button("Launch Wand in Running Steam Game (opt-in)","action");
-        g_signal_connect_data(live_wand,"clicked",(GCallback)on_pc2_wemod_live_launch,NULL,NULL,0);
-        pack(copy,live_wand,0);
-        GtkWidget*retry_wand=button("Retry Wand (GPU Off, opt-in)","action");
-        g_signal_connect_data(retry_wand,"clicked",(GCallback)on_pc2_wemod_live_render,NULL,NULL,0);
-        pack(copy,retry_wand,0);
+        GtkWidget*native_readiness=button("Check Wand Native 0.1.41 (read-only)","action");
+        g_signal_connect_data(native_readiness,"clicked",(GCallback)on_pc2_native_check,NULL,NULL,0);
+        pack(copy,native_readiness,0);
         GtkWidget*proven=button("Play with Wand Native 0.1.41 (opt-in)","action");
         g_signal_connect_data(proven,"clicked",(GCallback)on_pc2_native_play,NULL,NULL,0);
         pack(copy,proven,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
-            "Start the game in Steam, then Launch Wand in Running Steam Game (opt-in). The recovered direct Wine/X11 handoff changes no Steam launch options.":
-            "Game launch is disabled. Start the game in Steam, then use Launch Wand in Running Steam Game (opt-in) to join its existing Proton Wine server.","muted");
+            "Previously tested PC2 live handoffs showed a white Wand window. Check the old Wand Native 0.1.41 setup, then CLOSE the game before using its managed Play option.":
+            "PC2 game-only launch is disabled. Check Wand Native 0.1.41 readiness, then CLOSE any existing game and use its opt-in managed Play action.","muted");
         gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
         pack(copy,notice,0);
     }
@@ -4143,7 +4140,7 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
         pack(eh,live_launch,0);pack(eh,live_render,0);
         pack(eh,native_check,0);pack(eh,native_play,0);
-        GtkWidget*note=label("Verification checks patch files only. The default opt-in live launch now restores Wand Native's active-Wineserver and Wand-only X11 path, not a second proton runinprefix. Close any old Wand window before retrying. Trainer attachment remains unverified.","muted");
+        GtkWidget*note=label("Test 19 recovers the previously validated Wand Native 0.1.41 single managed game + Wand session. First run Check Wand Native 0.1.41; the game must be CLOSED before managed Play. Earlier live PC2 handoffs, including the active-Wineserver and Wand-only X11 path, still showed a white window and are retained below only for diagnostics.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
