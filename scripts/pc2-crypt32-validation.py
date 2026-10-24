@@ -219,6 +219,50 @@ def _safe_replace_prefix_dll(pfx: Path, arch: str, binary: Path) -> Path:
 
 
 
+
+def stage_probe_beside_dll(session: Path, arch: str) -> tuple[Path, Path]:
+    """Isolate each probe/DLL pair in a private application directory.
+
+    Windows looks in the executable's directory before system32 for ordinary
+    DLL imports. Native crypt32 is requested as CRYPT32.dll, so use exactly
+    that filename (case-sensitive Linux host). Never overwrite the Proton
+    prefix's Wine-managed system32/syswow64 placeholder modules.
+    """
+    if arch not in ARCHS:
+        raise ValidationBlocked("Invalid crypt32 probe architecture")
+    if session.is_symlink() or not session.is_dir():
+        raise ValidationBlocked("Unsafe disposable runtime session")
+    sandbox = session / ("native-" + ARCHS[arch][2])
+    if sandbox.exists() or sandbox.is_symlink():
+        raise ValidationBlocked("Existing application-local DLL stage refused")
+    original = probe_path(arch)
+    binary = candidate(arch)
+    if not original.is_file() or original.is_symlink():
+        raise ValidationBlocked("Original Windows probe EXE missing or unsafe")
+    if not binary.is_file() or binary.is_symlink():
+        raise ValidationBlocked("Candidate crypt32 DLL missing or unsafe")
+    sandbox.mkdir(parents=False, exist_ok=False)
+    staged_exe = sandbox / original.name
+    staged_dll = sandbox / "CRYPT32.dll"
+    shutil.copyfile(original, staged_exe)
+    shutil.copyfile(binary, staged_dll)
+    if sha256(staged_exe) != sha256(original) or sha256(staged_dll) != sha256(binary):
+        raise ValidationBlocked("Scratch application-local EXE/DLL checksum mismatch")
+    print(arch + " app-local candidate staged (disposable): " + str(staged_dll))
+    print(arch + " app-local candidate SHA256: " + sha256(staged_dll))
+    return staged_exe, staged_dll
+
+
+def is_exact_staged_module(module_path: str, staged_dll: Path) -> bool:
+    """Require the Wine-reported module path to identify OUR candidate file.
+
+    C:\\windows\\system32\\CRYPT32.dll (built-in) must never pass here.
+    """
+    converted = module_path.replace("/", "\\").lower()
+    expected_suffix = str(staged_dll).replace("/", "\\").lower()
+    return converted.endswith(expected_suffix)
+
+
 def print_loader_failures(log: str) -> None:
     """Give actionable startup errors, not just 100 Wine DLL trace lines."""
     matches = [
@@ -264,6 +308,7 @@ def runtime_probes(proton: Path) -> int:
     print("No existing Steam game prefix, game, Wand process or trainer is used.")
     print("Bootstrap mode: Proton run (initializes new Proton compatibility prefix)")
     print("Probe mode: Proton runinprefix (direct Wine executable, no steam.exe game shim)")
+    print("Candidate layout: application-local CRYPT32.dll beside each disposable EXE; prefix system DLLs untouched")
     # Proton only invokes CompatData.setup_prefix() with 'run' and
     # 'waitforexitandrun', not 'runinprefix'. Bootstrap the scratch prefix
     # with the normal Proton setup path; its steam.exe shim may return an
@@ -300,12 +345,18 @@ def runtime_probes(proton: Path) -> int:
             "Baseline Win32 executable failed before main() with unmodified built-in crypt32; "
             "no candidate DLLs copied. Examine *-builtin-control.log in this disposable session.")
 
-    for arch in ARCHS:
-        _safe_replace_prefix_dll(pfx, arch, candidate(arch))
+    # Test only application-local candidate copies. Proton/Wine controls
+    # prefix system32/syswow64 and may resolve modules from the immutable
+    # Proton distribution rather than staged files in those directories.
+    # The Wine loader searches the executable's directory first; copy our
+    # EXE and the case-exact CRYPT32.dll into a fresh, per-arch sandbox.
+    # The prefix itself and installed Proton distributions stay unchanged.
+    staged = {arch: stage_probe_beside_dll(session, arch) for arch in ARCHS}
     checked = {}
     for arch in ARCHS:
+        staged_exe, staged_dll = staged[arch]
         rc, output = run_proton(
-            proton, probe_path(arch), session, steam,
+            proton, staged_exe, session, steam,
             {"WINEDLLOVERRIDES": "crypt32=n",
              "WINEDEBUG": "-all,+module,+loaddll,+seh"},
             session / (ARCHS[arch][2] + ".log"))
@@ -316,11 +367,9 @@ def runtime_probes(proton: Path) -> int:
         # Require native-only crypt32 loading, never native-then-builtin
         # fallback. The probe names the actual DLL module it imported.
         module = re.search(r"(?m)^GW_CRYPT32_MODULE=([^\r\n]+)", output)
-        expected_subdir = ("system32" if arch == "x86_64-windows" else "syswow64")
         located_in_sandbox = bool(
-            module and
-            ("\\windows\\" + expected_subdir + "\\crypt32.dll") in
-            module.group(1).replace("/", "\\").lower()
+            module and is_exact_staged_module(module.group(1), staged_dll)
+            and sha256(staged_dll) == sha256(candidate(arch))
         )
         checked[arch] = rc == 0 and all(x in output for x in markers) and located_in_sandbox
         print(arch + " native-only DLL module path: " +
