@@ -34,3 +34,25 @@ DeckCheatz's preconfigured-prefix/Steam wrapper approach may avoid relying on Ga
 ## Next implementation slice
 
 Build a **read-only `deckcheatz` provider discovery and launch-plan preview** in GameWeld without importing AGPL code or starting the trainer. Add fixture tests for `%command%` argument preservation, noninteractive fallback, per-game opt-in and rejection of untrusted paths. After review, implement and test a real opt-in GUI handoff.
+
+
+## PC2 no-Steam-options direct provider prototype (2026-10-24)
+
+Implementation now exists in `scripts/gameweld-deckcheatz-direct.py` (MIT GameWeld code, **NO DeckCheatz source vendored**) with synthetic fixture tests `scripts/test_gameweld_deckcheatz_direct.py`. The optional DeckCheatz 1.x checkout remains a user-chosen external AGPL application.
+
+GameWeld's PC2 GTK Overview and Library each have a **DeckCheatz 1.x — Detect (no Steam options)** button. Detection is read-only; it does not install anything, patch Wine, alter the game's Steam LaunchOptions, or start a game/trainer. It checks for a recognized external 1.x tree. An installed checkout elsewhere may be selected for scanner discovery using `GAMEWELD_DECKCHEATZ_LAUNCHER=/absolute/path/to/wemod`.
+
+The new backend's **read-only launch plan** is explicitly supplied the installed Steam AppID, executable inside the matching `steamapps/common/<game>` install path, Proton launcher, existing `steamapps/compatdata/<appid>` game prefix, and Steam client root. It validates the external upstream 1.x layout, AppID manifest, .exe path/prefix and Proton executable. It builds the same runner vector that DeckCheatz expects internally, without changing Steam preferences or Steam's `localconfig.vdf`: `python3 /path/to/external/wemod /path/to/GE-Proton/proton waitforexitandrun /library/steamapps/common/Game/Game.exe`. The exact argv and Steam compatibility env are rendered as JSON; there are no hand-edited `%command%` fields or shell concatenations.
+
+Read-only discovery:
+
+    cd /mnt/other/github/GameWeld
+    python3 scripts/gameweld-deckcheatz-direct.py --discover
+
+Read-only plan for an explicitly confirmed game, after filling in the paths to actual installed software:
+
+    python3 scripts/gameweld-deckcheatz-direct.py --preview --appid 2353250 --launcher /absolute/path/to/wemod-launcher/wemod --proton /absolute/path/to/GE-Proton/proton --game-exe /absolute/path/to/Astrometica.exe --install-dir /absolute/path/to/steamapps/common/Astrometica --compatdata /absolute/path/to/steamapps/compatdata/2353250 --steam-root /absolute/path/to/Steam
+
+An experimental direct-launch option exists, but is **not enabled as a one-click PC2 GTK play button**; the launcher is not yet field-verified with Steam DRM, Proton prefix ownership, game process readiness or actual trainer injection. It requires both the explicit flags `--launch --confirm-prefix-changes --experimental-direct-launch` and all validated paths. A no-op preview cannot launch even if flags are accidentally supplied. External upstream may modify the selected game prefix or download WeMod, and its own behavior is outside GameWeld's control. GameWeld never runs `sudo`, edits Steam LaunchOptions, or disables its separate managed Wand crypt32 hash validation.
+
+IMPORTANT: DeckCheatz upstream documents Steam/Lutris prefix commands and warns that manually running outside a launcher is difficult. A manually reconstructed Proton argv is **experimental** and not equivalent to Steam's actual native launcher or guaranteed SteamAPI initialization. The UI will offer per-game settings, preview, consent and live launch only when this provider has successfully completed end-to-end field validation. For now, the new GUI control is **read-only detection**, not a false 'Play' button.
