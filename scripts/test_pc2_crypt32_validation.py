@@ -104,6 +104,43 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
 
 
 
+
+    def test_app_local_stage_is_case_exact_and_never_writes_proton_prefix(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-app-local-") as temp:
+            root = Path(temp)
+            validation = root / "validation"
+            original_build = root / "candidate"
+            session = validation / "runtime/isolated-aaaaaaaaaaaa"
+            session.mkdir(parents=True)
+            for arch in mod.ARCHS:
+                dll = original_build / "candidate" / arch / "crypt32.dll"
+                dll.parent.mkdir(parents=True)
+                dll.write_bytes(b"MZ-CANDIDATE-" + arch.encode())
+                exe = validation / "probes" / (mod.ARCHS[arch][2] + "-crypt32-property.exe")
+                exe.parent.mkdir(parents=True, exist_ok=True)
+                exe.write_bytes(b"MZ-PROBE-" + arch.encode())
+
+            with patch.object(mod, "TESTROOT", validation):
+                with patch.object(mod, "BUILD", original_build):
+                    saved = {}
+                    for arch in mod.ARCHS:
+                        exe, dll = mod.stage_probe_beside_dll(session, arch)
+                        self.assertTrue(exe.is_file())
+                        self.assertEqual(dll.name, "CRYPT32.dll")
+                        self.assertEqual(dll.read_bytes(),
+                                         b"MZ-CANDIDATE-" + arch.encode())
+                        self.assertEqual(dll.parent.name, "native-" + mod.ARCHS[arch][2])
+                        module = "Z:" + str(dll).replace("/", "\\")
+                        self.assertTrue(mod.is_exact_staged_module(module, dll))
+                        self.assertFalse(mod.is_exact_staged_module(
+                            "C:\\windows\\system32\\CRYPT32.dll", dll))
+                        saved[arch] = dll
+                    with self.assertRaisesRegex(mod.ValidationBlocked, "Existing application-local"):
+                        mod.stage_probe_beside_dll(session, "x86_64-windows")
+            self.assertFalse((session / "pfx").exists())
+            for arch, dll in saved.items():
+                self.assertEqual(dll.read_bytes(), b"MZ-CANDIDATE-" + arch.encode())
+
     def test_direct_wine_runner_does_not_invoke_steam_game_shim_for_probes(self):
         with tempfile.TemporaryDirectory(prefix="gw-test22-launchverb-") as temp:
             root = Path(temp)
@@ -312,10 +349,14 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                 for part in ("system32", "syswow64"):
                     dest = pfx / "drive_c/windows" / part
                     dest.mkdir(parents=True, exist_ok=True)
-                windows_dir = ("syswow64" if "i386" in exe.name
-                               else "system32")
-                markers = ("\nGW_CRYPT32_MODULE=C:\\windows\\" + windows_dir +
-                           "\\crypt32.dll\nGW_SHA256_OK\nGW_SHA1_OK\nGW_SHA256_AFTER_SET_OK\n"
+                # A builtin control resolves from C:\\windows. The candidate
+                # must resolve the freshly staged EXE-adjacent CRYPT32.dll.
+                if overrides["WINEDLLOVERRIDES"] == "crypt32=n":
+                    module = "Z:" + str(exe.parent / "CRYPT32.dll").replace("/", "\\")
+                else:
+                    module = "C:\\windows\\system32\\CRYPT32.dll"
+                markers = ("\nGW_CRYPT32_MODULE=" + module +
+                           "\nGW_SHA256_OK\nGW_SHA1_OK\nGW_SHA256_AFTER_SET_OK\n"
                            "GW_CRYPT32_CERT_SHA256_RESULT=PASS\n")
                 logfile.write_text(markers)
                 return 0, markers
@@ -334,6 +375,12 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
             self.assertEqual([c[2] for c in calls],
                              ["run", "runinprefix", "runinprefix", "runinprefix", "runinprefix"])
             self.assertTrue((validation / "runtime").is_dir())
+            for session in (validation / "runtime").iterdir():
+                for arch in mod.ARCHS:
+                    sandbox = session / ("native-" + mod.ARCHS[arch][2])
+                    self.assertEqual((sandbox / "CRYPT32.dll").read_bytes(),
+                                     b"MZ" + arch.encode())
+                    self.assertTrue((sandbox / mod.probe_path(arch).name).is_file())
             self.assertIn("API FUNCTIONAL PASS", output.getvalue())
             for arch in mod.ARCHS:
                 self.assertEqual((candidate_dir / "candidate" / arch / "crypt32.dll")
