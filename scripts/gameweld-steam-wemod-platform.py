@@ -134,7 +134,7 @@ def begin_steam(appid: str) -> None:
 
 def launch(plan: dict, *, observer=None, start_steam=begin_steam,
            spawn=subprocess.Popen, timeout: float = GAME_TIMEOUT,
-           log=None) -> dict:
+           log=None, proton_output: Path | None = None) -> dict:
     obs = observer if observer is not None else load_observer()
     appid = plan["appid"]
     exe = Path(plan["game_exe"])
@@ -165,14 +165,27 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
     })
     argv = [plan["proton"], "runinprefix", plan["wemod_exe"]]
     emit("WEMOD_SAME_PREFIX_REQUESTED: existing runtime, no Steam Launch Options edits")
+    # Never discard Proton/WeMod errors in field builds. Only the selected
+    # helper's stdout/stderr is captured (not the entire Steam/game environment).
+    # Each session gets a new owner-only log, not a reusable public /tmp file.
+    output_stream = None
     try:
+        if proton_output is not None:
+            descriptor = os.open(proton_output,
+                                 os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            output_stream = os.fdopen(descriptor, "w", encoding="utf-8")
+            emit("WEMOD_PROTON_OUTPUT_LOG: " + str(proton_output))
         proc = spawn(argv, cwd=str(Path(plan["wemod_exe"]).parent),
                      env=environment, stdin=subprocess.DEVNULL,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdout=output_stream if output_stream else subprocess.DEVNULL,
+                     stderr=subprocess.STDOUT if output_stream else subprocess.DEVNULL,
                      start_new_session=True, close_fds=True)
     except OSError as exc:
-        emit("WEMOD_START_FAILED: " + type(exc).__name__)
+        emit("WEMOD_START_FAILED: " + type(exc).__name__ + ": " + str(exc))
         return {"state": "WEMOD_START_FAILED", "trainer_verified": False}
+    finally:
+        if output_stream is not None:
+            output_stream.close()
     # A launched WeMod process does NOT establish that a trainer attached.
     emit("WEMOD_PROCESS_REQUESTED: pid " + str(proc.pid)
          + "; trainer attach/render remains UNVERIFIED")
@@ -207,7 +220,8 @@ def main() -> int:
             file.flush()
         report("GAMEWELD_STEAM_WEMOD_V1: appid=" + args.appid)
         report("No Launch Options changes; launcher requests Steam -applaunch")
-        outcome = launch(plan, log=report)
+        output_log = log_file.with_suffix(".proton.log")
+        outcome = launch(plan, log=report, proton_output=output_log)
         report("FINAL_STATE: " + outcome["state"])
     return 0 if outcome["state"] == "WEMOD_PROCESS_REQUESTED" else 4
 
