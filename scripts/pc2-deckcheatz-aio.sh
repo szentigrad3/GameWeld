@@ -24,6 +24,8 @@ REPORT="$OUT/deckcheatz-aio-report.txt"
   python3 -m unittest scripts/test_gameweld_steam_game_exe.py -v
   printf '%s\n' '=== Steam game-process identity fixture tests ==='
   python3 -m unittest scripts/test_gameweld_platform_session.py -v
+  printf '%s\n' '=== Steam-owned game then same-prefix WeMod offline fixtures ==='
+  python3 -m unittest scripts/test_gameweld_steam_wemod_platform.py -v
   printf '%s\n' '=== Managed install/update/adoption synthetic cases ==='
   python3 scripts/test_gameweld_deckcheatz_install.py -v
   printf '%s\n' '=== Per-game Proton resolution synthetic cases ==='
