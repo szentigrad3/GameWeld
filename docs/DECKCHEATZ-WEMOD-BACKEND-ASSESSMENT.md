@@ -155,3 +155,17 @@ User supplied `deckcheatz-aio-report.txt` from `bash scripts/pc2-deckcheatz-aio.
 **Interpretation:** The *offline AIO + frontend syntax* gate has passed on this user's CachyOS host. This result alone does **not** verify that GUI adoption and managed updater controls work at runtime, validate upstream network updates, or establish cross-game compatibility. Earlier in this project, Astrometica 2353250 independently passed one end-to-end game+WeMod single-player trainer field test. Those are two distinct validation scopes.
 
 **Next gate:** verify the GameWeld Settings UI can safely enrol the existing clean checkout after explicit consent, then run a read-only upstream update check. Do not run the updating action or alter the validated installed files automatically. Continue with complete frontend compilation and future multi-game compatibility testing before promoting an unqualified stable release.
+
+
+## PC2 game-first navigation and provider settings cleanup (2026-10-24)
+
+Following the successful player-reported Astrometica live trainer test, managed-checkout adoption/update check and 33/33 previous offline suite, the PC2 GTK interface now prioritises the **Play with WeMod — DeckCheatz (experimental)** action.
+
+- **Overview:** The prominent action appears under the selected game. Earlier PC1 play-profile controls are still initialized for existing code but hidden only under PC2 discovery mode. Read-only preview, DeckCheatz discovery/install and Steam/Wand engineering controls remain available inside the collapsed **Advanced Steam / WeMod diagnostics** expander.
+- **Library:** The selected-game inspector contains the prominent Play with WeMod action and a per-game readiness sentence. Diagnostic controls are behind **Advanced trainer / launch diagnostics**. The existing PC1 library buttons remain active only outside PC2.
+- **Selection gates:** The play action is sensitive only for ordinary installed Steam entries, not Heroic/Lutris or Steam non-Steam shortcuts. Astrometica AppID 2353250 is explicitly labelled as a user-validated host configuration. Every other Steam title retains experimental wording. This is UI feedback, not an assumption of multi-game compatibility.
+- **Settings:** PC2 shows three tabs: **Quick Start**, **DeckCheatz / WeMod**, and **Advanced Providers**. The managed install/update/adoption controls live in the DeckCheatz tab; Wand, Cheat Engine and other trainer-specific maintenance tools remain in Advanced Providers. Outside PC2, the existing settings layout remains intact.
+- **Safety unchanged:** The actual DeckCheatz backend remains separately opted in. The game-specific preview still occurs before a YES/NO dialog explicitly identifying Wine-prefix mutation risk. Duplicate same-AppID processes and invalid Steam/Proton/prefix paths are refused by the independent Python helper. Steam Launch Options remain unchanged.
+- **Regression testing:** `scripts/test_gameweld_deckcheatz_gui_layout.py` checks UI labels, Steam-only availability, the separate preview/consent path, hidden legacy PC2 controls and settings tabs. `scripts/pc2-deckcheatz-aio.sh` runs it along with the installer, Proton and provider tests, GTK C syntax compilation, and read-only status.
+
+This is a development-branch UI change, not a release announcement. Do not assume this newly arranged GUI has passed a live GTK render test until the updated AIO and PC2 source runner have been exercised on the user's CachyOS desktop. Full integrated game+trainer verification remains limited to Astrometica.
