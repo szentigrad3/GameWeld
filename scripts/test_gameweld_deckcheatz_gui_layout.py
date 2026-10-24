@@ -88,6 +88,20 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_window_resize((GtkWindow*)G.window,ww,hh);", text)
         self.assertIn("if(pc2_window_state_path(path,sizeof path,0))unlink(path);", text)
         self.assertIn("GameWeld remembers your last normal-window size", text)
+        self.assertIn(
+            'g_signal_connect_data(window_reset,"clicked",'
+            '(GCallback)on_pc2_window_size_reset',
+            text,
+        )
+        # PC2's global button factory disables any action not on its
+        # allow-list. A wired click handler is insufficient: the button must
+        # remain sensitive under PC2 discovery-only mode.
+        button_factory = function_body(
+            "static GtkWidget *button(const char *s, const char *cls)",
+            "static GtkWidget *box(int orient, int spacing)",
+        )
+        self.assertIn('&& strcmp(s, "Reset window size")', button_factory)
+        self.assertIn("pc2_guard_button(w);", button_factory)
 
     def test_library_adapts_and_keeps_game_list_readable(self):
         self.assertIn("static void pc2_library_size_allocate(", text)
