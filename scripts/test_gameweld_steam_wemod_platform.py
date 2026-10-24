@@ -83,40 +83,40 @@ class SteamOwnedWeModTests(unittest.TestCase):
             return tool.preflight("2353250", self.install, self.game, self.compat,
                                   self.proton, self.steam, self.launcher)
 
-    def test_x11_prefers_verified_gui_display_and_cookie_as_pair(self):
+    def test_x11_prefers_verified_game_display_and_cookie_as_pair(self):
         current = {"DISPLAY": ":1", "XAUTHORITY": "/runtime/gui-xauth"}
         live = {"DISPLAY": ":0", "XAUTHORITY": "/runtime/game-xauth"}
         observed = []
         def check(env):
             observed.append((env.get("DISPLAY"), env.get("XAUTHORITY")))
             return (env.get("DISPLAY"), env.get("XAUTHORITY")) == (
-                ":1", "/runtime/gui-xauth"
+                ":0", "/runtime/game-xauth"
             )
         result, origin = tool.authenticated_x11_environment(
             current, live, probe=check)
-        self.assertEqual(origin, "gameweld")
-        self.assertEqual(result["DISPLAY"], ":1")
-        self.assertEqual(result["XAUTHORITY"], "/runtime/gui-xauth")
-        self.assertEqual(observed, [(":1", "/runtime/gui-xauth")])
+        self.assertEqual(origin, "steam-game")
+        self.assertEqual(result["DISPLAY"], ":0")
+        self.assertEqual(result["XAUTHORITY"], "/runtime/game-xauth")
+        self.assertEqual(observed, [(":0", "/runtime/game-xauth")])
 
-    def test_x11_falls_back_to_verified_steam_game_pair(self):
+    def test_x11_falls_back_to_gui_cookie_only_on_same_display(self):
         current = {"DISPLAY": ":1", "XAUTHORITY": "/runtime/gui-xauth"}
-        live = {"DISPLAY": ":0", "XAUTHORITY": "/runtime/game-xauth"}
+        live = {"DISPLAY": ":1", "XAUTHORITY": "/runtime/game-xauth"}
         attempts = []
         def check(env):
             pair = (env.get("DISPLAY"), env.get("XAUTHORITY"))
             attempts.append(pair)
-            return pair == (":0", "/runtime/game-xauth")
+            return pair == (":1", "/runtime/gui-xauth")
         result, origin = tool.authenticated_x11_environment(
             current, live, probe=check)
-        self.assertEqual(origin, "steam-game")
+        self.assertEqual(origin, "gameweld")
         self.assertEqual(attempts, [
+            (":1", "/runtime/game-xauth"),
             (":1", "/runtime/gui-xauth"),
-            (":0", "/runtime/game-xauth"),
         ])
-        self.assertEqual(result["XAUTHORITY"], "/runtime/game-xauth")
+        self.assertEqual(result["XAUTHORITY"], "/runtime/gui-xauth")
 
-    def test_x11_refuses_unauthorized_or_missing_display(self):
+    def test_x11_refuses_authorization_failure_or_missing_display(self):
         current = {"DISPLAY": ":1", "XAUTHORITY": "/bad/gui"}
         live = {"DISPLAY": ":0", "XAUTHORITY": "/bad/game"}
         with self.assertRaisesRegex(ValueError, "X11 authorization failed"):
@@ -135,7 +135,7 @@ class SteamOwnedWeModTests(unittest.TestCase):
             return False
         with self.assertRaises(ValueError):
             tool.authenticated_x11_environment(current, live, probe=check)
-        self.assertEqual(seen, [(":1", "/gui"), (":0", None)])
+        self.assertEqual(seen, [(":0", None)])
         self.assertFalse(tool._x11_display_accessible(
             {"DISPLAY": "untrusted.example.com:0"}))
 
