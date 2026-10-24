@@ -85,6 +85,8 @@ int main(void)
     DWORD length = 0;
     size_t i, len = strlen(der_hex);
     PCCERT_CONTEXT ctx;
+    HMODULE crypt32;
+    char module_name[MAX_PATH] = {0};
     BYTE bytes[32];
     CRYPT_HASH_BLOB blob;
     if (len & 1 || len / 2 > sizeof(der)) return 2;
@@ -93,6 +95,13 @@ int main(void)
         if (hi < 0 || lo < 0) return 3;
         der[length++] = (BYTE)((hi << 4) | lo);
     }
+    /* Record which Windows DLL module supplied these APIs. */
+    crypt32 = GetModuleHandleA("crypt32.dll");
+    if (!crypt32 || !GetModuleFileNameA(crypt32, module_name, sizeof(module_name))) {
+        printf("GW_CRYPT32_MODULE_FAIL err=%lu\n", (unsigned long)GetLastError());
+        return 9;
+    }
+    printf("GW_CRYPT32_MODULE=%s\n", module_name);
     ctx = CertCreateCertificateContext(X509_ASN_ENCODING, der, length);
     if (!ctx) {
         printf("GW_CERT_CONTEXT_FAIL err=%lu\n", (unsigned long)GetLastError());
