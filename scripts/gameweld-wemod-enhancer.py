@@ -600,86 +600,90 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     environment["SteamAppId"] = appid
     environment["SteamGameId"] = appid
     environment["STEAM_COMPAT_APP_ID"] = appid
-    environment["WINEDLLOVERRIDES"] = "version=n,b"
+    # Both rendering modes join the live game's Wine server. The old software
+    # fallback launched a second Proton bootstrap and introduced another
+    # failure path on CachyOS.
+    # Port of crates/wand-runtime's historic active-Wineserver join.
+    # A second 'proton runinprefix' introduced a new Proton bootstrap and
+    # previously caused Wand startup/window failures on CachyOS. Run Wine
+    # from the game's OWN selected Proton tool and join its active server.
+    proton_root = Path(session["proton"]).parent
+    # Mirror crates/wand-runtime::proton_wine_binary / wineserver_binary.
+    wine = next((p for p in (
+        proton_root / "files/bin/wine",
+        proton_root / "files/bin/wine64",
+        proton_root / "files/lib/wine/x86_64-unix/wine",
+    ) if p.is_file() and os.access(p, os.X_OK)), None)
+    wine_server = next((p for p in (
+        proton_root / "files/bin/wineserver",
+        proton_root / "files/lib/wine/x86_64-unix/wineserver",
+    ) if p.is_file() and os.access(p, os.X_OK)), None)
+    if wine is None:
+        raise ValueError("Live Proton tool exposes no executable Wine binary (files/bin/wine or old equivalents); X11 join blocked")
+    if wine_server is None:
+        raise ValueError("Live Proton tool exposes no executable wineserver binary; X11 join blocked")
+    if not environment.get("DISPLAY"):
+        raise ValueError("An X11/XWayland DISPLAY is required for the proven Wand X11 launch; none found")
+
+    # Recover only relevant environment from the EXACT observed live game
+    # candidate, not Steam's global or another game's Proton session.
+    pid_env = proc_root / str(session["game_pid"]) / "environ"
+    try:
+        with pid_env.open("rb") as handle:
+            raw_env = handle.read(262145)
+        if len(raw_env) > 262144:
+            raise ValueError("Live game environment too large for safe join")
+        keep = {
+            "WINEPREFIX", "WINELOADER", "WINESERVER", "WINEDEBUG",
+            "WINEDLLOVERRIDES", "WINEESYNC", "WINEFSYNC", "WINEARCH",
+            "WINE_DISABLE_VULKAN_OPWR", "LD_LIBRARY_PATH",
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH", "STEAM_COMPAT_DATA_PATH",
+            "STEAM_COMPAT_APP_ID", "STEAM_COMPAT_INSTALL_PATH",
+            "STEAM_COMPAT_LIBRARY_PATHS", "SteamAppId", "SteamGameId",
+        }
+        for token in raw_env.split(b"\0"):
+            if b"=" not in token:
+                continue
+            key, value = token.split(b"=", 1)
+            try:
+                name = key.decode("ascii")
+                val = value.decode("utf-8")
+            except (UnicodeError, ValueError):
+                continue
+            if name in keep or name.startswith(("PROTON_", "DXVK_", "VKD3D_")):
+                if name not in {"PROTON_USE_X11_EXCLUSIVE", "WAND_ELECTRON_RENDERER",
+                                "WAND_WINDOW_BACKEND"}:
+                    environment[name] = val
+    except OSError as exc:
+        raise ValueError("Cannot recover exact game's live Wine environment") from exc
+
+    environment["WINEPREFIX"] = str(Path(session["compat"]) / "pfx")
+    environment["WINELOADER"] = str(wine)
+    environment["WINESERVER"] = str(wine_server)
+    environment["STEAM_COMPAT_TOOL_PATHS"] = str(session["tool_paths"])
+    environment["STEAM_COMPAT_DATA_PATH"] = str(session["compat"])
+    environment["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = str(session["steamroot"])
+    environment["SteamAppId"] = appid
+    environment["SteamGameId"] = appid
+    environment["STEAM_COMPAT_APP_ID"] = appid
+    # Preserve other inherited DLL overrides for this WeMod child, while
+    # forcing the patched version.dll native-first. The game stays untouched.
+    overrides = [part for part in environment.get("WINEDLLOVERRIDES", "").split(";")
+                 if part.strip() and part.split("=", 1)[0].strip().lower() != "version"]
+    environment["WINEDLLOVERRIDES"] = ";".join(overrides + ["version=n,b"])
+    environment["WINE_GRAPHICS_DRIVER"] = "x11"
+    environment["PROTON_USE_X11_EXCLUSIVE"] = executable.name
+    environment.pop("MANGOHUD", None)
+    environment.pop("LD_PRELOAD", None)
+    command = [str(wine), str(executable)]
     if software_render:
-        # Explicit experimental fallback retained for comparison only; the
-        # normal live launch below now uses the historically successful 0.1.13
-        # active-Wineserver join and 0.1.14 Wand-only X11 backend.
-        command = [str(session["proton"]), "runinprefix", str(executable),
-                   "--disable-gpu", "--disable-gpu-compositing",
-                   "--enable-logging=stderr"]
-        launch_mode = "legacy software renderer (second Proton invocation)"
-    else:
-        # Port of crates/wand-runtime's historic active-Wineserver join.
-        # A second 'proton runinprefix' introduced a new Proton bootstrap and
-        # previously caused Wand startup/window failures on CachyOS. Run Wine
-        # from the game's OWN selected Proton tool and join its active server.
-        proton_root = Path(session["proton"]).parent
-        # Mirror crates/wand-runtime::proton_wine_binary / wineserver_binary.
-        wine = next((p for p in (
-            proton_root / "files/bin/wine",
-            proton_root / "files/bin/wine64",
-            proton_root / "files/lib/wine/x86_64-unix/wine",
-        ) if p.is_file() and os.access(p, os.X_OK)), None)
-        wine_server = next((p for p in (
-            proton_root / "files/bin/wineserver",
-            proton_root / "files/lib/wine/x86_64-unix/wineserver",
-        ) if p.is_file() and os.access(p, os.X_OK)), None)
-        if wine is None:
-            raise ValueError("Live Proton tool exposes no executable Wine binary (files/bin/wine or old equivalents); X11 join blocked")
-        if wine_server is None:
-            raise ValueError("Live Proton tool exposes no executable wineserver binary; X11 join blocked")
-        if not environment.get("DISPLAY"):
-            raise ValueError("An X11/XWayland DISPLAY is required for the proven Wand X11 launch; none found")
-
-        # Recover only relevant environment from the EXACT observed live game
-        # candidate, not Steam's global or another game's Proton session.
-        pid_env = proc_root / str(session["game_pid"]) / "environ"
-        try:
-            with pid_env.open("rb") as handle:
-                raw_env = handle.read(262145)
-            if len(raw_env) > 262144:
-                raise ValueError("Live game environment too large for safe join")
-            keep = {
-                "WINEPREFIX", "WINELOADER", "WINESERVER", "WINEDEBUG",
-                "WINEDLLOVERRIDES", "WINEESYNC", "WINEFSYNC", "WINEARCH",
-                "WINE_DISABLE_VULKAN_OPWR", "LD_LIBRARY_PATH",
-                "STEAM_COMPAT_CLIENT_INSTALL_PATH", "STEAM_COMPAT_DATA_PATH",
-                "STEAM_COMPAT_APP_ID", "STEAM_COMPAT_INSTALL_PATH",
-                "STEAM_COMPAT_LIBRARY_PATHS", "SteamAppId", "SteamGameId",
-            }
-            for token in raw_env.split(b"\0"):
-                if b"=" not in token:
-                    continue
-                key, value = token.split(b"=", 1)
-                try:
-                    name = key.decode("ascii")
-                    val = value.decode("utf-8")
-                except (UnicodeError, ValueError):
-                    continue
-                if name in keep or name.startswith(("PROTON_", "DXVK_", "VKD3D_")):
-                    if name not in {"PROTON_USE_X11_EXCLUSIVE", "WAND_ELECTRON_RENDERER",
-                                    "WAND_WINDOW_BACKEND"}:
-                        environment[name] = val
-        except OSError as exc:
-            raise ValueError("Cannot recover exact game's live Wine environment") from exc
-
-        environment["WINEPREFIX"] = str(Path(session["compat"]) / "pfx")
-        environment["WINELOADER"] = str(wine)
-        environment["WINESERVER"] = str(wine_server)
-        environment["STEAM_COMPAT_TOOL_PATHS"] = str(session["tool_paths"])
-        environment["STEAM_COMPAT_DATA_PATH"] = str(session["compat"])
-        environment["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = str(session["steamroot"])
-        environment["SteamAppId"] = appid
-        environment["SteamGameId"] = appid
-        environment["STEAM_COMPAT_APP_ID"] = appid
-        environment["WINEDLLOVERRIDES"] = "version=n,b"
-        environment["WINE_GRAPHICS_DRIVER"] = "x11"
-        environment["PROTON_USE_X11_EXCLUSIVE"] = executable.name
-        environment.pop("MANGOHUD", None)
-        environment.pop("LD_PRELOAD", None)
-        command = [str(wine), str(executable)]
-        launch_mode = "direct active Proton wineserver join + Wand-only X11"
+        # These Electron flags affect only the WeMod child and do not prove
+        # window rendering or trainer attachment.
+        command.extend(("--disable-gpu", "--disable-gpu-compositing",
+                        "--enable-logging=stderr"))
+    launch_mode = "direct active Proton wineserver join + Wand-only X11"
+    if software_render:
+        launch_mode += " (software rendering requested)"
     # Capture only the explicitly confirmed client session. Do not change
     # Steam's launch options, Wine registry, caches, or existing game prefixes.
     state_home = os.environ.get("XDG_STATE_HOME")
@@ -698,7 +702,8 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(
                 ("GameWeld PC2 Wand live handoff: App ID " + appid + "\n"
-                 + "Mode: " + ("software rendering" if software_render else "direct X11 wineserver join") + "\n"
+                 + "Mode: direct X11 wineserver join" + (" + software rendering requested" if software_render else "") + "\n"
+                 + "Client executable: " + str(executable) + "\n"
                  + "Renderer and login status: NOT VERIFIED\n"
                  + "==== Proton/Wand child output ====\n").encode("utf-8"))
             stream.flush()
@@ -783,6 +788,7 @@ def main() -> int:
                 ". Choose the exact patched app-version in Settings."
             )
         print("Selected Wand client: " + folder.name + " (" + reason + ")", flush=True)
+        print("Selected Wand installation: " + str(folder), flush=True)
     if folder is None:
         raise ValueError("No unique Wand/WeMod client selected. Choose the app-version folder with resources/app.asar; this is distinct from the Proton compatibility tool.")
     if args.action == "launch-test":
