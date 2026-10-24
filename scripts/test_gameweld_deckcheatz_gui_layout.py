@@ -45,6 +45,16 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", text)
         self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", text)
 
+    def test_library_adapts_and_keeps_game_list_readable(self):
+        self.assertIn("static void pc2_library_size_allocate(", text)
+        self.assertIn("gtk_orientable_set_orientation(body", text)
+        self.assertIn('"size-allocate",(GCallback)pc2_library_size_allocate', text)
+        self.assertIn("stacked?GTK_ORIENTATION_VERTICAL:GTK_ORIENTATION_HORIZONTAL", text)
+        self.assertIn("gtk_widget_set_size_request(layout->list_sc,-1,stacked?300:-1)", text)
+        self.assertIn("gtk_widget_set_size_request(layout->inspector,stacked?-1:350,-1)", text)
+        self.assertIn("return pc2_outer?pc2_outer:p", text)
+        self.assertIn("gtk_scrolled_window_set_policy((GtkScrolledWindow*)pc2_outer", text)
+
     def test_settings_separates_maintenance_and_advanced(self):
         self.assertIn('label("Quick Start",NULL)', text)
         self.assertIn('label("DeckCheatz / WeMod",NULL)', text)
