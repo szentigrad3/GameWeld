@@ -132,6 +132,73 @@ def begin_steam(appid: str) -> None:
         )
 
 
+def _x11_display_accessible(environment: dict[str, str]) -> bool:
+    """Check the actual X11 authorization in a separate, read-only process.
+
+    The GUI can run on KDE Wayland while WeMod still requires XWayland.
+    Testing XOpenDisplay proves both the DISPLAY address and Xauthority cookie
+    work together; inspecting filenames or merely setting DISPLAY is unsafe.
+    Never print, rewrite, or export any authorization cookie in a report.
+    """
+    display = environment.get("DISPLAY", "")
+    if not display.startswith(":"):
+        return False
+    snippet = (
+        "import ctypes, sys\n"
+        "try:\n"
+        "  x11 = ctypes.CDLL('libX11.so.6')\n"
+        "  x11.XOpenDisplay.argtypes = [ctypes.c_char_p]\n"
+        "  x11.XOpenDisplay.restype = ctypes.c_void_p\n"
+        "  x11.XCloseDisplay.argtypes = [ctypes.c_void_p]\n"
+        "  x11.XCloseDisplay.restype = ctypes.c_int\n"
+        "  conn = x11.XOpenDisplay(None)\n"
+        "  if not conn: sys.exit(3)\n"
+        "  x11.XCloseDisplay(conn)\n"
+        "except (OSError, Exception): sys.exit(4)\n"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", snippet],
+            env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=4, check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def authenticated_x11_environment(
+        current: dict[str, str], live_game: dict[str, str],
+        probe=None) -> tuple[dict[str, str], str]:
+    """Select an independently verified DISPLAY + XAUTHORITY pair.
+
+    KDE/Steam sometimes provide different XWayland credentials. Never copy a
+    game's DISPLAY over GameWeld's XAUTHORITY or vice versa, and do not import
+    an unverified local X11 connection. Refuse to start WeMod without access.
+    """
+    check = probe or _x11_display_accessible
+    for label, source in (("gameweld", current), ("steam-game", live_game)):
+        display = source.get("DISPLAY", "")
+        if not display.startswith(":"):
+            continue
+        candidate = dict(current)
+        candidate["DISPLAY"] = display
+        for name in ("XAUTHORITY", "XDG_RUNTIME_DIR"):
+            value = source.get(name, "")
+            if value:
+                candidate[name] = value
+            else:
+                candidate.pop(name, None)
+        if check(candidate):
+            return candidate, label
+    raise ValueError(
+        "X11 authorization failed for both GameWeld and the live Steam game. "
+        "WeMod was NOT started; launch GameWeld from the KDE desktop session "
+        "with an accessible XWayland DISPLAY/XAUTHORITY."
+    )
+
+
 def active_wine_handoff(plan: dict, game_pid: int,
                         proc_root: Path = Path("/proc")) -> tuple[list[str], dict[str, str]]:
     """Join the observed game's active wineserver; do NOT bootstrap Proton twice.
@@ -203,13 +270,25 @@ def active_wine_handoff(plan: dict, game_pid: int,
     }:
         raise ValueError("Selected Proton tool differs from active game's runtime")
 
+    # Retain Steam game's Wine/runtime environment but never overwrite a
+    # working KDE XWayland DISPLAY with mismatched XAUTHORITY credentials.
+    # The candidate pair must actually open the X server before WeMod runs.
     environment = os.environ.copy()
     for name, value in variables.items():
-        if name not in {"PROTON_USE_X11_EXCLUSIVE"}:
+        if name not in {
+            "PROTON_USE_X11_EXCLUSIVE", "DISPLAY", "XAUTHORITY",
+            "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+        }:
             environment[name] = value
-    display = environment.get("DISPLAY", "")
-    if not display:
-        raise ValueError("No X11/XWayland DISPLAY for the existing Wine window session")
+    display_environment, display_source = authenticated_x11_environment(
+        os.environ.copy(), variables
+    )
+    for name in ("DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"):
+        if name in display_environment:
+            environment[name] = display_environment[name]
+        else:
+            environment.pop(name, None)
+    environment["GAMEWELD_X11_DISPLAY_SOURCE"] = display_source
     environment["WINEPREFIX"] = str(game_prefix)
     environment["WINELOADER"] = str(wine)
     environment["WINESERVER"] = str(wineserver)
@@ -253,6 +332,9 @@ def launch(plan: dict, *, observer=None, start_steam=begin_steam,
     except (OSError, ValueError) as exc:
         emit("WEMOD_HANDOFF_BLOCKED: " + str(exc))
         return {"state": "WEMOD_HANDOFF_BLOCKED", "trainer_verified": False}
+    emit("WEMOD_X11_AUTHORIZATION_VERIFIED: " +
+         environment.pop("GAMEWELD_X11_DISPLAY_SOURCE", "verified-local-X11") +
+         " display (Xauthority cookie never logged)")
     emit("WEMOD_ACTIVE_WINESERVER_JOIN_REQUESTED: game-owned prefix; no second Proton bootstrap")
     # Never discard Wine/WeMod errors in field builds. Only the selected
     # helper's stdout/stderr is captured (not the entire Steam/game environment).
