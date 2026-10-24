@@ -46,11 +46,19 @@ WORK="$(mktemp -d "$ROOT/build/pc2-source/.pc2-local-appimage-XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 APP="$WORK/PC2.AppDir"
 REPORT="$OUT/pc2-local-appimage-report.txt"
-IMAGE="$OUT/GameWeld-PC2-RC1-LOCAL-$(date +%Y%m%d-%H%M%S)-x86_64.AppImage"
+if [[ "${GAMEWELD_PC2_PUBLIC_UI:-0}" == 1 ]]; then
+    IMAGE="$OUT/GameWeld-PC2-RC1-CANDIDATE-$(date +%Y%m%d-%H%M%S)-x86_64.AppImage"
+else
+    IMAGE="$OUT/GameWeld-PC2-RC1-LOCAL-$(date +%Y%m%d-%H%M%S)-x86_64.AppImage"
+fi
 
 {
     echo '=== Build local PC2 AppImage candidate ==='
-    echo 'Status: PRIVATE FIELD TEST ONLY; no redistribution or RC1 approval'
+    if [[ "${GAMEWELD_PC2_PUBLIC_UI:-0}" == 1 ]]; then
+        echo 'Status: CLEAN RC1 CANDIDATE; NOT APPROVED FOR PUBLIC DISTRIBUTION'
+    else
+        echo 'Status: PRIVATE FIELD TEST ONLY; no redistribution or RC1 approval'
+    fi
     echo 'Source commit:'
     git rev-parse HEAD
     echo 'Changed local files (source runner is not overwritten):'
@@ -58,13 +66,22 @@ IMAGE="$OUT/GameWeld-PC2-RC1-LOCAL-$(date +%Y%m%d-%H%M%S)-x86_64.AppImage"
     echo
     echo '=== Offline tests, Go/GTK compile, isolated AppDir ==='
     GAMEWELD_PC2_STAGE_DIR="$APP" bash "$ROOT/scripts/pc2-stage-standalone-appdir.sh"
+    if [[ "${GAMEWELD_PC2_PUBLIC_UI:-0}" == 1 ]]; then
+        rm -f -- "$APP/PC2-DEVELOPMENT-ONLY.txt"
+        cat > "$APP/PC2-RC1-CANDIDATE.txt" <<'NOTICE'
+GameWeld RC1 candidate - prerelease field validation.
+Not yet approved for public distribution. GameWeld performs game-specific
+runtime checks and requests user consent before external trainer launches.
+Testing on multiple Linux distributions and dependency/license audit is pending.
+NOTICE
+    fi
 
     mkdir -p "$APP/usr/share/applications" "$APP/usr/share/icons/hicolor/scalable/apps"
     cat > "$APP/gameweld.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
-Name=GameWeld PC2 (Local Test)
-Comment=Experimental source-built GameWeld PC2
+Name=GameWeld
+Comment=Linux game and trainer manager
 Exec=gameweld
 Icon=gameweld
 Terminal=false
@@ -138,6 +155,10 @@ APPRUN
     echo "Image: $IMAGE"
     echo "SHA256: $IMAGE.sha256"
     echo 'Result: PASS (LOCAL PACKAGING + NON-GUI SMOKE ONLY)'
-    echo 'Still required: launch the AppImage, verify 4K resize/reset/reopen, inspect GTK portability and license obligations.'
+    if [[ "${GAMEWELD_PC2_PUBLIC_UI:-0}" == 1 ]]; then
+        echo 'RC1 candidate: clean user-facing UI; cross-distro, functionality, and licensing validation are still required.'
+    else
+        echo 'Still required: launch the AppImage, verify 4K resize/reset/reopen, inspect GTK portability and license obligations.'
+    fi
 } 2>&1 | tee "$REPORT"
 printf 'Build report: %s\n' "$REPORT"
