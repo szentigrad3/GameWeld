@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Complete OFFLINE DeckCheatz PC2 validation: no game start, no download,
+# no real updater execution, no Wine prefix edits, no Steam config mutation.
+set -Eeuo pipefail
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+OUT="$ROOT/build/pc2-source"
+mkdir -p "$OUT"
+REPORT="$OUT/deckcheatz-aio-report.txt"
+
+{
+  printf '%s\n' 'GAMEWELD PC2 / DECKCHEATZ AIO'
+  printf '%s\n' 'Scope: isolated offline installer/update fixtures, read-only Proton/launch preview, GTK syntax'
+  printf '%s\n' 'Actual upstream downloads: NO'
+  printf '%s\n' 'Real game / WeMod launched: NO'
+  printf '%s\n' 'Real Steam Launch Options / Wine prefixes changed: NO'
+  echo
+  printf '%s\n' '=== Python source compilation ==='
+  python3 -m py_compile scripts/gameweld-deckcheatz-direct.py \
+      scripts/gameweld-deckcheatz-proton.py \
+      scripts/gameweld-deckcheatz-install.py
+  printf '%s\n' '=== Managed install/update/adoption synthetic cases ==='
+  python3 scripts/test_gameweld_deckcheatz_install.py -v
+  printf '%s\n' '=== Per-game Proton resolution synthetic cases ==='
+  python3 scripts/test_gameweld_deckcheatz_proton.py -v
+  printf '%s\n' '=== Launch preview and consent synthetic cases ==='
+  python3 scripts/test_gameweld_deckcheatz_direct.py -v
+  printf '%s\n' '=== GTK GUI source syntax ==='
+  if pkg-config --exists gtk+-3.0 && command -v gcc >/dev/null; then
+      gcc -fsyntax-only -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
+          crates/wand-ui/appimage-gtk3/gameweld-native-040.c \
+          $(pkg-config --cflags gtk+-3.0)
+  else
+      printf '%s\n' 'FAIL: gcc and GTK3 development headers are needed for a complete GUI check'
+      exit 3
+  fi
+  printf '%s\n' '=== Existing checkout status (read-only) ==='
+  python3 scripts/gameweld-deckcheatz-install.py --status
+  echo
+  printf '%s\n' 'Result: PASS (OFFLINE FIXTURES + GUI SYNTAX ONLY)'
+} 2>&1 | tee "$REPORT"
+echo "Report: $REPORT"
