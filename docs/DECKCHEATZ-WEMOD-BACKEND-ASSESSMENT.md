@@ -233,3 +233,18 @@ The user's latest real desktop screenshot still showed a tiny, narrow restored G
 - Add 2 static GUI regression tests, increasing the UI subset from 8 to 10. All actual build/runtime results must be obtained using the user's new AIO/preflight and desktop AppDir.
 
 **User validation:** Pull the new PC2 commit, build and stage under a **new** unique AppDir name so an existing old 4K-unaware binary is not reused, and launch its `AppRun`. Verify the app opens maximized on 4K, manual restore gives a comfortable centered 90%-ish window, the maximize button toggles properly, and the Library game names remain readable when restored. Do not interpret old-window screenshots or an already-staged binary as verification of the new build.
+
+
+## Resolution-adaptive startup policy: UHD fills screen, smaller panels proportional (2026-10-24)
+
+The user clarified the desired window behavior: **automatically size GameWeld for every screen resolution, with physical 4K/UHD filling the screen**. This supersedes the previous PC2 implementation that maximized unconditionally regardless of the monitor resolution.
+
+The sizing policy is now explicitly separated into `crates/wand-ui/appimage-gtk3/gameweld-pc2-window-policy.h` (GTK-independent and reproducibly testable) and the GTK monitor/workarea lookup in `gameweld-native-040.c`. At startup, GameWeld obtains the primary monitor's logical workarea for GTK sizing, and the monitor's physical geometry using `gdk_screen_get_monitor_geometry` multiplied by `gdk_screen_get_monitor_scale_factor`. A physical UHD monitor (at least **3840 × 2160**) gets GTK **maximized**, filling its usable desktop area while leaving taskbars/panels available. It is *not* exclusive fullscreen or an attempt to draw beyond the desktop workarea.
+
+For non-4K displays, GameWeld uses a proportion of the monitor workarea instead of forcing a maximized state: compact monitors (1600×900 or below, including 720p) target **95% width × 93% height**, ordinary 1080p-class displays target **90% × 88%**, and 1440p/ultrawide-class screens target **92% × 90%**. Restored window sizes are bounded to the visible workarea. Physical 4K displays at 200% scaling are recognized from their 1920×1080-ish logical geometry times the GTK monitor scale, preventing accidental misclassification as a 1080p display. On actual fractional-scale platforms, the detection follows the integer factor exposed by GTK3 and needs real desktop verification.
+
+The existing titlebar Maximize/Restore button reads actual GTK window state. No periodic resize callback overrides manual resizing. PC1 geometry and the existing Steam/DeckCheatz launch engine are unchanged.
+
+Native C policy tests are in `scripts/test-pc2-window-policy.c` and now run from `scripts/pc2-deckcheatz-aio.sh`. Cases: 720p compact, 1080p, 1440p, ultrawide 3440×1440, UHD 1×, UHD 2× HiDPI, 5K 2× HiDPI, and 1440p with high scaling, plus exact expected restored dimensions. The static GUI tests now assert the GTK/GDK callsites and the shared policy.
+
+**Next validation:** New source checkout should pass PC2 AIO/RC1 preflight and a brand-new staged AppDir should open maximized on the user's UHD screen. If the user changes KWin scaling or runs the build on a 1080p/1440p monitor, it should open proportionally but *not* maximized. Full GTK runtime behavior and KWin fractional-scale handling remain unverified on this new code.
