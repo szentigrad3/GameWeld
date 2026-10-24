@@ -191,6 +191,8 @@ extern int gdk_screen_get_width(GdkScreen *);
 extern int gdk_screen_get_height(GdkScreen *);
 extern int gdk_screen_get_primary_monitor(GdkScreen *);
 extern void gdk_screen_get_monitor_workarea(GdkScreen *, int, GdkRectangle *);
+extern void gdk_screen_get_monitor_geometry(GdkScreen *, int, GdkRectangle *);
+extern int gdk_screen_get_monitor_scale_factor(GdkScreen *, int);
 extern void gtk_style_context_add_provider_for_screen(GdkScreen *, void *, guint);
 extern void gtk_main(void);
 extern void gtk_main_quit(void);
@@ -1791,6 +1793,33 @@ static void refresh_artwork(Game *g){
     if(g&&strcmp(G.artwork_appid,game_key(g))){snprintf(G.artwork_appid,sizeof G.artwork_appid,"%s",game_key(g));if(hh||hc)log_line("Artwork loaded for %s%s%s",g->name,hh?" • hero":"",hc?" • cover":"");else log_line("No cached artwork found yet for %s (%s %s).",g->name,game_source_name(g),g->appid);}
 }
 
+/* Monitor workareas are reported in GTK logical pixels. KWin/Wayland and
+ * HiDPI displays may expose 3840x2160 as 1920x1080 logical at 2x scaling.
+ * Use the full monitor geometry (not its panel-reduced workarea) multiplied
+ * by the integer GTK monitor scale to recognize a physical UHD display.
+ * No hardcoded user screen dimensions or monitor count are assumed. */
+static void pc2_primary_monitor_pixels(int *physical_w,int *physical_h){
+    int w=0,h=0;
+    GdkScreen *screen=gdk_screen_get_default();
+    if(screen){
+        int monitor=gdk_screen_get_primary_monitor(screen);
+        GdkRectangle geometry={0,0,0,0};
+        gdk_screen_get_monitor_geometry(screen,monitor,&geometry);
+        int scale=gdk_screen_get_monitor_scale_factor(screen,monitor);
+        if(scale<1)scale=1;
+        if(scale>8)scale=8;
+        w=geometry.width>0?geometry.width*scale:0;
+        h=geometry.height>0?geometry.height*scale:0;
+    }
+    if(physical_w)*physical_w=w;
+    if(physical_h)*physical_h=h;
+}
+static int pc2_primary_monitor_is_4k(void){
+    int w=0,h=0;
+    pc2_primary_monitor_pixels(&w,&h);
+    return w>=3840 && h>=2160;
+}
+
 static void recommended_window_geometry(int *out_w,int *out_h){
     /* Size GameWeld from the primary monitor work area instead of pinning the
      * UI to the old 1480x900 mock-up.  The goal is to use the extra vertical
@@ -1807,17 +1836,23 @@ static void recommended_window_geometry(int *out_w,int *out_h){
         if(work.width>0&&work.height>0){sw=work.width;sh=work.height;}
     }
     if(pc2_discovery_only()){
-        /* GTK3 monitor workareas are already expressed in logical pixels on
-         * HiDPI desktops, including KWin/Wayland display scaling. Never
-         * hard-cap a PC2 4K window at the former 2200x1400 mockup size.
-         * This defines a comfortable size to RESTORE to; startup itself
-         * requests maximized state so all of the chosen screen is usable. */
-        int maxw=sw>80?sw-40:sw;
-        int maxh=sh>100?sh-56:sh;
-        int ww=(sw*90)/100;
-        int wh=(sh*88)/100;
+        int physical_w=0,physical_h=0;
+        pc2_primary_monitor_pixels(&physical_w,&physical_h);
+        /* Adapt every display's *restored* window to its usable GTK logical
+         * workarea. Small 720p panels use more available room, 1080p/1440p
+         * get modest breathing space, while UHD starts maximized. */
+        int width_pct=90,height_pct=88;
+        if(physical_w>0 && physical_h>0 && (physical_w<=1600 || physical_h<=900)){
+            width_pct=95;height_pct=93;
+        }else if(physical_w>=2560 && physical_h>=1440){
+            width_pct=92;height_pct=90;
+        }
+        int maxw=sw>40?sw-24:sw;
+        int maxh=sh>60?sh-32:sh;
+        int ww=(sw*width_pct)/100;
+        int wh=(sh*height_pct)/100;
         if(ww<900 && maxw>=900)ww=900;
-        if(wh<650 && maxh>=650)wh=650;
+        if(wh<600 && maxh>=600)wh=600;
         if(ww>maxw)ww=maxw;
         if(wh>maxh)wh=maxh;
         if(out_w)*out_w=ww;
@@ -1849,12 +1884,13 @@ static gboolean force_mockup_geometry(void *unused){
     gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);
     return FALSE;
 }
-/* PC2 starts maximized against the window manager's usable monitor area.
- * This runs once, after mapping; it must NEVER resize again while the user
- * moves or restores the window. Ordinary small-screen GTK layout still works. */
+/* Request maximum usable area only for UHD/4K-sized monitors. Other display
+ * resolutions launch at a scaled window size, not forcibly maximized. GTK's
+ * maximize state keeps taskbars/panels available and differs from fullscreen.
+ * This callback runs once; later manual resize is never overridden. */
 static gboolean pc2_startup_fit_monitor(void *unused){
     (void)unused;
-    if(pc2_discovery_only()&&G.window)
+    if(pc2_discovery_only()&&G.window&&pc2_primary_monitor_is_4k())
         gtk_window_maximize((GtkWindow*)G.window);
     return FALSE;
 }
@@ -5018,7 +5054,7 @@ static GtkWidget *build_about(void){
     GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,16);margins(p,24);gtk_container_add(outer,p);GtkWidget*hero=box(GTK_ORIENTATION_VERTICAL,6);gtk_widget_set_halign(hero,GTK_ALIGN_CENTER);GtkWidget*wm=asset_image("gameweld-brand-logo.png",540,180);if(wm){gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}else{wm=label("GameWeld",NULL);gtk_widget_set_name(wm,"section-title");gtk_widget_set_halign(wm,GTK_ALIGN_CENTER);pack(hero,wm,0);}GtkWidget*v=label("0.7.0 PC1 • Game & Trainer Management","page-subtitle");gtk_widget_set_halign(v,GTK_ALIGN_CENTER);pack(hero,v,0);pack(p,hero,0);GtkWidget*cols=box(GTK_ORIENTATION_HORIZONTAL,14);GtkWidget*c1=box(GTK_ORIENTATION_VERTICAL,8);style(c1,"panel");pack(c1,label("WHAT IT DOES","section-kicker"),0);pack(c1,label("Unified Steam, Steam non-Steam shortcut, Heroic and Lutris game discovery\nLutris Test 4 keeps the Test 3 GE-Proton/UMU and classic Wine resolver, launches through Lutris, validates the exact live prefix/runtime owner, and hands assigned/custom local trainers into that same session with no generic fallback\nTrainer Library with conservative automatic matching\nDedicated Aurora / Cheat Evolution manager launch prefixes\nOverview Launch With hub for assigned trainers, Cheat Engine .CT tables, WeMod, Aurora, Cheat Evolution and custom trainer EXEs\nSteam non-Steam Cheat Evolution uses a field-validated restart-free live attach path: configured shortcuts keep Steam rungameid, while unconfigured shortcuts start only the selected resolved Windows target through Steam’s already-running runtime service with STEAM_COMPAT_LAUNCHER_SERVICE=proton injected for that launch. Steam stays open, shortcuts.vdf is never edited, exact App0/service provenance validation rejects unrelated Steam sessions, and the UI now reports restart-free handoff readiness explicitly\nSelected-game launch choices stay visible on Overview; each game can save or reset a one-click default while manager buttons retain explicit launch/close control\nSaved defaults drive the primary Play action; manager defaults now enforce game-first ordering before manager attachment\nSerialized Steam WeMod provider preparation with staging recovery and correct one-shot gate arming\nHeroic WeMod retains verified native .NET 4.8 + DWriteCore preparation, repairs stale GameWeld temporary Wand-runner residue before launch, refreshes the true Heroic game runtime from disk, follows exact launcher-to-game executable handoffs, then attaches Wand through the same live Heroic Wine prefix; readiness rejects Proton/UMU argv wrappers and requires both exact processes to remain live\nSteam shortcut local-trainer handoff now rejects Steam runtime wrappers as fake game PIDs and waits for the final mapped game window to remain stable before starting the trainer, preventing early attachment to black bootstrap surfaces\nLive manager attachment to compatible running game sessions\nCompatibility Engine v2 recipe inspection\nValidated live-session trainer handoff\nManaged Heroic FLiNG compatibility sessions\nPrivacy-scoped diagnostics and support bundles","muted"),0);GtkWidget*c2=box(GTK_ORIENTATION_VERTICAL,8);style(c2,"panel");pack(c2,label("DESIGN PRINCIPLES","section-kicker"),0);pack(c2,label("Game-first navigation\nOne clear primary action per context\nLauncher-native runtime ownership\nVisible readiness before launch\nAdvanced controls kept out of the main workflow","muted"),0);pack(cols,c1,1);pack(cols,c2,1);pack(p,cols,0);GtkWidget*f=label("Open source • MIT • Play more, your way.","muted");gtk_widget_set_halign(f,GTK_ALIGN_CENTER);pack(p,f,0);return outer;}
 
 static void build_ui(void){
-    int initial_w=1480,initial_h=900;recommended_window_geometry(&initial_w,&initial_h);G.window=gtk_window_new(GTK_WINDOW_TOPLEVEL);gtk_window_set_title((GtkWindow*)G.window,"GameWeld");gtk_window_set_icon_name((GtkWindow*)G.window,"gameweld");gtk_window_set_default_size((GtkWindow*)G.window,initial_w,initial_h);if(pc2_discovery_only())gtk_window_maximize((GtkWindow*)G.window);gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);gtk_window_set_decorated((GtkWindow*)G.window,TRUE);g_signal_connect_data(G.window,"destroy",(GCallback)on_destroy,NULL,NULL,0);
+    int initial_w=1480,initial_h=900;recommended_window_geometry(&initial_w,&initial_h);G.window=gtk_window_new(GTK_WINDOW_TOPLEVEL);gtk_window_set_title((GtkWindow*)G.window,"GameWeld");gtk_window_set_icon_name((GtkWindow*)G.window,"gameweld");gtk_window_set_default_size((GtkWindow*)G.window,initial_w,initial_h);if(pc2_discovery_only()&&pc2_primary_monitor_is_4k())gtk_window_maximize((GtkWindow*)G.window);gtk_window_set_position((GtkWindow*)G.window,GTK_WIN_POS_CENTER);gtk_window_set_decorated((GtkWindow*)G.window,TRUE);g_signal_connect_data(G.window,"destroy",(GCallback)on_destroy,NULL,NULL,0);
     GtkWidget*titlebar=box(GTK_ORIENTATION_HORIZONTAL,12);gtk_widget_set_name(titlebar,"app-titlebar");gtk_widget_set_size_request(titlebar,-1,54);gtk_widget_set_margin_start(titlebar,14);gtk_widget_set_margin_end(titlebar,10);
     GtkWidget*titlebrand=box(GTK_ORIENTATION_HORIZONTAL,10);gtk_widget_set_name(titlebrand,"title-brand");GtkWidget*wm=asset_image("gameweld-app-icon.png",36,36);if(!wm){wm=label("GW",NULL);gtk_widget_set_name(wm,"wandmark");}pack(titlebrand,wm,0);GtkWidget*bt=box(GTK_ORIENTATION_VERTICAL,0);GtkWidget*brand=label("GameWeld",NULL);gtk_widget_set_name(brand,"brand");pack(bt,brand,0);GtkWidget*ver=label(pc2_discovery_only()?"PC2 DISCOVERY TEST":"0.7.0",NULL);gtk_widget_set_name(ver,"brandver");pack(bt,ver,0);pack(titlebrand,bt,0);pack(titlebar,titlebrand,0);
     GtkWidget*grow=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow,1);GtkWidget*searchwrap=box(GTK_ORIENTATION_HORIZONTAL,0);gtk_widget_set_name(searchwrap,"global-search-wrap");G.search_scope=gtk_combo_box_text_new();gtk_widget_set_name(G.search_scope,"global-search-scope");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"all","All games");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"steam","Steam");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"shortcut","Steam shortcuts");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"heroic","Heroic");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"lutris","Lutris");gtk_combo_box_text_append((GtkComboBoxText*)G.search_scope,"trainers","Trainers");gtk_combo_box_set_active_id((GtkComboBox*)G.search_scope,"all");gtk_widget_set_size_request(G.search_scope,126,36);g_signal_connect_data(G.search_scope,"changed",(GCallback)on_search_scope_changed,NULL,NULL,0);pack(searchwrap,G.search_scope,0);G.search=gtk_entry_new();gtk_widget_set_name(G.search,"global-search-entry");gtk_entry_set_placeholder_text((GtkEntry*)G.search,"Search all games…");gtk_entry_set_icon_from_icon_name((GtkEntry*)G.search,GTK_ENTRY_ICON_PRIMARY,"system-search-symbolic");gtk_widget_set_size_request(G.search,250,36);g_signal_connect_data(G.search,"changed",(GCallback)on_search,NULL,NULL,0);pack(searchwrap,G.search,0);pack(titlebar,searchwrap,0);GtkWidget*grow2=box(GTK_ORIENTATION_HORIZONTAL,0);pack(titlebar,grow2,1);G.top_steam_status=label("Detecting Steam, Heroic and Lutris…","muted");pack(titlebar,G.top_steam_status,0);pack(titlebar,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);GtkWidget*mi=button("—","windowctl");GtkWidget*ma=button("□","windowctl");GtkWidget*cl=button("×","windowctl");gtk_widget_set_name(cl,"closectl");g_signal_connect_data(mi,"clicked",(GCallback)on_minimize,NULL,NULL,0);g_signal_connect_data(ma,"clicked",(GCallback)on_maximize,NULL,NULL,0);g_signal_connect_data(cl,"clicked",(GCallback)on_close_btn,NULL,NULL,0);pack(titlebar,mi,0);pack(titlebar,ma,0);pack(titlebar,cl,0);gtk_window_set_titlebar((GtkWindow*)G.window,titlebar);
@@ -5026,7 +5062,7 @@ static void build_ui(void){
     G.stack=gtk_stack_new();gtk_stack_set_hhomogeneous((GtkStack*)G.stack,FALSE);gtk_stack_set_vhomogeneous((GtkStack*)G.stack,FALSE);gtk_widget_set_hexpand(G.stack,TRUE);gtk_widget_set_vexpand(G.stack,TRUE);gtk_stack_add_named((GtkStack*)G.stack,build_home(),"home");gtk_stack_add_named((GtkStack*)G.stack,build_library(),"library");gtk_stack_add_named((GtkStack*)G.stack,build_trainer_library(),"trainers");gtk_stack_add_named((GtkStack*)G.stack,build_setup(),"setup");gtk_stack_add_named((GtkStack*)G.stack,build_diag(),"diag");gtk_stack_add_named((GtkStack*)G.stack,build_settings(),"settings");gtk_stack_add_named((GtkStack*)G.stack,build_about(),"about");pack(root,G.stack,1);
     {const char*start=getenv("WAND_NATIVE_START_PAGE");if(start&&!*start)start=NULL;if(start&&!strcmp(start,"library"))nav_activate(G.nav_library,"library");else if(start&&!strcmp(start,"trainers"))nav_activate(G.nav_trainers,"trainers");else if(start&&!strcmp(start,"setup"))nav_activate(G.nav_setup,"setup");else if(start&&!strcmp(start,"diag"))nav_activate(G.nav_diag,"diag");else if(start&&!strcmp(start,"settings"))nav_activate(G.nav_settings,"settings");else if(start&&!strcmp(start,"about"))nav_activate(G.nav_about,"about");else nav_activate(G.nav_home,"home");}
     if(G.game_count>0){G.selected=0;gtk_list_box_select_row((GtkListBox*)G.game_list,(GtkListBoxRow*)G.game_rows[0]);}refresh_ui();log_line("Refreshing installed game sources (Steam, Heroic, Lutris)...");log_line("Steam games detected: %d (%d installed manifest(s) + %d non-Steam shortcut(s))",G.steam_game_count,G.steam_manifest_game_count,G.steam_shortcut_count);log_line("Heroic games detected: %d",G.heroic_game_count);log_line("Lutris games detected: %d (resolved entries can launch; local trainer handoff uses verified live sessions in Test 4)",G.lutris_game_count);if(G.wand_installed)log_line("Steam trainer provider ready");if(G.wand_healthy)log_line("Steam Proton tool ready: GE-Proton-Wand-SHA256");log_line("GameWeld providers ready. Smart Prepare Wand is in Settings; automatic compatibility checks never start an unverified patcher.");if(G.legacy_wrapper_neutralized)log_line("Legacy Steam wand-steam-wrap neutralized; direct Steam Play will no longer auto-start Wand. Backup: %s",G.legacy_wrapper_backup);GtkCssProvider*prov=gtk_css_provider_new();gtk_css_provider_load_from_data(prov,CSS,-1,NULL);gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),prov,GTK_STYLE_PROVIDER_PRIORITY_USER);g_object_unref(prov);gtk_widget_show_all(G.window);{const char*sp=getenv("WAND_NATIVE_START_PAGE");if(sp&&*sp&&(!strcmp(sp,"library")||!strcmp(sp,"trainers")||!strcmp(sp,"setup")||!strcmp(sp,"diag")||!strcmp(sp,"settings")||!strcmp(sp,"about")))gtk_stack_set_visible_child_name((GtkStack*)G.stack,sp);}if(pc2_discovery_only())log_line("PC2 discovery-only: legacy action buttons are blocked and trainer/monitor background jobs are disabled.");else start_trainer_library_scan();if(pc2_discovery_only()){
-        /* Exactly one startup maximization; no delayed resize that could
+        /* Exactly one conditional UHD maximization; no delayed resize that could
          * snap a manually resized 4K window back to a tiny old preset. */
         g_idle_add(pc2_startup_fit_monitor,NULL);
     }else{
