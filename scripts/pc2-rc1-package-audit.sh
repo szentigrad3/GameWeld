@@ -67,6 +67,7 @@ trap 'rm -rf -- "$TEMP"' EXIT
         usr/libexec/gameweld-steam-game-exe.py \
         usr/libexec/gameweld-platform-session.py \
         usr/libexec/gameweld-steam-wemod-platform.py \
+        usr/libexec/gameweld-wemod-enhancer.py \
         usr/libexec/gameweld-wemod-client-audit.py \
         usr/libexec/gameweld-wemod-prefix-readiness.py \
         usr/libexec/gameweld-steam-wemod-runtime-audit.py \
