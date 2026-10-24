@@ -127,6 +127,7 @@ def available_clients(explicit: str | None = None) -> list[Path]:
         home / "wemod-launcher/wemod_data/wemod_bin",
         home / "Games/wemod-launcher/wemod_data/wemod_bin",
         home / ".local/share/wemod-launcher/wemod_data/wemod_bin",
+        home / ".local/share/gameweld/deckcheatz/wemod_data/wemod_bin",
     ]
     found: list[Path] = []
     seen: set[Path] = set()
