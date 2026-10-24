@@ -4906,6 +4906,13 @@ static void pc2_deckcheatz_flow(int experimental_launch){
      * presented first and game/prefix changes require an explicit Yes. */
     GtkWidget*consent=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        pc2_public_release_ui()?
+        "Play with WeMod — %s (Steam AppID %s).\n\n"
+        "GameWeld starts the external DeckCheatz launcher with the selected Proton runtime, "
+        "outside Steam's normal launch supervisor. Some games may need Steam to start them.\n\n"
+        "DeckCheatz may download components or MODIFY this game's Wine prefix:\n%s\n\n"
+        "Back up the prefix if needed, close other sessions using it, and play offline/single-player.\n\n"
+        "GameWeld will NOT edit Steam Launch Options. Continue?":
         "EXPERIMENTAL direct DeckCheatz 1.x launch for %s (Steam AppID %s).\n\n"
         "This will start an external WeMod launcher and a separate Proton process, "
         "without using Steam's launch supervisor. The game or SteamAPI may fail.\n\n"
@@ -4917,7 +4924,7 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     int approved=(gtk_dialog_run((GtkDialog*)consent)==GTK_RESPONSE_YES);
     gtk_widget_destroy(consent);
     if(!approved){
-        log_line("DeckCheatz experimental test cancelled; prefix and Steam settings left untouched.");return;
+        log_line(pc2_public_release_ui()?"WeMod launch cancelled; prefix and Steam settings left untouched.":"DeckCheatz experimental test cancelled; prefix and Steam settings left untouched.");return;
     }
     /* The launcher helper repeats all path checks and refuses duplicate AppIDs.
      * A double-fork detaches the lengthy game session from GTK, while output
@@ -4929,19 +4936,19 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     if(!statebase[0] ||
        snprintf(logdir,sizeof logdir,"%s/gameweld/deckcheatz",statebase)>=(int)sizeof logdir ||
        g_mkdir_with_parents(logdir,0700)!=0){
-        log_line("DeckCheatz experiment blocked: private log directory unavailable.");return;
+        log_line(pc2_public_release_ui()?"WeMod launch blocked: private log directory unavailable.":"DeckCheatz experiment blocked: private log directory unavailable.");return;
     }
     if(snprintf(logpath,sizeof logpath,"%s/%s-%ld-%ld.log",logdir,g->appid,
                 (long)time(NULL),(long)getpid())>=(int)sizeof logpath){
-        log_line("DeckCheatz experiment blocked: log path too long.");return;
+        log_line(pc2_public_release_ui()?"WeMod launch blocked: log path too long.":"DeckCheatz experiment blocked: log path too long.");return;
     }
     int logfd=open(logpath,O_CREAT|O_EXCL|O_WRONLY,0600);
-    if(logfd<0){log_line("DeckCheatz experiment blocked: cannot create private log file.");return;}
+    if(logfd<0){log_line(pc2_public_release_ui()?"WeMod launch blocked: cannot create private log file.":"DeckCheatz experiment blocked: cannot create private log file.");return;}
     close(logfd);
     pid_t first=fork();
     if(first<0){
         unlink(logpath);
-        log_line("DeckCheatz experiment blocked: unable to start launcher helper.");return;
+        log_line(pc2_public_release_ui()?"WeMod launch blocked: unable to start launcher helper.":"DeckCheatz experiment blocked: unable to start launcher helper.");return;
     }
     if(first==0){
         pid_t child=fork();
@@ -4967,10 +4974,10 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     pid_t waited;
     do {waited=waitpid(first,&intermediate,0);} while(waited<0 && errno==EINTR);
     if(waited!=first || !WIFEXITED(intermediate) || WEXITSTATUS(intermediate)!=0){
-        log_line("DeckCheatz experimental handoff failed to queue; inspect %s",logpath);
+        log_line(pc2_public_release_ui()?"WeMod launch request failed; inspect %s":"DeckCheatz experimental handoff failed to queue; inspect %s",logpath);
         return;
     }
-    log_line("DeckCheatz experimental handoff REQUESTED for %s. Not yet verified: game window, WeMod window or trainer attach. Diagnostic log: %s",g->name,logpath);
+    log_line(pc2_public_release_ui()?"Play with WeMod requested for %s. Check that the game and trainer open correctly. Session log: %s":"DeckCheatz experimental handoff REQUESTED for %s. Not yet verified: game window, WeMod window or trainer attach. Diagnostic log: %s",g->name,logpath);
 }
 static void on_pc2_deckcheatz_preview(GtkButton*b,void*d){
     (void)b;(void)d;pc2_deckcheatz_flow(0);
