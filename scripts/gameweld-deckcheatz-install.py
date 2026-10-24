@@ -179,6 +179,41 @@ def running_launcher(path: Path) -> bool:
     return False
 
 
+
+def adopt_existing() -> dict:
+    """Explicitly enrol a clean, manually cloned checkout in managed updates."""
+    parent = install_directory().parent
+    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lock_path = parent / ".deckcheatz-install.lock"
+    with lock_path.open("a+") as lock:
+        os.chmod(lock_path, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        target = install_directory()
+        if target.is_symlink() or not target.is_dir():
+            raise InstallError("Only an existing real DeckCheatz folder in GameWeld's managed directory can be adopted.")
+        if (target / MANAGED_MARKER).exists() or (target / MANAGED_MARKER).is_symlink():
+            raise InstallError("Checkout already has managed metadata; adoption will not overwrite it.")
+        try:
+            provider().inspect_launcher(target / "wemod")
+        except (OSError, ValueError) as exc:
+            raise InstallError("Existing checkout has no recognized upstream 1.x layout") from exc
+        if running_launcher(target):
+            raise InstallError("Close DeckCheatz and WeMod before enrolling this checkout in managed updates.")
+        origin = git_readonly(["-C", str(target), "remote", "get-url", "origin"])
+        if origin != SOURCE_URL:
+            raise InstallError("Existing checkout Git origin is not the official DeckCheatz source.")
+        branch = git_readonly(["-C", str(target), "rev-parse", "--abbrev-ref", "HEAD"])
+        if branch != SOURCE_BRANCH:
+            raise InstallError("Only clean upstream main (1.x) checkouts can be adopted.")
+        revision = git_readonly(["-C", str(target), "rev-parse", "HEAD"])
+        if not REV_RE.fullmatch(revision):
+            raise InstallError("Existing checkout has no valid Git commit")
+        if git_readonly(["-C", str(target), "status", "--porcelain", "--untracked-files=normal"]):
+            raise InstallError("Existing checkout contains local files or edits; adoption blocked to preserve them.")
+        write_managed_metadata(target, revision)
+        return {"result": "adopted", "upstream_revision": revision, **status()}
+
+
 def check_update() -> dict:
     current = status()
     target = install_directory()
@@ -351,15 +386,17 @@ def main() -> int:
     mode.add_argument("--install", action="store_true", help="clone the official external 1.x checkout")
     mode.add_argument("--check-update", action="store_true", help="query latest upstream commit without modifying install")
     mode.add_argument("--update", action="store_true", help="opt-in managed checkout update with backup rollback")
+    mode.add_argument("--adopt", action="store_true", help="opt-in enrolment of a clean official 1.x checkout")
     parser.add_argument("--confirm", action="store_true", help="explicit GUI/user permission to install or update")
     args = parser.parse_args()
-    if args.confirm and not (args.install or args.update):
-        parser.error("--confirm is only valid with --install or --update")
-    if (args.install or args.update) and not args.confirm:
-        parser.error("External download/update requires explicit --confirm")
+    if args.confirm and not (args.install or args.update or args.adopt):
+        parser.error("--confirm requires --install, --update, or --adopt")
+    if (args.install or args.update or args.adopt) and not args.confirm:
+        parser.error("External install/update/adoption requires explicit --confirm")
     try:
         report = (install() if args.install else
                   update() if args.update else
+                  adopt_existing() if args.adopt else
                   check_update() if args.check_update else status())
         print(json.dumps(report, indent=2))
         return 0
