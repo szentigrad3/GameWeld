@@ -97,3 +97,24 @@ This entry supersedes the earlier "live handoff not yet validated" status above 
 **Scope:** one game, one host, one Proton choice, one upstream build, one player-reported working cheat. This does **not** establish all-game compatibility, SteamAPI behavior for other titles, reliable automatic game registration, absence of Wine prefix changes, or a stable/default Play path. Leave other games under experimental opt-in safeguards. A real game-and-trainer success for Astrometica is more than simple process spawn or GUI detection, but not a general compatibility guarantee.
 
 **Next engineering steps:** preserve a machine-readable per-game field-validation record without hardcoding home-directory paths, add reproducible result collection for game process/window and WeMod association, ensure the existing no-LaunchOptions and prefix safeguards remain enforced, and simplify the GUI for validated workflows without silently enabling experimental direct launch for every game.
+
+
+## GameWeld-managed upstream DeckCheatz 1.x installation (2026-10-24)
+
+The PC2 GUI now supports **Install DeckCheatz 1.x (managed)** on Overview and Library. Users no longer need a terminal `git clone` or to hand-configure `GAMEWELD_DECKCHEATZ_LAUNCHER` for a normal per-user install.
+
+On first selection of **Preview selected game** or **Test game + WeMod** with no DeckCheatz checkout detected, GameWeld offers to download and install the official upstream 1.x checkout. This is a user-approved **one-time download**, not a silent process and not a Steam launch action. A worker thread keeps the GTK UI responsive, and after installation the original selected game action resumes automatically if the selection has not changed. Users can also invoke the Install button explicitly.
+
+The independent MIT GameWeld installer is `scripts/gameweld-deckcheatz-install.py`:
+- `--status` is read-only and prints availability, existing checkouts, dependencies, and managed path.
+- `--install --confirm` uses Git to clone `https://github.com/DeckCheatz/wemod-launcher.git` from **main** (1.x); it never selects unfinished `rewrite/v2`.
+- Installs to `${XDG_DATA_HOME:-~/.local/share}/gameweld/deckcheatz` and reuses external existing 1.x checkouts rather than cloning again.
+- Verifies its launcher/symlink-to-source layout, README and AGPL-3.0 license with the existing provider checks, records the checked-out Git commit hash, uses a temporary staging directory, exclusive install lock and atomic rename.
+- Preserves existing user data: an occupied, invalid target is **not** overwritten or removed. A clone failure cleans the staging directory.
+- Does **not** run DeckCheatz during installation, package AGPL upstream source into GameWeld, use `sudo`, modify Steam Launch Options, patch Wine, change a game prefix, or install WeMod into a prefix.
+- Separately identifies `git`, Python/Tkinter and `venv` availability. Installing missing distribution packages is **not** automated and may require a normal system package manager; no unapproved privilege elevation.
+- No automatic background update of already-installed upstream source is enabled; update/version policy needs separate validation.
+
+The next screen for an opted-in **experimental game+trainer test** remains the existing preview and **game-prefix mutation consent**. These are distinct from download permission. The successful Astrometica field test applies to the recorded installed upstream environment; new cloned versions and other games still need verification.
+
+Offline synthetic tests live at `scripts/test_gameweld_deckcheatz_install.py`, including first install, repeated install (no overwrite), invalid pre-existing directory, clone failure and rollback, outside existing checkout reuse, no-install-without-consent, and Steam/compatdata non-mutation. The PC2 GitHub Actions job also builds the GTK source and executes these tests. A successful CI result would validate build and fixtures, **not** downloading over a real end-user network or third-party trainer effectiveness.
