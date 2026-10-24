@@ -4356,12 +4356,12 @@ static void pc2_deckcheatz_flow(int experimental_launch){
      * presented first and game/prefix changes require an explicit Yes. */
     GtkWidget*consent=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
-        "EXPERIMENTAL direct DeckCheatz 1.x launch for %s (Steam AppID %s).\\n\\n"
+        "EXPERIMENTAL direct DeckCheatz 1.x launch for %s (Steam AppID %s).\n\n"
         "This will start an external WeMod launcher and a separate Proton process, "
-        "without using Steam's launch supervisor. The game or SteamAPI may fail.\\n\\n"
-        "DeckCheatz can download components or MODIFY the existing Wine prefix:\\n%s\\n\\n"
+        "without using Steam's launch supervisor. The game or SteamAPI may fail.\n\n"
+        "DeckCheatz can download components or MODIFY the existing Wine prefix:\n%s\n\n"
         "Back up the prefix if you need a rollback, close all game/Steam Play sessions "
-        "using this prefix, and only test offline/single-player.\\n\\n"
+        "using this prefix, and only test offline/single-player.\n\n"
         "GameWeld will NOT edit Steam Launch Options. Continue?",
         g->name,g->appid,compat);
     int approved=(gtk_dialog_run((GtkDialog*)consent)==GTK_RESPONSE_YES);
@@ -4414,8 +4414,9 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         _exit(127);
     }
     int intermediate=0;
-    while(waitpid(first,&intermediate,0)<0 && errno==EINTR){}
-    if(!WIFEXITED(intermediate) || WEXITSTATUS(intermediate)!=0){
+    pid_t waited;
+    do {waited=waitpid(first,&intermediate,0);} while(waited<0 && errno==EINTR);
+    if(waited!=first || !WIFEXITED(intermediate) || WEXITSTATUS(intermediate)!=0){
         log_line("DeckCheatz experimental handoff failed to queue; inspect %s",logpath);
         return;
     }
