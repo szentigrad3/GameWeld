@@ -221,6 +221,70 @@ class WineRebuildSafetyTests(unittest.TestCase):
             self.assertTrue(all("winedmo" not in value for value in called[0]))
             self.assertTrue((work / "candidate/SHA256SUMS").is_file())
 
+
+    def test_status_verifies_both_staged_dlls_and_manifest_without_writes(self):
+        with tempfile.TemporaryDirectory(prefix="gw-crypt32-status-") as temp:
+            work = Path(temp)
+            output = work / "candidate"
+            output.mkdir()
+            hashes = {}
+            for arch in builder.HISTORIC:
+                folder = output / arch
+                folder.mkdir()
+                binary = folder / "crypt32.dll"
+                binary.write_bytes(b"MZ-COMPILED-NOT-PROVEN-" + arch.encode())
+                hashes[arch] = builder.sha256(binary)
+            (output / "SHA256SUMS").write_text(
+                "".join(hashes[arch] + "  " + arch +
+                        "/crypt32.dll\n" for arch in builder.HISTORIC))
+            output_text = io.StringIO()
+
+            def identify(command, **kwargs):
+                if "x86_64-windows" in command[-1]:
+                    return "PE32+ executable (DLL) x86-64"
+                return "PE32 executable (DLL) Intel 80386"
+
+            with patch.object(builder.shutil, "which", return_value="/usr/bin/file"):
+                with patch.object(builder.subprocess, "check_output", side_effect=identify):
+                    with patch.object(builder.subprocess, "run") as run:
+                        with redirect_stdout(output_text):
+                            self.assertEqual(builder.status_candidates(work), 0)
+                        run.assert_not_called()
+            rendered = output_text.getvalue()
+            self.assertIn("SHA256SUMS VERIFIED", rendered)
+            self.assertIn("NEW BINARY BUILD", rendered)
+            self.assertTrue((output / "SHA256SUMS").is_file())
+
+    def test_status_rejects_missing_dll_and_corrupt_manifest(self):
+        with tempfile.TemporaryDirectory(prefix="gw-crypt32-status-missing-") as temp:
+            work = Path(temp)
+            with redirect_stdout(io.StringIO()) as captured:
+                self.assertEqual(builder.status_candidates(work), 2)
+            self.assertIn("STATUS: INCOMPLETE", captured.getvalue())
+            output = work / "candidate"
+            output.mkdir()
+            for arch in builder.HISTORIC:
+                folder = output / arch
+                folder.mkdir()
+                (folder / "crypt32.dll").write_bytes(b"MZ-TEST-" + arch.encode())
+            (output / "SHA256SUMS").write_text(
+                "".join(("f" * 64) + "  " + arch +
+                        "/crypt32.dll\n" for arch in builder.HISTORIC))
+            with patch.object(builder.shutil, "which", return_value=None):
+                with self.assertRaisesRegex(ValueError, "does NOT match SHA256SUMS"):
+                    with redirect_stdout(io.StringIO()):
+                        builder.status_candidates(work)
+
+    def test_status_option_cannot_run_build_or_request_confirmation(self):
+        with patch.object(builder, "status_candidates", return_value=2) as status:
+            with patch.object(builder, "compile_only") as compile:
+                self.assertEqual(builder.main(["--status"]), 2)
+                status.assert_called_once_with(builder.WORK)
+                compile.assert_not_called()
+                with self.assertRaisesRegex(ValueError, "does not accept --confirm"):
+                    builder.main(["--status", "--confirm"])
+                compile.assert_not_called()
+
     def test_fingerprints_and_revision_are_pinned(self):
         self.assertEqual(builder.REV,
             "46b29104e3741fe23bf5e2547196a253aab88c89")
