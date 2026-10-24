@@ -165,6 +165,12 @@ jobs:
           bash scripts/pc2-test18-aio-report.sh
           grep -Fq 'Result: PASS' build/pc2-source/pc2-test18-aio-report.txt
           grep -Fq 'Real game/Wand launched by this test: false' build/pc2-source/pc2-test18-aio-report.txt
+      - name: Test 19 proven Wand Native 0.1.41 managed-session bridge (no real game)
+        run: |
+          bash -n scripts/pc2-test19-aio-report.sh
+          bash scripts/pc2-test19-aio-report.sh
+          grep -Fq 'Result: PASS' build/pc2-source/pc2-test19-aio-report.txt
+          grep -Fq 'Real game / Wand / Wine / Proton started by AIO: false' build/pc2-source/pc2-test19-aio-report.txt
       - name: Wand Enhancer helper
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
