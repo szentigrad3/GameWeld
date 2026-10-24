@@ -77,3 +77,23 @@ Observed user preview has:
 - existing compatdata `/home/szentigrade/.steam/root/steamapps/compatdata/2353250`.
 
 These are **user-supplied, validated paths**, not proof of live launch. The Proton tool directory and game install library differ from the Steam client root/prefix; this is permissible for preview but needs field validation. GameWeld's managed Wand and custom crypt32 work remain isolated and unmodified.
+
+
+## Astrometica PC2 end-to-end field validation — PASS (2026-10-24)
+
+This entry supersedes the earlier "live handoff not yet validated" status above **for this single game and test configuration only**. An actual user-run GUI test was performed on CachyOS, not a synthetic CI fixture.
+
+- Selected Steam game: **Astrometica**, AppID **2353250**, Windows executable `/mnt/games/Steam/steamapps/common/ASTROMETICA/Astrometica.exe`.
+- External upstream provider: DeckCheatz/wemod-launcher **1.544** (as reported in the runtime log), checkout under the user's local GameWeld data directory.
+- Runtime: `/mnt/games/Steam/steamapps/common/Proton - Experimental/proton`.
+- Existing game prefix: `~/.steam/root/steamapps/compatdata/2353250`.
+- GameWeld GUI provided a valid read-only launch preview and the separately consented experimental launch.
+- Runtime log shows the opted-in DeckCheatz provider starting and forwarding `proton waitforexitandrun start Z:\\...\\wemod.bat Astrometica.exe`.
+- Screenshot 1 visibly shows **the Astrometica Early Access game window and a running WeMod desktop window**.
+- Screenshot 2 visibly shows **Astrometica's WeMod trainer page**, available cheats and a **Playing** status.
+- After being asked to test **Unlimited Oxygen** in-game, the user explicitly confirmed **"works ingame"**. Record **end-to-end player-reported trainer operation: PASS**.
+- The validated workflow did **not require changes to Steam Launch Options**. The read-only launch plan explicitly reported `steam_launch_options_modified: false`; the test did not independently diff all Steam configuration files.
+
+**Scope:** one game, one host, one Proton choice, one upstream build, one player-reported working cheat. This does **not** establish all-game compatibility, SteamAPI behavior for other titles, reliable automatic game registration, absence of Wine prefix changes, or a stable/default Play path. Leave other games under experimental opt-in safeguards. A real game-and-trainer success for Astrometica is more than simple process spawn or GUI detection, but not a general compatibility guarantee.
+
+**Next engineering steps:** preserve a machine-readable per-game field-validation record without hardcoding home-directory paths, add reproducible result collection for game process/window and WeMod association, ensure the existing no-LaunchOptions and prefix safeguards remain enforced, and simplify the GUI for validated workflows without silently enabling experimental direct launch for every game.
