@@ -568,3 +568,20 @@ python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
 The build uses a separate `build/pc2-source/crypt32-source-rebuild` directory, fetches the exact Valve Wine commit, checks and applies the original source patch, invokes an out-of-tree Wine `--enable-archs=i386,x86_64` build, and records two candidate PE DLL SHA256 values with compilation logs. It does **not** execute `make install`, install a compatibility tool, overwrite existing `crypt32.dll`, touch Steam launch options, change a game prefix, restart Steam, or launch a trainer. It refuses to reuse or overwrite a partial source/build/candidate directory. If the original patch doesn't apply cleanly to that revision, it refuses to force it. The developer may have to provide missing compilers/dependencies or adapt the build recipe to the release's original GE-Proton packaging environment.
 
 **Critical:** Valve Wine at pinned commit plus this patch is **not guaranteed** to reproduce byte-identical 0.1.41 binaries, because the original GE packaging toolchain, release build flags and other GE patches may differ. Unless both DLL hashes exactly match the known original x64/i386 fingerprints, those files are unvalidated candidate output, not eligible for the existing GameWeld runtime hash gate. Any new non-identical build must undergo explicit ABI, `CERT_SHA256_HASH_PROP_ID` correctness and actual Wand trainer-functionality validation in a separate disposable Proton clone before a user-approved installation. No hash-bypass is provided. Test 21's AIO checks only preflight/consent safety, never downloads or compiles real Wine in CI.
+
+
+### Test 21 bootstrap fix — incomplete first build resumes without recloning
+
+The user's confirmed Wine source build on CachyOS successfully cloned/fetched the pinned Valve Wine revision, checked out the exact commit and applied the original SHA-256 crypt32 patch. Python then stopped with FileNotFoundError trying to execute wine-source/configure. At pinned Wine commit 46b29104e3741fe23bf5e2547196a253aab88c89, upstream ships autogen.sh and configure.ac but NOT the generated configure file. The upstream autogen.sh runs tools/make_requests, tools/make_specfiles, the Vulkan generator and autoreconf -ifv before the configure step.
+
+Test 21 now runs sh ./autogen.sh from the pinned Wine source root only if configure is missing. The patched Wine Git checkout is reused without recloning/resetting or reapplying a patch (Git apply --reverse --check proves the patch is already in place), and the existing empty out-of-tree wine-build directory can be configured in place. If Makefile exists, make can resume. The old build-output.log is APPENDED, not truncated. A source directory with wrong Git revision or unexpected contents fails closed. No installed Steam, game, Wine or Proton binary changes are performed.
+
+On the user's machine, continue with:
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-wand-crypt32-rebuild.py --preflight
+    python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
+
+Even if compilation succeeds, the output is newly-built and UNVERIFIED against live trainer behavior unless both original crypt32 binary hashes match. Do not install these into the existing GE Proton Wand SHA256 until ABI and compatibility tests have been completed.
