@@ -485,3 +485,30 @@ bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
 ```
 
 This is a bridge to the existing stable service, not yet a native GameWeld port of the 0.1.41 runtime. If the read-only check blocks, use its concrete result to decide whether to integrate the missing provider/compatibility functionality into GameWeld without disrupting the current working Steam launch. Don't repeat the unproductive white-window flags.
+
+## PC2 Test 20 — Retire external Wand Native 0.1.41 CLI dependency; integrate managed launch source
+
+Field report 24 October 2026: both 7 Days to Die and correctly selected Astrometica failed Test 19 readiness at `Existing Wand Native 0.1.41 CLI not found`. This is a GameWeld integration design problem rather than a Steam/game/renderer problem. The user does not have the standalone `wandctl` binary present, and GameWeld must not require reinstalling an old app to launch Wand from its GUI.
+
+Test 20 replaces the bridge's external `wandctl` invocation with GameWeld's own `scripts/gameweld-managed-wand.py`. It ports the historic `crates/wand-runtime` single batch flow: one verified Proton `waitforexitandrun` starts Wand from a normalized Windows user profile, restores it and starts the installed Windows game executable in the SAME Windows batch/session. The GameWeld GTK UI now offers **Check GameWeld Managed Wand (read-only)** and **Play Game + Wand (managed Proton, opt-in)**. Earlier live post-game Wand handoffs remain in Settings only because they showed a white window.
+
+Check requires an exact Steam app ID and matching appmanifest, existing Proton prefix, no already-running game process, uniquely verified and patched Wand client, one unambiguous installed Windows game executable (set `WAND_GAME_EXE` explicitly if game includes several), and valid DWriteCore local/shared files. It does NOT need a standalone Wand Native CLI/daemon and does not launch or install anything. Confirmed Play can copy an existing DWriteCore to the Wand directory if absent and starts one Proton batch; it never modifies Steam launch options or stops processes.
+
+**Critical limitation:** The old stable Wand Native 0.1.41 release depended on compiled crypt32 compatibility DLLs for `CERT_SHA256_HASH_PROP_ID`. This source repository contains the patch and metadata but NOT the actual compiled 0.1.41 DLL payloads. GameWeld therefore checks an already-installed isolated `GE-Proton-Wand-SHA256` compatibility tool, its metadata and BOTH exact release crypt32 fingerprints; it will fail closed rather than silently downloading, patching or inventing third-party DLLs. A Test 20 readiness failure naming missing Proton tool/hash or DWriteCore is an accurately identified missing prerequisite, not a successful integration. Restore or rebuild those exact runtime artifacts separately with informed user approval before a live managed attempt. Do not replace the game's working Proton config with a random tool.
+
+Another limit: the managed batch starts the selected game's Windows EXE directly, like the previous one-session architecture, and does not execute the game's old Steam launch option string. Games that require special launch parameters may need an explicitly reviewed game executable/arguments path. Astrometica previously had an invalid command line fixed locally; **do not reapply that broken line**. The in-repository 0.2.2 managed-port is not itself the bit-for-bit 0.1.41 stable release; a successful app launch or trainer attachment still requires live verification.
+
+Test commands:
+
+```bash
+cd /mnt/other/github/GameWeld
+git switch feature/pc2-source-backend
+git pull --ff-only
+bash scripts/pc2-test20-aio-report.sh
+bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+# Select Astrometica (2353250). Close Astrometica and Wand before checking.
+# Check GameWeld Managed Wand (read-only)
+# Only after readiness PASS: Play Game + Wand (managed Proton, opt-in)
+```
+
+Test 20 fixture AIO checks the integrated launcher, exact game/AppID and Proton runtime contracts, confirms the OS is not used to launch any real game or Wand, and compiles the GTK GUI. It **does not** attest that the real SHA256 Proton tool is installed or that the trainer works for Astrometica.
