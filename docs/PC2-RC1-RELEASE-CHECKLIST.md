@@ -8,7 +8,9 @@ or semantics of any game launch, trainer patch, or Steam operation.
 ## Keep in public builds
 
 - Overview and Library, with a working **Play with WeMod** button.
-- Per-game validation and **explicit prefix-change consent**.
+- Per-game validation, an explicit **Play with WeMod** action, and visible
+  disclosure that DeckCheatz may modify the selected game's Proton prefix.
+  First-time managed DeckCheatz installation still requires separate consent.
 - Settings: window-size reset, managed DeckCheatz update with rollback, and
   WeMod Enhancer detect/install/patch/restore controls.
 - Genuine errors and useful support-export actions. Do not invent verified
@@ -43,7 +45,9 @@ This is a **release candidate for local validation**, not a published release.
 - [x] Original local AppImage: Astrometica + WeMod launched; user closed game
       early (the upstream fast-exit message was not proof of launch failure).
 - [ ] Clean RC1 UI builds and passes CI in both development and public mode.
-- [ ] Clean RC1 AppImage tested in person for correct UI, consent and operation.
+- [ ] Clean RC1 AppImage tested in person for one-click Play with WeMod,
+      automatic Windows game EXE detection, no raw preview/picker/extra launch
+      confirmation, and correct first-time installer consent.
 - [ ] Compatibility checks across at least one additional Linux distribution,
       plus portability inspection for GLIBC, GTK and bundled runtime dependencies.
 - [ ] Verify all shipped third-party licenses, notices and redistribution rights.
