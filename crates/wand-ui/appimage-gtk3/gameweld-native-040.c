@@ -617,7 +617,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "Check Wand Native 0.1.41 (read-only)") && strcmp(s, "Play with Wand Native 0.1.41 (opt-in)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "Check GameWeld Managed Wand (read-only)") && strcmp(s, "Play Game + Wand (managed Proton, opt-in)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2676,15 +2676,15 @@ static GtkWidget *build_home(void){
         GtkWidget*wand_check=button("Check Wand Patch (no game launch)","action");
         g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         pack(copy,wand_check,0);
-        GtkWidget*native_readiness=button("Check Wand Native 0.1.41 (read-only)","action");
+        GtkWidget*native_readiness=button("Check GameWeld Managed Wand (read-only)","action");
         g_signal_connect_data(native_readiness,"clicked",(GCallback)on_pc2_native_check,NULL,NULL,0);
         pack(copy,native_readiness,0);
-        GtkWidget*proven=button("Play with Wand Native 0.1.41 (opt-in)","action");
+        GtkWidget*proven=button("Play Game + Wand (managed Proton, opt-in)","action");
         g_signal_connect_data(proven,"clicked",(GCallback)on_pc2_native_play,NULL,NULL,0);
         pack(copy,proven,0);
         GtkWidget*notice=label(pc2_steam_launch_allowed()?
-            "Previously tested PC2 live handoffs showed a white Wand window. Check the old Wand Native 0.1.41 setup, then CLOSE the game before using its managed Play option.":
-            "PC2 game-only launch is disabled. Check Wand Native 0.1.41 readiness, then CLOSE any existing game and use its opt-in managed Play action.","muted");
+            "Prior PC2 handoffs produced a white Wand window. Check integrated managed readiness; CLOSE the game before using managed Play.":
+            "PC2 game-only launch is disabled. Check GameWeld managed readiness, then CLOSE the selected game before managed Play.","muted");
         gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
         pack(copy,notice,0);
     }
@@ -3905,7 +3905,7 @@ static gboolean pc2_wemod_done(void *data){
     size_t n=strlen(txt);
     if(pc2_wemod_helper_status)set_label(pc2_wemod_helper_status,n>1400?txt+n-1400:txt);
     log_line("%s [%s] %s: %.1000s",
-        !strncmp(j->action,"native-",7)?"Wand Native 0.1.41":"WeMod Enhancer",
+        !strncmp(j->action,"native-",7)?"GameWeld Managed Wand":"WeMod Enhancer",
         j->action,j->success?(!strcmp(j->action,"live-launch")||!strcmp(j->action,"live-render")?"HANDOFF SENT (window not verified)":!strcmp(j->action,"native-managed")?"SESSION REQUESTED (game/trainer not verified)":"OK"):"FAILED",txt);
     free(j);
     return FALSE;
@@ -3979,10 +3979,11 @@ static void pc2_wemod_action(const char*action){
             "Only the new Wand child gets --disable-gpu and --disable-gpu-compositing. "
             "A startup log is saved in GameWeld's private state. This may modify the game's Wine prefix state; no Steam settings are changed.":
             !strcmp(action,"native-managed")?
-            "Start a NEW managed game + Wand session using the installed, previously validated Wand Native 0.1.41?\\n\\n"
-            "CLOSE Astrometica and any existing Wand windows FIRST. The bridge requires the isolated GE Proton Wand SHA256 tool, "
-            "DWriteCore and an existing ready old Wand runtime. It will not install anything or change Steam launch options. "
-            "The old daemon will launch BOTH game and Wand together in one Proton session. Continue?":
+            "Start a NEW GameWeld-managed Proton session containing the selected game AND Wand?\\n\\n"
+            "CLOSE the selected Steam game and any existing Wand windows FIRST. The integrated launcher checks exact game identity, "
+            "the isolated verified GE Proton Wand SHA256 tool, a uniquely patched Wand client and DWriteCore. "
+            "It may copy an existing DWriteCore DLL beside Wand and modify the game's Wine prefix while starting. "
+            "No external wandctl, downloads, repatching, or Steam launch option changes. Continue?":
             !strcmp(action,"live-launch")?
             "Launch patched Wand with the ALREADY RUNNING Steam game's exact Proton runtime/prefix?\\n\\n"
             "Requires an observed Windows .exe game process and verified patch files. This may change Wine state inside the game's prefix. "
@@ -4012,7 +4013,7 @@ static void pc2_wemod_action(const char*action){
         if(!strcmp(action,"game-test"))
             log_line("Wand patch check is read-only: it does NOT launch the game or trainer.");
         else if(!strncmp(action,"native-",7))
-            log_line("Wand Native 0.1.41 [%s] selected for %s (Steam app %s). The tested managed one-Proton-session engine is separate from the PC2 live handoff.",action,g->name,g->appid);
+            log_line("GameWeld managed Wand [%s] selected for %s (Steam app %s). This is the integrated one-Proton-session path, not a separate Wand Native CLI.",action,g->name,g->appid);
         else
             log_line("Wand live launch requested for selected game %s (Steam app %s). The recovered active-wineserver + X11 method is selected; actual UI remains unverified.",g->name,g->appid);
         snprintf(j->game_name,sizeof j->game_name,"%s",g->name);
@@ -4058,8 +4059,8 @@ static void pc2_wemod_action(const char*action){
         !strcmp(action,"launch-test")?"Requesting Wand test launch with existing Wine prefix...":
         !strcmp(action,"live-launch")?"Checking the running game's exact Proton runtime before Wand handoff...":
         !strcmp(action,"live-render")?"Retrying Wand with GPU off in the game's live Proton session...":
-        !strcmp(action,"native-check")?"Checking the old Wand Native 0.1.41 managed runtime without launching...":
-        !strcmp(action,"native-managed")?"Checking old Wand Native readiness before requesting one managed game + Wand session...":
+        !strcmp(action,"native-check")?"Checking GameWeld's integrated managed session prerequisites (read-only)...":
+        !strcmp(action,"native-managed")?"Checking managed Proton/Wand readiness before requesting one game + Wand session...":
         "Running upstream WeMod Enhancer. Keep the WeMod client closed during this operation.");
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_wemod_worker,j)==0)pthread_detach(thread);
@@ -4129,8 +4130,8 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         GtkWidget*launch_test=button("Launch Patched Wand (Smoke Test)","action");
         GtkWidget*live_launch=button("Launch Wand in Running Steam Game (opt-in)","action");
         GtkWidget*live_render=button("Retry Wand (GPU Off, opt-in)","action");
-        GtkWidget*native_check=button("Check Wand Native 0.1.41 (read-only)","action");
-        GtkWidget*native_play=button("Play with Wand Native 0.1.41 (opt-in)","action");
+        GtkWidget*native_check=button("Check GameWeld Managed Wand (read-only)","action");
+        GtkWidget*native_play=button("Play Game + Wand (managed Proton, opt-in)","action");
         g_signal_connect_data(verify,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
         g_signal_connect_data(launch_test,"clicked",(GCallback)on_pc2_wemod_launch_test,NULL,NULL,0);
         g_signal_connect_data(live_launch,"clicked",(GCallback)on_pc2_wemod_live_launch,NULL,NULL,0);
@@ -4140,7 +4141,7 @@ static GtkWidget *build_settings(void){GtkWidget*outer=gtk_scrolled_window_new(N
         pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
         pack(eh,live_launch,0);pack(eh,live_render,0);
         pack(eh,native_check,0);pack(eh,native_play,0);
-        GtkWidget*note=label("Test 19 recovers the previously validated Wand Native 0.1.41 single managed game + Wand session. First run Check Wand Native 0.1.41; the game must be CLOSED before managed Play. Earlier live PC2 handoffs, including the active-Wineserver and Wand-only X11 path, still showed a white window and are retained below only for diagnostics.","muted");
+        GtkWidget*note=label("GameWeld's integrated managed flow follows the Wand Native 0.1.41 one-session architecture without requiring a separate wandctl. It requires the isolated GE Proton Wand SHA256 DLLs and DWriteCore already installed. Check readiness first and close the game before managed Play. The earlier white-window live handoffs remain for diagnostics only.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_wemod_status,TRUE);
