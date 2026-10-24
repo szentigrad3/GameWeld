@@ -28,6 +28,8 @@ REPORT="$OUT/deckcheatz-aio-report.txt"
   python3 -m unittest scripts/test_gameweld_steam_wemod_platform.py -v
   printf '%s\n' '=== Read-only WeMod/Electron client version metadata audit ==='
   python3 -m unittest scripts/test_gameweld_wemod_client_audit.py -v
+  printf '%s\n' '=== Steam Proton .NET 4.8 readiness (offline registry fixtures) ==='
+  python3 -m unittest scripts/test_gameweld_wemod_prefix_readiness.py -v
   printf '%s\n' '=== Managed install/update/adoption synthetic cases ==='
   python3 scripts/test_gameweld_deckcheatz_install.py -v
   printf '%s\n' '=== Per-game Proton resolution synthetic cases ==='
