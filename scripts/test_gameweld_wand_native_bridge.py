@@ -1,122 +1,167 @@
 #!/usr/bin/env python3
-"""Fixture-only tests for the old Wand Native 0.1.41 managed-session bridge."""
+"""Fixture-only tests of GameWeld's integrated managed Proton architecture."""
 from __future__ import annotations
+from contextlib import contextmanager, redirect_stdout
+import importlib.util
+import io
+import json
 import os
 from pathlib import Path
-import subprocess
-import sys
+from unittest.mock import patch, Mock
 import tempfile
 import unittest
 
-HELPER = Path(__file__).with_name("gameweld-wand-native-bridge.py")
+SOURCE = Path(__file__).with_name("gameweld-managed-wand.py")
+spec = importlib.util.spec_from_file_location("gameweld_managed_wand_test", SOURCE)
+mod = importlib.util.module_from_spec(spec)
+import sys
+sys.modules[spec.name] = mod
+spec.loader.exec_module(mod)
 
-class NativeManagedBridgeTests(unittest.TestCase):
+
+class IntegratedManagedSessionTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="gameweld-native-bridge-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="gw-managed-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.game = self.root / "installed" / "Astrometica"
+        self.home = self.root / "home"
+        self.steamroot = self.home / ".local/share/Steam"
+        self.steamroot.mkdir(parents=True)
+        self.library = self.root / "Library"
+        self.apps = self.library / "steamapps"
+        self.game = self.apps / "common" / "Astrometica"
         self.game.mkdir(parents=True)
-        self.runtime = self.root / "Wand app-12.55.0" / "WeMod.exe"
-        self.runtime.parent.mkdir()
-        self.runtime.write_bytes(b"MZ-TEST")
-        self.record = self.root / "command-record.txt"
-        self.cli = self.root / "wandctl"
-        self.cli.write_text(
-            "#!/usr/bin/env python3\n"
-            "import os,sys,json\n"
-            "from pathlib import Path\n"
-            "args=sys.argv[1:]\n"
-            "with Path(os.environ['GAMEWELD_TEST_RECORD']).open('a') as f:f.write(' '.join(args)+'\\n')\n"
-            "if args==['--version']:print('wandctl '+os.environ.get('GW_MOCK_VERSION','0.1.41'))\n"
-            "elif args==['ping']:print('{}')\n"
-            "elif args==['proton','verify']:print('Result: healthy')\n"
-            "elif args and args[0]=='inspect':\n"
-            "  print(json.dumps({'game':{'app_id':int(args[1]),'install_dir':os.environ['GW_TEST_GAME']},'proton':{'display_name':'GE Proton Wand SHA256'}}))\n"
-            "elif args and args[0]=='provider-health':\n"
-            "  print(json.dumps([{'id':'wemod','available':True,'status':'ready','details':[\n"
-            "    'WeMod runtime 12.55.0 at '+os.environ['GW_TEST_RUNTIME'],\n"
-            "    ('DWriteCore compatibility: installed beside runtime' if os.environ.get('GW_NO_DWRITE')!='1' else 'DWriteCore compatibility: missing')]}]))\n"
-            "elif args and args[0]=='processes':\n"
-            "  print(json.dumps({'best_candidate_pid':701 if os.environ.get('GW_MOCK_RUNNING')=='1' else None,'candidates':[]}))\n"
-            "elif args and args[0]=='begin-session':\n"
-            "  print(json.dumps({'id':'00000000-0000-0000-0000-000000000001','state':'Preparing'}))\n"
-            "else:print('Unexpected arguments:',args,file=sys.stderr);sys.exit(2)\n",
-            encoding="utf-8"
+        self.exe = self.game / "Astrometica.exe"
+        self.exe.write_bytes(b"MZ-GAME")
+        (self.apps / "appmanifest_2353250.acf").write_text(
+            '"AppState"\n{\n    "appid"    "2353250"\n    "installdir" "Astrometica"\n}\n'
         )
-        self.cli.chmod(0o755)
-        self.env = dict(os.environ,
-            GAMEWELD_WAND_NATIVE_CLI=str(self.cli),
-            GAMEWELD_TEST_RECORD=str(self.record),
-            GW_TEST_GAME=str(self.game),
-            GW_TEST_RUNTIME=str(self.runtime),
-            HOME=str(self.root),
+        self.compat = self.apps / "compatdata" / "2353250"
+        self.prefix = self.compat / "pfx"
+        user = self.prefix / "drive_c/users/steamuser"
+        user.mkdir(parents=True)
+        dos = self.prefix / "dosdevices"
+        dos.mkdir()
+        (dos / "c:").symlink_to(self.prefix / "drive_c", target_is_directory=True)
+        self.wand = self.root / "Wand" / "app-12.55.0" / "WeMod.exe"
+        self.wand.parent.mkdir(parents=True)
+        self.wand.write_bytes(b"MZ-WAND")
+        self.dwrite = self.wand.parent / "DWriteCore.dll"
+        self.dwrite.write_bytes(b"MZ" + b"D" * (1024 * 1024 + 10))
+        self.protonroot = self.library / "compatibilitytools.d" / mod.TOOL
+        self.protonroot.mkdir(parents=True)
+        self.proton = self.protonroot / "proton"
+        self.proton.write_text("#!/bin/sh\nexit 0\n")
+        self.proton.chmod(0o755)
+        (self.protonroot / "compatibilitytool.vdf").write_text(
+            '"compatibilitytools" { "compat_tools" { "GE-Proton-Wand-SHA256" { "display_name" "GE Proton Wand SHA256" } } }'
         )
+        (self.protonroot / "WAND-HYBRID.json").write_text(json.dumps({
+            "tool_id": mod.TOOL,
+            "patched_x86_64_crypt32_sha256": mod.EXPECTED["x86_64-windows"],
+            "patched_i386_crypt32_sha256": mod.EXPECTED["i386-windows"],
+        }))
+        for arch in mod.EXPECTED:
+            dll = self.protonroot / "files" / "lib" / "wine" / arch / "crypt32.dll"
+            dll.parent.mkdir(parents=True)
+            dll.write_bytes(b"MZ-FAKE-PAYLOAD-" + arch.encode())
+        self.env = patch.dict(os.environ, {"HOME": str(self.home),
+                                          "XDG_STATE_HOME": str(self.root / "state")})
+        self.env.start()
+        self.addCleanup(self.env.stop)
 
-    def invoke(self, *args: str, env=None):
-        return subprocess.run(
-            [sys.executable, str(HELPER), *args],
-            env=env or self.env, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, timeout=20
-        )
+    def fake_sha(self, path):
+        arch = path.parent.name
+        return mod.EXPECTED[arch]
 
-    def base(self):
-        return ("--appid", "2353250", "--game-provider", "steam",
-                "--game-dir", str(self.game))
+    @contextmanager
+    def healthy(self):
+        with patch.object(mod, "verified_client", return_value=self.wand), \
+             patch.object(mod, "sha256", side_effect=self.fake_sha), \
+             patch.object(mod, "existing_game_process", return_value=False):
+            yield
 
-    def test_readonly_check_does_not_start_game_or_wand(self):
-        result = self.invoke("check", *self.base())
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Wand Native 0.1.41: VERIFIED", result.stdout)
-        self.assertIn("DWriteCore beside runtime: VERIFIED", result.stdout)
-        self.assertIn("Read-only readiness: PASS", result.stdout)
-        self.assertNotIn("begin-session", self.record.read_text())
-        self.assertEqual(self.runtime.read_bytes(), b"MZ-TEST")
+    def test_integrated_check_does_not_need_wandctl_and_changes_no_game(self):
+        with self.healthy():
+            p = mod.plan("2353250", str(self.game), None)
+            self.assertEqual(p.proton, self.proton.resolve())
+            self.assertEqual(p.game_exe, self.exe.resolve())
+            self.assertEqual(p.windows_user, "steamuser")
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(mod.main(["check", "--appid", "2353250",
+                                          "--game-dir", str(self.game)]), 0)
+        self.assertIn("READINESS PASS", stdout.getvalue())
+        self.assertIn("no real game", stdout.getvalue())
+        self.assertEqual(self.exe.read_bytes(), b"MZ-GAME")
+        self.assertEqual(self.wand.read_bytes(), b"MZ-WAND")
+        self.assertFalse((self.root / "state").exists())
 
-    def test_managed_launch_requires_explicit_confirmation(self):
-        denied = self.invoke("play", *self.base())
-        self.assertNotEqual(denied.returncode, 0)
-        self.assertIn("explicit --confirm", denied.stdout)
-        self.assertFalse(self.record.exists(), "No CLI action without consent")
-        allowed = self.invoke("play", *self.base(), "--confirm")
-        self.assertEqual(allowed.returncode, 0, allowed.stdout)
-        self.assertIn("begin-session request: ACCEPTED", allowed.stdout)
-        record = self.record.read_text()
-        self.assertIn("begin-session 2353250", record)
-        self.assertIn("--provider wemod --proton GE Proton Wand SHA256", record)
+    def test_real_fingerprint_mismatch_blocks_before_launch(self):
+        # Synthetic crypt32 DLLs don't match the tested release fingerprints.
+        with patch.object(mod, "verified_client", return_value=self.wand), \
+             patch.object(mod, "existing_game_process", return_value=False):
+            with self.assertRaisesRegex(mod.Blocked, "crypt32.*does not match"):
+                mod.plan("2353250", str(self.game), None)
+        self.assertFalse((self.root / "state").exists())
 
-    def test_existing_game_process_fails_closed(self):
-        env = dict(self.env, GW_MOCK_RUNNING="1")
-        denied = self.invoke("play", *self.base(), "--confirm", env=env)
-        self.assertNotEqual(denied.returncode, 0)
-        self.assertIn("CLOSE the game", denied.stdout)
-        self.assertNotIn("begin-session", self.record.read_text())
+    def test_one_proton_batch_contains_wand_first_game_second_and_restores_profile(self):
+        with self.healthy():
+            p = mod.plan("2353250", str(self.game), None)
+            text = mod.build_batch(p, p.state_dir / "launch.bat", p.state_dir / "stage.txt")
+        self.assertIn("SteamAppId=2353250", text)
+        self.assertIn("USERPROFILE=C:\\users\\steamuser", text)
+        self.assertIn("set \"USERPROFILE=%WAND_SAVED_USERPROFILE%\"", text)
+        self.assertLess(text.index("echo starting-wand"), text.index("echo starting-game"))
+        self.assertIn("start \"\" /D", text)
+        self.assertNotIn("--disable-gpu", text)
+        self.assertTrue("\r\n" in text)
 
-    def test_missing_dwrite_and_unverified_cli_fail_closed(self):
-        for settings, reason in [
-            ({"GW_NO_DWRITE": "1"}, "DWriteCore is not installed"),
-            ({"GW_MOCK_VERSION": "0.1.40"}, "not tested 0.1.41"),
-        ]:
-            with self.subTest(settings=settings):
-                self.record.unlink(missing_ok=True)
-                response = self.invoke("play", *self.base(), "--confirm",
-                                       env=dict(self.env, **settings))
-                self.assertNotEqual(response.returncode, 0)
-                self.assertIn(reason, response.stdout)
-                if self.record.exists():
-                    self.assertNotIn("begin-session", self.record.read_text())
+    def test_confirmation_required_and_mock_proton_launch_uses_waitforexitandrun(self):
+        args = ["play", "--appid", "2353250", "--game-dir", str(self.game)]
+        with patch.object(mod, "plan") as check:
+            with self.assertRaisesRegex(mod.Blocked, "explicit --confirm"):
+                mod.main(args)
+            check.assert_not_called()
+        child = Mock(pid=321)
+        with self.healthy(), patch.object(mod.subprocess, "Popen", return_value=child) as launch:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(mod.main(args + ["--confirm"]), 0)
+        cmd = launch.call_args.args[0]
+        self.assertEqual(cmd[0], str(self.proton.resolve()))
+        self.assertEqual(cmd[1], "waitforexitandrun")
+        self.assertTrue(cmd[2].endswith("appid-2353250-launch.bat"))
+        self.assertIn("REQUEST SENT", output.getvalue())
+        self.assertIn("NOT VERIFIED", output.getvalue())
+        self.assertTrue((self.root / "state/gameweld/managed-wand/appid-2353250-launch.bat").is_file())
 
-    def test_different_game_path_and_wrong_provider_blocked(self):
-        mismatch = self.invoke("check", "--appid", "2353250", "--game-dir",
-                               str(self.root), "--game-provider", "steam")
-        self.assertNotEqual(mismatch.returncode, 0)
-        self.assertIn("disagree", mismatch.stdout)
-        wrong = self.invoke("play", "--confirm", "--appid", "2353250",
-                            "--game-provider", "heroic")
-        self.assertNotEqual(wrong.returncode, 0)
-        self.assertIn("standard Steam games", wrong.stdout)
-        malformed = self.invoke("play", "--confirm", "--appid", "2353250;exit")
-        self.assertNotEqual(malformed.returncode, 0)
+    def test_running_game_blocks_managed_session(self):
+        with patch.object(mod, "existing_game_process", return_value=True):
+            with self.assertRaisesRegex(mod.Blocked, "already running"):
+                mod.plan("2353250", str(self.game), None)
+
+    def test_missing_proton_tool_and_wrong_game_id_are_blocked(self):
+        (self.protonroot / "proton").unlink()
+        with patch.object(mod, "existing_game_process", return_value=False):
+            with self.assertRaisesRegex(mod.Blocked, "No unique verified"):
+                mod.plan("2353250", str(self.game), None)
+        with self.assertRaisesRegex(mod.Blocked, "manifest"):
+            mod.steam_install(self.game, "251570")
+        with self.assertRaisesRegex(mod.Blocked, "Invalid"):
+            mod.valid_appid("2353250;rm -rf /")
+
+    def test_ambiguous_executable_fails_closed(self):
+        (self.game / "Extras").mkdir()
+        (self.game / "Extras/Astrometica.exe").write_bytes(b"MZ-AMBIGUOUS")
+        with self.assertRaisesRegex(mod.Blocked, "one exact Windows game executable"):
+            mod.choose_game_exe(self.game, None)
+
+    def test_dwrite_must_be_present_no_auto_network_install(self):
+        self.dwrite.unlink()
+        with self.healthy():
+            with self.assertRaisesRegex(mod.Blocked, "DWriteCore"):
+                mod.plan("2353250", str(self.game), None)
 
 if __name__ == "__main__":
     unittest.main()
