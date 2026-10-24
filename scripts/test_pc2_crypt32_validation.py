@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""PC2 Test22: synthetic-only safety and SHA256 fixture regression tests.
+
+CI never calls real Proton, Wine, Steam, Wand or a real game.
+"""
+from __future__ import annotations
+from contextlib import redirect_stdout
+import hashlib
+import importlib.util
+import io
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
+import unittest
+from unittest.mock import patch
+import sys
+
+SCRIPT = Path(__file__).with_name("pc2-crypt32-validation.py")
+spec = importlib.util.spec_from_file_location("gameweld_pc2_test22", SCRIPT)
+mod = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = mod
+spec.loader.exec_module(mod)
+
+
+class Crypt32CertificateValidationFixtures(unittest.TestCase):
+    def test_offline_certificate_der_digest_is_independent(self):
+        size, hashes = mod.check_fixture()
+        self.assertGreater(size, 300)
+        self.assertEqual(hashes["expected_sha256"],
+                         "3bf3473eeac9e2dac73cc1a66982ea799389c72a5951c7d5870d89cc030e957e")
+        self.assertEqual(hashes["expected_sha1"],
+                         "d492b75fdb0fa2f9a1f7abe933527451b5b598e1")
+
+    def test_status_and_probe_compilation_never_run_without_optin(self):
+        with patch.object(mod, "audit", return_value=0) as audit:
+            with patch.object(mod, "compile_probes") as compile:
+                with patch.object(mod, "runtime_probes") as runtime:
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(mod.main([]), 0)
+                    audit.assert_called_once()
+                    with self.assertRaisesRegex(mod.ValidationBlocked, "--confirm"):
+                        mod.main(["--compile-probes"])
+                    with self.assertRaisesRegex(mod.ValidationBlocked, "--confirm"):
+                        mod.main(["--runtime-probes"])
+                    compile.assert_not_called()
+                    runtime.assert_not_called()
+
+    def test_compile_probes_writes_only_under_disposable_directory(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-build-") as temp:
+            root = Path(temp)
+            with patch.object(mod, "TESTROOT", root):
+                with patch.object(mod, "audit", return_value=0):
+                    with patch.object(mod.shutil, "which", return_value="/usr/bin/fake"):
+                        calls = []
+
+                        def fake_cc(command, **kwargs):
+                            calls.append(command)
+                            dest = Path(command[command.index("-o")+1])
+                            dest.write_bytes(b"MZ" + b"probe" * 350)
+                            return SimpleNamespace(returncode=0, stderr="")
+
+                        with patch.object(mod.subprocess, "run", side_effect=fake_cc):
+                            with redirect_stdout(io.StringIO()):
+                                self.assertEqual(mod.main(["--compile-probes", "--confirm"]), 0)
+                self.assertEqual(len(calls), 2)
+                for arch in mod.ARCHS:
+                    self.assertTrue(mod.probe_path(arch).is_file())
+                self.assertTrue(all("-lcrypt32" in c for c in calls))
+                with self.assertRaisesRegex(mod.ValidationBlocked, "already"):
+                    with patch.object(mod, "audit", return_value=0):
+                        mod.compile_probes()
+
+    def test_prefix_link_is_renamed_not_followed_or_overwritten(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-sandbox-") as temp:
+            root = Path(temp)
+            pfx = root / "data/pfx"
+            system = pfx / "drive_c/windows/system32"
+            system.mkdir(parents=True)
+            original = root / "outside-real-original.dll"
+            original.write_bytes(b"DO NOT MODIFY")
+            target = system / "crypt32.dll"
+            target.symlink_to(original)
+            candidate = root / "candidate-64.dll"
+            candidate.write_bytes(b"MZ-TEST-CANDIDATE")
+            copy = mod._safe_replace_prefix_dll(pfx, "x86_64-windows", candidate)
+            self.assertEqual(copy.read_bytes(), b"MZ-TEST-CANDIDATE")
+            self.assertEqual(original.read_bytes(), b"DO NOT MODIFY")
+            self.assertTrue((system / "crypt32.gameweld-original.dll").is_symlink())
+
+    def test_non_local_prefix_directory_is_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-escape-") as temp:
+            root = Path(temp)
+            pfx = root / "data/pfx"
+            folder = pfx / "drive_c/windows"
+            folder.mkdir(parents=True)
+            outside = root / "actual-other-prefix"
+            outside.mkdir()
+            (folder / "system32").symlink_to(outside, target_is_directory=True)
+            candidate = root / "candidate"
+            candidate.write_bytes(b"MZ")
+            with self.assertRaisesRegex(mod.ValidationBlocked, "outside sandbox"):
+                mod._safe_replace_prefix_dll(pfx, "x86_64-windows", candidate)
+            self.assertEqual(list(outside.iterdir()), [])
+
+    def test_runtime_requires_probes_and_never_touches_game_prefix(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-live-") as temp:
+            root = Path(temp)
+            candidate_dir = root / "build"
+            validation = root / "validation"
+            original_proton = root / "GE-Proton-Wand-SHA256/proton"
+            original_proton.parent.mkdir()
+            original_proton.write_text("#!/bin/sh\nexit 0\n")
+            original_proton.chmod(0o755)
+            for arch in mod.ARCHS:
+                dll = candidate_dir / "candidate" / arch / "crypt32.dll"
+                dll.parent.mkdir(parents=True)
+                dll.write_bytes(b"MZ" + arch.encode())
+                exe = validation / "probes" / (mod.ARCHS[arch][2]+"-crypt32-property.exe")
+                exe.parent.mkdir(parents=True, exist_ok=True)
+                exe.write_bytes(b"MZ-test-probe-" + arch.encode())
+            steam = root / "Steam"
+            steam.mkdir()
+            calls = []
+
+            def simulated_runner(proton, exe, session, steam_root, overrides, logfile):
+                calls.append((exe.name, overrides["WINEDLLOVERRIDES"]))
+                pfx = session / "pfx"
+                for part in ("system32", "syswow64"):
+                    dest = pfx / "drive_c/windows" / part
+                    dest.mkdir(parents=True, exist_ok=True)
+                markers = ("\nGW_SHA256_OK\nGW_SHA1_OK\nGW_SHA256_AFTER_SET_OK\n"
+                           "GW_CRYPT32_CERT_SHA256_RESULT=PASS\n")
+                logfile.write_text(markers)
+                return 0, markers
+
+            with patch.object(mod, "TESTROOT", validation):
+                with patch.object(mod, "BUILD", candidate_dir):
+                    with patch.object(mod, "audit", return_value=0):
+                        with patch.object(mod, "find_steam", return_value=steam):
+                            with patch.object(mod, "run_proton", side_effect=simulated_runner):
+                                with redirect_stdout(io.StringIO()) as output:
+                                    self.assertEqual(mod.runtime_probes(original_proton), 0)
+            self.assertEqual(len(calls), 3)  # once to bootstrap; once per architecture
+            self.assertEqual(calls[0][1], "crypt32=b")
+            self.assertEqual([c[1] for c in calls[1:]], ["crypt32=n,b", "crypt32=n,b"])
+            self.assertIn("API FUNCTIONAL PASS", output.getvalue())
+            for arch in mod.ARCHS:
+                self.assertEqual((candidate_dir / "candidate" / arch / "crypt32.dll")
+                                 .read_bytes(), b"MZ" + arch.encode())
+            self.assertEqual(original_proton.read_text(), "#!/bin/sh\nexit 0\n")
+
+
+if __name__ == "__main__":
+    unittest.main()
