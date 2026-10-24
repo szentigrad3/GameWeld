@@ -145,8 +145,15 @@ APPRUN
     echo '=== Non-GUI AppImage smoke test ==='
     local_status="$("$IMAGE" --appimage-extract-and-run --pc2-launch-gate-status)"
     printf '%s\n' "$local_status"
-    [[ "$local_status" == 'PC2 Steam game-only launch: disabled' ]] || {
-        echo 'FAIL: packaged PC2 safety gate did not return the expected result' >&2
+    # Development builds keep the game-only gate off. In the public-facing
+    # candidate, an explicit Play Game click is the opt-in. No trainer starts.
+    if [[ "${GAMEWELD_PC2_PUBLIC_UI:-0}" == 1 ]]; then
+        expected_gate='PC2 Steam game-only launch: enabled'
+    else
+        expected_gate='PC2 Steam game-only launch: disabled'
+    fi
+    [[ "$local_status" == "$expected_gate" ]] || {
+        echo "FAIL: packaged game-only safety gate mismatch; wanted: $expected_gate" >&2
         exit 7
     }
     sha256sum "$IMAGE" > "$IMAGE.sha256"
