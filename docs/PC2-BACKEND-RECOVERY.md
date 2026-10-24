@@ -585,3 +585,19 @@ On the user's machine, continue with:
     python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
 
 Even if compilation succeeds, the output is newly-built and UNVERIFIED against live trainer behavior unless both original crypt32 binary hashes match. Do not install these into the existing GE Proton Wand SHA256 until ABI and compatibility tests have been completed.
+
+
+### Test 21 compile error — missing Windows SDK SHA-256 certificate property ID
+
+The user reran the Wine build after the autogen/resume fix. Wine configured and parallel make reached crypt32 i386 compilation. `dlls/crypt32/cert.c:558` and `:781` fail on `CERT_SHA256_HASH_PROP_ID` undeclared. The original 0.1.41 source patch adds both switch cases but the pinned Valve Wine include/wincrypt.h at commit 46b29104e3741fe23bf5e2547196a253aab88c89 has no definition of this newer Windows SDK property ID. The correct value is **107**, confirmed in contemporary Windows ABI headers (e.g. winapi wincrypt.rs and FreeRDP wincrypt.h).
+
+Fix: new `patches/wine-crypt32-cert-sha256-header.patch` adds `#define CERT_SHA256_HASH_PROP_ID 107` to the pinned Wine include/wincrypt.h alongside the other property IDs. The original `patches/wine-crypt32-cert-sha256-prop.patch` (cert.c change) remains unchanged. `scripts/pc2-wand-crypt32-rebuild.py` now invokes `ensure_sha256_header()` after verifying the pinned checkout/cert.c patch but before resuming configured make. This action uses git apply --check/apply for the separate header patch, refuses if any conflicting declaration exists, and sees an already-correct declaration as an idempotent no-op on subsequent resumes. It will not reclone source or delete build output.
+
+Resume exactly:
+
+    cd /mnt/other/github/GameWeld
+    git switch feature/pc2-source-backend
+    git pull --ff-only
+    python3 scripts/pc2-wand-crypt32-rebuild.py --build --confirm
+
+If make encounters a new compiler error, the builder now prints the relevant log excerpts; alternatively run `python3 scripts/pc2-wand-crypt32-rebuild.py --diagnose` (read-only). Do not copy compiled candidates into the existing Steam compatibility tool until independent ABI/runtime verification. The old binary fingerprints are unchanged and remain enforced.
