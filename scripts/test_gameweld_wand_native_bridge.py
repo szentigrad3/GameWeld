@@ -101,7 +101,7 @@ class IntegratedManagedSessionTests(unittest.TestCase):
         # Synthetic crypt32 DLLs don't match the tested release fingerprints.
         with patch.object(mod, "verified_client", return_value=self.wand), \
              patch.object(mod, "existing_game_process", return_value=False):
-            with self.assertRaisesRegex(mod.Blocked, "crypt32.*does not match"):
+            with self.assertRaisesRegex(mod.Blocked, "crypt32 SHA-256 mismatch"):
                 mod.plan("2353250", str(self.game), None)
         self.assertFalse((self.root / "state").exists())
 
@@ -144,12 +144,39 @@ class IntegratedManagedSessionTests(unittest.TestCase):
     def test_missing_proton_tool_and_wrong_game_id_are_blocked(self):
         (self.protonroot / "proton").unlink()
         with patch.object(mod, "existing_game_process", return_value=False):
-            with self.assertRaisesRegex(mod.Blocked, "No unique verified"):
+            with self.assertRaisesRegex(mod.Blocked, "Expected one verified"):
                 mod.plan("2353250", str(self.game), None)
         with self.assertRaisesRegex(mod.Blocked, "manifest"):
             mod.steam_install(self.game, "251570")
         with self.assertRaisesRegex(mod.Blocked, "Invalid"):
             mod.valid_appid("2353250;rm -rf /")
+
+    def test_missing_tool_error_shows_prior_release_archive_without_installing(self):
+        home_archive = self.home / "src/wand-ge-proton/build/GE-Proton-Wand-SHA256.tar.gz"
+        home_archive.parent.mkdir(parents=True)
+        home_archive.write_bytes(b"ARCHIVED-TEST-FIXTURE-NOT-REAL-PROTON")
+        (self.protonroot / "proton").unlink()
+        with self.assertRaisesRegex(mod.Blocked, "Previous tested-release recovery files FOUND") as error:
+            mod.find_proton(self.apps)
+        self.assertIn(str(home_archive), str(error.exception))
+        self.assertIn("Proton launcher is missing", str(error.exception))
+        self.assertTrue(home_archive.is_file())
+        self.assertFalse((self.root / "state").exists())
+
+    def test_no_verified_tool_distinguishes_hash_mismatch(self):
+        with self.assertRaisesRegex(mod.Blocked, "crypt32 SHA-256 mismatch") as error:
+            mod.find_proton(self.apps)
+        self.assertIn("0 verified", str(error.exception))
+        self.assertIn("x86_64-windows", str(error.exception))
+
+    def test_tool_discovery_reports_other_steam_library_and_resolves_duplicates(self):
+        with self.healthy():
+            paths = mod._proton_candidates(self.apps)
+            self.assertIn(self.protonroot, paths)
+            tool, root = mod.find_proton(self.apps)
+            self.assertEqual(tool, self.proton.resolve())
+            self.assertTrue(root.is_dir())
+        self.assertEqual(len(paths), len({str(x.resolve(strict=False)) for x in paths}))
 
     def test_ambiguous_executable_fails_closed(self):
         (self.game / "Extras").mkdir()
