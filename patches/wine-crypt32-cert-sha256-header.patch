@@ -1,6 +1,6 @@
 --- a/include/wincrypt.h
 +++ b/include/wincrypt.h
-@@ -2594,9 +2594,10 @@
+@@ -2594,8 +2594,9 @@
  #define CERT_ROOT_PROGRAM_NAME_CONSTRAINTS_PROP_ID 84
  
  #define CERT_SIGN_HASH_CNG_ALG_PROP_ID             89
