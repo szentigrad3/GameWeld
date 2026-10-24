@@ -180,6 +180,66 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                     self.assertEqual(mod.diagnose_runtime_logs(), 2)
                 self.assertIn("No previous Test22 disposable runtime session", output.getvalue())
 
+
+    def test_baseline_failure_prevents_candidate_prefix_modification(self):
+        with tempfile.TemporaryDirectory(prefix="gw-test22-control-fail-") as temp:
+            root = Path(temp)
+            dllroot = root / "candidates"
+            destroot = root / "validation"
+            proton = root / "GE-Proton-Wand-SHA256/proton"
+            proton.parent.mkdir()
+            proton.write_text("#!/bin/sh\nexit 0\n")
+            proton.chmod(0o755)
+            for arch in mod.ARCHS:
+                dll = dllroot / "candidate" / arch / "crypt32.dll"
+                dll.parent.mkdir(parents=True)
+                dll.write_bytes(b"MZ-CANDIDATE-" + arch.encode())
+                exe = destroot / "probes" / (mod.ARCHS[arch][2] + "-crypt32-property.exe")
+                exe.parent.mkdir(parents=True, exist_ok=True)
+                exe.write_bytes(b"MZ-PROBE-" + arch.encode())
+            steam = root / "Steam"
+            steam.mkdir()
+            invoked = []
+
+            def fail_control(proton_path, exe, session, steam_root, env, log, *, verb="runinprefix"):
+                invoked.append((env["WINEDLLOVERRIDES"], verb))
+                sandbox = session / "pfx/drive_c/windows"
+                for archdir in ("system32", "syswow64"):
+                    (sandbox / archdir).mkdir(parents=True, exist_ok=True)
+                output = "err:module:import_dll Library crypt32.dll not found (STATUS_DLL_NOT_FOUND)\n"
+                log.write_text(output)
+                return 53, output
+
+            with patch.object(mod, "TESTROOT", destroot):
+                with patch.object(mod, "BUILD", dllroot):
+                    with patch.object(mod, "audit", return_value=0):
+                        with patch.object(mod, "find_steam", return_value=steam):
+                            with patch.object(mod, "run_proton", side_effect=fail_control):
+                                with redirect_stdout(io.StringIO()) as output:
+                                    with self.assertRaisesRegex(mod.ValidationBlocked, "no candidate DLLs copied"):
+                                        mod.runtime_probes(proton)
+            self.assertEqual(invoked, [
+                ("crypt32=b", "run"),
+                ("crypt32=b", "runinprefix"),
+                ("crypt32=b", "runinprefix"),
+            ])
+            for session in (destroot / "runtime").iterdir():
+                self.assertFalse((session / "pfx/drive_c/windows/system32/crypt32.gameweld-original.dll").exists())
+                self.assertFalse((session / "pfx/drive_c/windows/system32/crypt32.dll").exists())
+            self.assertIn("err:module", output.getvalue())
+            for arch in mod.ARCHS:
+                self.assertEqual((dllroot / "candidate" / arch / "crypt32.dll").read_bytes(),
+                                 b"MZ-CANDIDATE-" + arch.encode())
+
+    def test_loader_failure_summary_identifies_missing_module(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            mod.print_loader_failures(
+                "trace:module:load something\n"
+                "err:module:import_dll Library crypt32.dll not found (0xc0000135)\n")
+        self.assertIn("crypt32.dll not found", output.getvalue())
+        self.assertIn("no GW_CRYPT32_MODULE", output.getvalue())
+
     def test_runtime_requires_probes_and_never_touches_game_prefix(self):
         with tempfile.TemporaryDirectory(prefix="gw-test22-live-") as temp:
             root = Path(temp)
@@ -221,10 +281,13 @@ class Crypt32CertificateValidationFixtures(unittest.TestCase):
                             with patch.object(mod, "run_proton", side_effect=simulated_runner):
                                 with redirect_stdout(io.StringIO()) as output:
                                     self.assertEqual(mod.runtime_probes(original_proton), 0)
-            self.assertEqual(len(calls), 3)  # once to bootstrap; once per architecture
+            self.assertEqual(len(calls), 5)  # bootstrap, builtin baseline x2, candidate x2
             self.assertEqual(calls[0][1], "crypt32=b")
-            self.assertEqual([c[1] for c in calls[1:]], ["crypt32=n", "crypt32=n"])
-            self.assertEqual([c[2] for c in calls], ["run", "runinprefix", "runinprefix"])
+            self.assertEqual([c[1] for c in calls[1:]],
+                             ["crypt32=b", "crypt32=b", "crypt32=n", "crypt32=n"])
+            self.assertEqual([c[2] for c in calls],
+                             ["run", "runinprefix", "runinprefix", "runinprefix", "runinprefix"])
+            self.assertTrue((validation / "runtime").is_dir())
             self.assertIn("API FUNCTIONAL PASS", output.getvalue())
             for arch in mod.ARCHS:
                 self.assertEqual((candidate_dir / "candidate" / arch / "crypt32.dll")
