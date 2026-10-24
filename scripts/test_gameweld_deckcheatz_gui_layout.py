@@ -63,6 +63,13 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("pack(advancedpage,cols,1)", text)
         self.assertIn("gtk_notebook_set_current_page((GtkNotebook*)tabs,0)", text)
 
+    def test_about_and_compatibility_are_scoped_to_pc2(self):
+        self.assertIn('pack(head,label("GameWeld PC2","workspace-title"),0)', text)
+        self.assertIn('GtkWidget*intro=card("What GameWeld does"', text)
+        self.assertIn('GtkWidget*tested=card("Validation"', text)
+        self.assertIn("It is NOT required for the independent DeckCheatz", text)
+        self.assertIn("Other titles and machines must be tested", text)
+
     def test_launch_preview_and_prefix_consent_remain_separate(self):
         self.assertIn("pc2_deckcheatz_flow(1)", text)
         self.assertIn("pc2_deckcheatz_show_preview(output)", text)
