@@ -161,7 +161,10 @@ def find_steam():
 
 
 def run_proton(proton: Path, exe: Path, data: Path, steam: Path,
-               env_overrides: dict[str, str], logfile: Path) -> tuple[int, str]:
+               env_overrides: dict[str, str], logfile: Path, *,
+               verb: str = "runinprefix") -> tuple[int, str]:
+    if verb not in ("run", "runinprefix"):
+        raise ValidationBlocked("Unsupported Proton invocation; refusing arbitrary verb")
     env = os.environ.copy()
     env.update({
         "STEAM_COMPAT_DATA_PATH": str(data),
@@ -176,14 +179,13 @@ def run_proton(proton: Path, exe: Path, data: Path, steam: Path,
     # Noninteractive execution: a crash or missing Proton runtime will fail
     # without running a game or trainer, and never uses an existing game prefix.
     try:
-        # 'waitforexitandrun' enters Proton's game-mode built-in steam.exe
-        # shim, which depends on a valid Steam game launch context. An
-        # offline Win32 API probe has no Steam AppID/game handoff and must
-        # use Proton's direct-Wine execution mode.
-        # Proton 'runinprefix' runs wine <exe> directly (no steam.exe shim)
-        # while retaining Proton runtime libraries and our scratch prefix.
+        # 'run' creates a fresh Proton prefix using its normal setup,
+        # although its Steam shim may fail without a real game context.
+        # 'runinprefix' subsequently executes the Win32 API probe directly
+        # through Wine instead of routing it through the Steam game shim.
+        # Both modes use ONLY the explicitly assigned scratch compatdata.
         p = subprocess.run(
-            [str(proton), "runinprefix", str(exe)],
+            [str(proton), verb, str(exe)],
             env=env, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, timeout=180, check=False,
         )
@@ -237,12 +239,17 @@ def runtime_probes(proton: Path) -> int:
     print("DISPOSABLE Proton prefix: " + str(session))
     print("Existing Proton launcher READ ONLY: " + str(proton))
     print("No existing Steam game prefix, game, Wand process or trainer is used.")
+    print("Bootstrap mode: Proton run (initializes new Proton compatibility prefix)")
     print("Probe mode: Proton runinprefix (direct Wine executable, no steam.exe game shim)")
-    # First run bootstraps this NEW prefix. The probe may fail here because
-    # candidate DLLs are NOT installed yet; only prefix creation matters.
+    # Proton only invokes CompatData.setup_prefix() with 'run' and
+    # 'waitforexitandrun', not 'runinprefix'. Bootstrap the scratch prefix
+    # with the normal Proton setup path; its steam.exe shim may return an
+    # error (e.g. 53) without a registered game, which is harmless for
+    # bootstrap provided the isolated prefix is created. After that,
+    # launch the actual Windows probes via 'runinprefix', bypassing Steam.
     rc0, out0 = run_proton(
         proton, probe_path("x86_64-windows"), session, steam,
-        {"WINEDLLOVERRIDES": "crypt32=b"}, session / "bootstrap.log")
+        {"WINEDLLOVERRIDES": "crypt32=b"}, session / "bootstrap.log", verb="run")
     pfx = session / "pfx"
     if not (pfx / "drive_c/windows/system32").is_dir():
         raise ValidationBlocked("Proton did not create a valid disposable prefix. "
