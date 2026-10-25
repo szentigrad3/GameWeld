@@ -594,10 +594,6 @@ static GtkWidget *label(const char *s, const char *cls) {
 static int pc2_steam_launch_allowed(void);
 static int bounded_child_output(pid_t pid,int fd,char *output,size_t capacity,int seconds);
 static void on_pc2_wemod_verify_selected(GtkButton*,void*);
-static void on_pc2_wemod_live_launch(GtkButton*,void*);
-static void on_pc2_wemod_live_render(GtkButton*,void*);
-static void on_pc2_native_check(GtkButton*,void*);
-static void on_pc2_native_play(GtkButton*,void*);
 static void on_pc2_deckcheatz_detect(GtkButton*,void*);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
 static void on_pc2_deckcheatz_experimental(GtkButton*,void*);
@@ -643,7 +639,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check GameWeld Managed Wand (read-only)") && strcmp(s, "Play Game + Wand (managed Proton, opt-in)") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4470,11 +4466,6 @@ static void on_pc2_wemod_install(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_a
 static void on_pc2_wemod_patch(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("patch");}
 static void on_pc2_wemod_restore(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("restore");}
 static void on_pc2_wemod_verify_selected(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("game-test");}
-static void on_pc2_wemod_launch_test(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("launch-test");}
-static void on_pc2_wemod_live_launch(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("live-launch");}
-static void on_pc2_wemod_live_render(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("live-render");}
-static void on_pc2_native_check(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("native-check");}
-static void on_pc2_native_play(GtkButton*b,void*d){(void)b;(void)d;pc2_wemod_action("native-managed");}
 
 /* Optional DeckCheatz 1.x provider: discovery from the GUI with zero Steam
  * LaunchOptions changes, zero trainer/game starts, and no bundled AGPL code.
