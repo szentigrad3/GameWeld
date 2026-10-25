@@ -4275,7 +4275,10 @@ static void pc2_steam_bridge_action(const char *action){
     snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
     snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
     pc2_steam_bridge_busy=1;
-    if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,"Checking selected game's Steam Bridge configuration…");
+    if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
+        !strcmp(action,"play")?"Asking Steam to launch the selected game with its saved Compatibility setting…":
+        !strcmp(action,"setup")?"Setting up a new game-only Steam Bridge configuration…":
+        "Checking selected game's Steam Bridge configuration…");
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_steam_bridge_worker,j)==0)pthread_detach(thread);
     else{pc2_steam_bridge_busy=0;free(j);if(pc2_steam_bridge_status)
@@ -5294,9 +5297,10 @@ static GtkWidget *build_about(void){
             "Provides game-specific trainer options without requiring users to edit Steam Launch Options.",NULL);
         pack(page,intro,0);
         GtkWidget*deck=card("DeckCheatz + WeMod",
-            "GameWeld can install the separate DeckCheatz 1.x launcher for your user account. "
-            "For supported Steam games, select a game and choose Play with WeMod. "
-            "The launch shows a preview and requests permission for possible Wine prefix changes.",NULL);
+            "Play with WeMod in Overview or Library now requests Steam Play through the "
+            "configured GameWeld Bridge. Steam must have Bridge selected in this game's "
+            "Compatibility settings. The separate DeckCheatz 1.x manager is optional "
+            "and retains its own install, update and preview tools.",NULL);
         pack(page,deck,0);
         GtkWidget*tested=card("Validation",
             "Astrometica launched through Proton Experimental and a WeMod trainer worked "
