@@ -140,8 +140,10 @@ def compare(library: Path, working: str, failing: str, backup: Path | None = Non
         backup_prefix = backup / "pfx"
         backup_evidence = {"path": str(backup_prefix), "prefix": prefix_evidence(backup_prefix)}
         if backup_evidence["prefix"]["present"] and f["present"]:
-            same = (backup_evidence["prefix"]["registry"]["registry_sha256"] ==
-                    f["registry"]["registry_sha256"])
+            old_hash = backup_evidence["prefix"]["registry"]["registry_sha256"]
+            current_hash = f["registry"]["registry_sha256"]
+            same = (old_hash is not None and current_hash is not None
+                    and old_hash == current_hash)
             backup_evidence["registry_matches_current"] = same
             if not same:
                 notes.append("Current Dying Light registry differs from pre-install backup. The failed installer may have changed the prefix.")
