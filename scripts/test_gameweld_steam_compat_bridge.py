@@ -63,6 +63,63 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertFalse((self.steam / "config/config.vdf").exists())
             self.assertEqual(bridge.register(self.steam, source=SCRIPT), target)
 
+    def test_installed_launcher_sync_and_explicit_upgrade_keep_configuration(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            original_config = bridge.config_path().read_bytes()
+            launcher = bridge.private_tool_dir() / "launcher.py"
+            self.assertEqual(bridge.bridge_launcher_sync(source=SCRIPT), "UP TO DATE")
+            installed, backup = bridge.upgrade_bridge(source=SCRIPT)
+            self.assertEqual(installed, launcher)
+            self.assertIsNone(backup)
+            self.assertEqual(bridge.config_path().read_bytes(), original_config)
+
+            # Simulate a legitimate older Steam-registered source copied at
+            # a previous launch; upgrade must retain an exact backup.
+            older = launcher.read_bytes() + b"\n# old source revision\n"
+            launcher.write_bytes(older)
+            self.assertIn("UPDATE AVAILABLE", bridge.bridge_launcher_sync(source=SCRIPT))
+            installed, backup = bridge.upgrade_bridge(source=SCRIPT)
+            self.assertEqual(installed, launcher)
+            self.assertIsNotNone(backup)
+            self.assertEqual(backup.read_bytes(), older)
+            self.assertEqual(launcher.read_bytes(), SCRIPT.read_bytes())
+            self.assertEqual(bridge.bridge_launcher_sync(source=SCRIPT), "UP TO DATE")
+            self.assertEqual(bridge.config_path().read_bytes(), original_config)
+            self.assertEqual(bridge.upgrade_bridge(source=SCRIPT)[1], None)
+
+    def test_upgrade_rejects_symlinked_launcher_and_unexpected_manifest(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            install = bridge.private_tool_dir()
+            launcher = install / "launcher.py"
+            launcher.unlink()
+            launcher.symlink_to(SCRIPT)
+            with self.assertRaisesRegex(ValueError, "not safely installed"):
+                bridge.upgrade_bridge(source=SCRIPT)
+            launcher.unlink()
+            launcher.write_bytes(SCRIPT.read_bytes())
+            (install / "toolmanifest.vdf").write_text("foreign tool")
+            with self.assertRaisesRegex(ValueError, "manifests"):
+                bridge.upgrade_bridge(source=SCRIPT)
+
+    def test_upgrade_backup_conflict_preserves_older_launcher(self):
+        import hashlib
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            install = bridge.private_tool_dir()
+            launcher = install / "launcher.py"
+            old = launcher.read_bytes() + b"\n# old revision\n"
+            launcher.write_bytes(old)
+            backup = install / ("launcher.py.backup-" +
+                                hashlib.sha256(old).hexdigest()[:16])
+            backup.write_bytes(b"unrelated user backup")
+            with self.assertRaisesRegex(ValueError, "unexpected contents"):
+                bridge.upgrade_bridge(source=SCRIPT)
+            self.assertEqual(launcher.read_bytes(), old)
+            self.assertEqual(backup.read_bytes(), b"unrelated user backup")
+
     def test_configure_requires_explicit_game_and_uses_private_file(self):
         with patch.dict(os.environ, self.env):
             bridge.configure("2353250", self.proton, self.client)
