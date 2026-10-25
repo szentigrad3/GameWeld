@@ -407,6 +407,14 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
     def test_preflight_gui_wiring_stays_read_only(self):
         ui = (Path(__file__).resolve().parents[1] /
               "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        # Discovery mode's button factory explicitly disables all actions
+        # except its exact allowlist. A label rename must update that list
+        # or the GTK button stays greyed out before the click handler runs.
+        guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
+        guard = guard.split('static GtkWidget *box(', 1)[0]
+        self.assertIn('strcmp(s, "Check WeMod readiness")', guard)
+        self.assertNotIn('strcmp(s, "Steam Bridge: Check selected game")', guard)
+        self.assertIn('pc2_guard_button(w)', guard)
         self.assertIn('button("Check WeMod readiness","action")', ui)
         self.assertIn('pc2_steam_bridge_action("preflight");', ui)
         self.assertIn('strcmp(action,"preflight")', ui)
