@@ -358,6 +358,67 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
             (directory / "comm").write_text(process + "\n", encoding="utf-8")
         return proc, prefix, proton
 
+    def test_game_container_join_rejects_missing_dbus_service(self):
+        from unittest.mock import patch
+        from subprocess import CompletedProcess
+        proc, prefix, proton = self.make_live_proton_fixture()
+        (proton.parent / "toolmanifest.vdf").write_text(
+            '// "require_tool_appid" "999"\\n"require_tool_appid" "4183110"'
+        )
+        client = (self.root / "steam-root/steamapps/common/SteamLinuxRuntime_4"
+                  / "pressure-vessel/bin/steam-runtime-launch-client")
+        client.parent.mkdir(parents=True)
+        client.write_text("#!/bin/sh\\nexit 0\\n")
+        client.chmod(0o755)
+        session = bridge.live_steam_proton_session("2353250", proc)
+        with patch.object(bridge.shutil, "which", return_value="/usr/bin/gdbus"):
+            with patch.object(bridge.subprocess, "run", return_value=CompletedProcess(
+                    ["gdbus"], 0, stdout="(false,)\\n", stderr="")) as check:
+                with self.assertRaisesRegex(ValueError, "No active per-game Steam container"):
+                    bridge.live_steam_container_launch_client(session, "2353250")
+                self.assertEqual(check.call_args.args[0][-1],
+                                 "com.steampowered.App2353250")
+            with patch.object(bridge.subprocess, "run", return_value=CompletedProcess(
+                    ["gdbus"], 0, stdout="(true,)\\n", stderr="")):
+                self.assertEqual(
+                    bridge.live_steam_container_launch_client(session, "2353250"), client)
+
+    def test_live_container_join_uses_exact_game_service_and_preserves_client_override(self):
+        from unittest.mock import patch
+        from subprocess import CompletedProcess
+        proc, prefix, proton = self.make_live_proton_fixture()
+        (proton.parent / "toolmanifest.vdf").write_text('"require_tool_appid" "4183110"')
+        client = (self.root / "steam-root/steamapps/common/SteamLinuxRuntime_4"
+                  / "pressure-vessel/bin/steam-runtime-launch-client")
+        client.parent.mkdir(parents=True)
+        client.write_text("#!/bin/sh\\nexit 0\\n")
+        client.chmod(0o755)
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        self.assertEqual(self.cmd("patch", "--install-dir", str(self.client),
+                                  "--confirm").returncode, 0)
+        class FakeChild:
+            pid = 12345
+            def poll(self): return None
+        with patch.dict(os.environ, {"DISPLAY": ":0", "XDG_STATE_HOME": str(self.root / "state")}):
+            with patch.object(bridge.shutil, "which", return_value="/usr/bin/gdbus"):
+                with patch.object(bridge.subprocess, "run", return_value=CompletedProcess(
+                        ["gdbus"], 0, stdout="(true,)\\n", stderr="")):
+                    with patch.object(bridge.subprocess, "Popen", return_value=FakeChild()) as start:
+                        bridge.launch_wand_in_live_game(
+                            self.client, self.helper, "2353250", str(game_dir), proc,
+                            join_steam_container=True, software_render=True)
+        command = start.call_args.args[0]
+        self.assertEqual(command[0], str(client))
+        self.assertEqual(command[1], "--bus-name=com.steampowered.App2353250")
+        self.assertIn("WINEDLLOVERRIDES=version=n,b", command)
+        self.assertIn(str(self.client / "WeMod.exe"), command)
+        self.assertEqual(command[-3:], ["--disable-gpu", "--disable-gpu-compositing",
+                                         "--enable-logging=stderr"])
+        logs = list((self.root / "state/gameweld").glob("wand-live-2353250-*.log"))
+        self.assertEqual(len(logs), 1)
+        self.assertIn("Steam game container join: True", logs[0].read_text())
+
     def test_live_proton_requires_running_windows_game_not_steam_helper(self):
         proc, prefix, proton = self.make_live_proton_fixture()
         session = bridge.live_steam_proton_session("2353250", proc)
