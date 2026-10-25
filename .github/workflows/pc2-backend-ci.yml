@@ -249,3 +249,67 @@ jobs:
         run: |
           bash -n scripts/gameweld-wand-enhancer.sh
           env -u WAND_ENHANCER_EXE bash scripts/gameweld-wand-enhancer.sh --status
+  private-source-portability-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/gameweld-backend/go.mod
+          cache: false
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgtk-3-dev pkg-config python3
+      - name: Check staging and audit script syntax
+        run: |
+          bash -n scripts/pc2-stage-private-appdir.sh
+          bash -n scripts/pc2-audit-private-appdir.sh
+          bash -n scripts/pc2-build-private-appimage.sh
+      - name: Test reviewed-library staging fail-closed safeguards
+        run: python3 -m unittest discover -s scripts -p 'test_pc2_stage_reviewed_libraries.py' -v
+      - name: Test bounded Steam configuration paths
+        run: python3 -m unittest discover -s scripts -p 'test_pc2_steam_path_bounds.py' -v
+      - name: Test runtime closure classification (offline fixtures)
+        run: python3 -m unittest discover -s scripts -p 'test_pc2_runtime_closure.py' -v
+      - name: Build private source AppDir
+        run: bash scripts/pc2-stage-private-appdir.sh
+      - name: Audit AppDir against Ubuntu baseline
+        run: bash scripts/pc2-audit-private-appdir.sh
+      - name: Inventory dependency provenance (no bundling)
+        run: |
+          python3 scripts/pc2-inventory-dependencies.py \
+            --appdir build/pc2-source/private-AppDir \
+            --out build/pc2-source/ubuntu-dependency-inventory.json
+      - name: Classify dependencies for manual redistribution review
+        run: |
+          python3 scripts/pc2-review-dependencies.py \
+            --inventory build/pc2-source/ubuntu-dependency-inventory.json \
+            --report build/pc2-source/ubuntu-dependency-review.json
+      - name: Report static runtime dependency gaps (private, non-blocking)
+        run: |
+          python3 scripts/pc2-audit-runtime-closure.py \
+            --appdir build/pc2-source/private-AppDir \
+            --report build/pc2-source/ubuntu-runtime-closure.json
+      - name: Record host dependency and ELF metadata
+        run: |
+          file build/pc2-source/private-AppDir/usr/bin/gameweld
+          file build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+          readelf -W -V build/pc2-source/private-AppDir/usr/bin/gameweld | grep -E 'GLIBC_|GLIBCXX_' || true
+          sha256sum build/pc2-source/private-AppDir/usr/bin/gameweld build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+      - name: Upload private audit JSON reports (no executables)
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameweld-private-ubuntu-audit-json
+          path: |
+            build/pc2-source/ubuntu-dependency-inventory.json
+            build/pc2-source/ubuntu-dependency-review.json
+            build/pc2-source/ubuntu-runtime-closure.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publication remains blocked
+        run: |
+          echo 'Ubuntu baseline build check only.'
+          echo 'No AppImage is published, uploaded or claimed portable.'
+          echo 'Real GTK launches, WeMod tests, dependency bundling and licensing remain separate gates.'
