@@ -26,15 +26,15 @@ AIO_REPORT="$ROOT/build/pc2-source/deckcheatz-aio-report.txt"
     git rev-parse --verify HEAD
     git status --short
     echo
-    printf '%s\\n' '=== RC1 release-source cleanliness gate (non-destructive) ==='
+    printf '%s\n' '=== RC1 release-source cleanliness gate (non-destructive) ==='
     if [[ -z "$(git status --porcelain --untracked-files=normal)" ]]; then
-        printf '%s\\n' 'PASS: working tree clean; source revision can be identified by HEAD'
+        printf '%s\n' 'PASS: working tree clean; source revision can be identified by HEAD'
     else
-        printf '%s\\n' 'RELEASE BLOCKED: working tree contains changes not identified by the reported commit'
-        printf '%s\\n' 'Review each change before RC1 source freeze; do not discard local work automatically.'
+        printf '%s\n' 'RELEASE BLOCKED: working tree contains changes not identified by the reported commit'
+        printf '%s\n' 'Review each change before RC1 source freeze; do not discard local work automatically.'
     fi
     echo
-    printf '%s\\n' '=== DeckCheatz offline AIO regressions + GTK syntax ==='
+    printf '%s\n' '=== DeckCheatz offline AIO regressions + GTK syntax ==='
     bash "$ROOT/scripts/pc2-deckcheatz-aio.sh"
     grep -Fq 'Result: PASS (OFFLINE FIXTURES + GUI SYNTAX ONLY)' "$AIO_REPORT" || {
         printf '%s\n' 'FAIL: DeckCheatz AIO did not return PASS'; exit 4;
