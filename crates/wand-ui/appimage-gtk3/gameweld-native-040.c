@@ -4201,9 +4201,13 @@ static void *pc2_steam_bridge_worker(void *data){
         const char *argv[16];int n=0;
         argv[n++]="python3";argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
         argv[n++]="--appid";argv[n++]=j->appid;
-        if(!strcmp(j->action,"setup")){
-            argv[n++]="--game-dir";argv[n++]=j->game_dir;
-            if(j->steam_root[0]){argv[n++]="--steam-root";argv[n++]=j->steam_root;}
+        if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")){
+            if(j->game_dir[0]){
+                argv[n++]="--game-dir";argv[n++]=j->game_dir;
+            }
+            if(j->steam_root[0]){
+                argv[n++]="--steam-root";argv[n++]=j->steam_root;
+            }
         }
         if(strcmp(j->action,"status"))argv[n++]="--confirm";
         argv[n]=NULL;
