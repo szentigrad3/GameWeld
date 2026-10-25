@@ -630,6 +630,15 @@ static int pc2_discovery_only(void) {
     return 0;
 #endif
 }
+/* Provider settings also appear in explicitly opted-in private functional builds.
+ * Discovery mode's existing PC2 handlers stay available; the functional
+ * runtime requires a separate opt-in rather than inheriting the UI layout.
+ * Existing per-action dialogs still gate downloads, patching and Steam setup. */
+static int pc2_provider_controls_allowed(void) {
+    if (pc2_discovery_only()) return 1;
+    const char *optin = getenv("GAMEWELD_PC2_ENABLE_FUNCTIONAL_TEST");
+    return optin && !strcmp(optin,"I_UNDERSTAND_PRIVATE_TEST_ONLY");
+}
 static void pc2_block_action(GtkButton *b, void *unused) {
     (void)unused;
     if (!pc2_discovery_only()) return;
@@ -2819,7 +2828,7 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
 }
 static void on_pc2_steam_session_check(GtkButton*b,void*d){
     (void)b;(void)d;
-    if(!pc2_discovery_only())return;
+    if(!pc2_provider_controls_allowed())return;
     if(G.selected<0||G.selected>=G.game_count){
         log_line("Choose an installed Steam game for session observation.");return;
     }
@@ -4415,7 +4424,7 @@ static void *pc2_bridge_readiness_worker(void *data){
     return NULL;
 }
 static void pc2_bridge_readiness_for_game(Game *g){
-    if(!pc2_discovery_only()||!g||!g->appid[0])return;
+    if(!pc2_provider_controls_allowed()||!g||!g->appid[0])return;
     if(!strcmp(g->appid,pc2_bridge_ready_appid)){
         pc2_bridge_apply_primary(pc2_bridge_ready_state,pc2_bridge_ready_reason);
         return;
@@ -4520,7 +4529,7 @@ static void *pc2_steam_bridge_worker(void *data){
     return NULL;
 }
 static void pc2_steam_bridge_action(const char *action){
-    if(!pc2_discovery_only()||pc2_steam_bridge_busy)return;
+    if(!pc2_provider_controls_allowed()||pc2_steam_bridge_busy)return;
     int global_upgrade=!strcmp(action,"upgrade");
     Game *g=NULL;
     if(!global_upgrade){
@@ -4706,7 +4715,7 @@ static void *pc2_wemod_worker(void *data){
     return NULL;
 }
 static void pc2_wemod_action(const char*action){
-    if(!pc2_discovery_only())return;
+    if(!pc2_provider_controls_allowed())return;
     if(pc2_wemod_busy){log_line("WeMod Enhancer: operation already running.");return;}
     const char*install=pc2_wemod_install_entry?
         gtk_entry_get_text((GtkEntry*)pc2_wemod_install_entry):"";
@@ -4831,7 +4840,7 @@ static void on_pc2_wemod_verify_selected(GtkButton*b,void*d){(void)b;(void)d;pc2
  * provider path. The source helper runs only on button click. */
 static void on_pc2_deckcheatz_detect(GtkButton*b,void*d){
     (void)b;(void)d;
-    if(!pc2_discovery_only())return;
+    if(!pc2_provider_controls_allowed())return;
     char helper[2048];
     const char*appdir=getenv("APPDIR");
     if(appdir&&*appdir)snprintf(helper,sizeof helper,
@@ -5023,7 +5032,7 @@ static void *pc2_deckcheatz_install_worker(void *data){
     return NULL;
 }
 static void pc2_deckcheatz_request_install(int resume_mode){
-    if(!pc2_discovery_only())return;
+    if(!pc2_provider_controls_allowed())return;
     if(pc2_deckcheatz_install_busy){
         log_line("DeckCheatz managed installation already in progress.");return;
     }
@@ -5069,7 +5078,7 @@ static void on_pc2_deckcheatz_install(GtkButton*b,void*d){
     (void)b;(void)d;pc2_deckcheatz_request_install(-1);
 }
 static void pc2_deckcheatz_request_update(int operation){
-    if(!pc2_discovery_only())return;
+    if(!pc2_provider_controls_allowed())return;
     if(pc2_deckcheatz_install_busy){
         log_line("DeckCheatz install/update operation already in progress.");return;
     }
@@ -5175,7 +5184,7 @@ static void pc2_deckcheatz_show_preview(const char *result){
     gtk_widget_destroy(dlg);
 }
 static void pc2_deckcheatz_flow(int experimental_launch){
-    if(!pc2_discovery_only())return;
+    if(!pc2_provider_controls_allowed())return;
     if(G.selected<0 || G.selected>=G.game_count){
         log_line("DeckCheatz preview: select an installed Steam game first.");return;
     }
