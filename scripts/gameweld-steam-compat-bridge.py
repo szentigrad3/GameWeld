@@ -488,15 +488,32 @@ def steam_compat_selection(appid: str, *,
     return f"OTHER TOOL SELECTED (saved Steam mapping: {selected})"
 
 
-def format_status(appid: str | None = None) -> str:
+def format_status(appid: str | None = None, *,
+                  game_dir: Path | None = None,
+                  steam_root: Path | None = None) -> str:
     config = load_config()
     if appid:
         if not valid_appid(appid):
             raise ValueError("Invalid game Steam AppID")
         entry = config.get(appid)
         if not isinstance(entry, dict):
-            return (f"GameWeld Bridge AppID {appid}: NOT CONFIGURED\n"
-                    "No Steam compatibility selection was changed.")
+            lines = [f"GameWeld Bridge AppID {appid}: NOT CONFIGURED",
+                     "No Steam compatibility selection was changed."]
+            if game_dir is not None:
+                try:
+                    root, proton, client = resolve_setup(
+                        appid, game_dir, steam_root=steam_root)
+                except (ValueError, OSError) as exc:
+                    lines.append("First-time setup readiness: BLOCKED")
+                    lines.append("Reason: " + str(exc))
+                else:
+                    lines.append("First-time setup readiness: READY (read-only)")
+                    lines.append("Verified Steam root: " + str(root))
+                    lines.append("Exact Proton candidate: " + str(proton))
+                    lines.append("Existing managed WeMod client: " + str(client))
+                    lines.append("Setup will start game-only, with WeMod auto-start DISABLED.")
+                    lines.append("Steam Compatibility selection remains a separate manual step.")
+            return "\n".join(lines)
         return ("GameWeld Bridge AppID: " + appid +
                 "\nConfigured Proton: " + str(entry.get("proton", "")) +
                 "\nConfigured WeMod: " + str(entry.get("client", "")) +
@@ -530,7 +547,8 @@ def main() -> int:
         args = parser.parse_args()
         if args.action == "status":
             print("GameWeld Bridge experimental compatibility tool (read-only)")
-            print(format_status(args.appid))
+            print(format_status(args.appid, game_dir=args.game_dir,
+                                steam_root=args.steam_root))
             return 0
         if not args.confirm:
             raise ValueError("Registration/configuration requires explicit --confirm")
