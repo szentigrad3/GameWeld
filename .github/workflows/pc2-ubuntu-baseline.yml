@@ -39,6 +39,11 @@ jobs:
           python3 scripts/pc2-inventory-dependencies.py \
             --appdir build/pc2-source/private-AppDir \
             --out build/pc2-source/ubuntu-dependency-inventory.json
+      - name: Classify dependencies for manual redistribution review
+        run: |
+          python3 scripts/pc2-review-dependencies.py \
+            --inventory build/pc2-source/ubuntu-dependency-inventory.json \
+            --report build/pc2-source/ubuntu-dependency-review.json
       - name: Record host dependency and ELF metadata
         run: |
           file build/pc2-source/private-AppDir/usr/bin/gameweld
