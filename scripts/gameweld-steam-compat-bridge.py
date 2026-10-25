@@ -424,6 +424,70 @@ def steam_invocation(argv: list[str]) -> int:
     ], env=env)
 
 
+def steam_compat_selection(appid: str, *,
+                           steam_roots: list[Path] | None = None,
+                           configured_proton: Path | None = None) -> str:
+    """Read Steam's stored per-game compatibility selection, without mutation.
+
+    Do not assume that GameWeld is selected merely because it is installed.
+    Steam can be running with unsaved configuration changes, so even a
+    matching VDF mapping is only saved-settings evidence, not a running session.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid game Steam AppID")
+    if steam_roots is None:
+        candidates = [Path.home() / ".steam/root", Path.home() / ".local/share/Steam"]
+        if configured_proton is not None:
+            proton = Path(configured_proton).expanduser()
+            # Official Steam Proton installs live in steamapps/common/<tool>.
+            if proton.parent.parent.name == "common" and proton.parent.parent.parent.name == "steamapps":
+                candidates.insert(0, proton.parent.parent.parent.parent)
+        steam_roots = candidates
+    source = Path(__file__).with_name("gameweld-steam-shortcuts.py")
+    if not source.is_file():
+        return "UNVERIFIED (Steam settings resolver unavailable)"
+    spec = importlib.util.spec_from_file_location("gw_bridge_steam_selection", source)
+    if spec is None or spec.loader is None:
+        return "UNVERIFIED (Steam settings resolver unavailable)"
+    import sys as _sys
+    module = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    found: set[str] = set()
+    roots_seen: set[Path] = set()
+    for root in steam_roots:
+        try:
+            root = Path(root).expanduser().resolve(strict=True)
+        except OSError:
+            continue
+        if root in roots_seen or not (root / "steamapps").is_dir():
+            continue
+        roots_seen.add(root)
+        user_data = root / "userdata"
+        accounts = []
+        try:
+            accounts = [p for p in user_data.iterdir() if p.is_dir() and p.name.isdecimal()]
+        except OSError:
+            pass
+        # Include a synthetic dummy user path for installations whose
+        # global config.vdf contains the mapping but userdata is empty.
+        if not accounts:
+            accounts = [root / "userdata/0"]
+        for account in accounts:
+            name, scope, _, _, _ = module._compat_tool_mapping(root, account, int(appid))
+            if name and scope == "exact":
+                found.add(name)
+    if not found:
+        return "UNVERIFIED (no saved exact game mapping readable)"
+    if len(found) > 1:
+        return "UNVERIFIED (conflicting saved tool mappings)"
+    selected = next(iter(found))
+    token = re.sub(r"[^a-z0-9]", "", selected.casefold())
+    if token in {"gameweldbridgeexperimental", "gameweldbridge"}:
+        return "GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+    return f"OTHER TOOL SELECTED (saved Steam mapping: {selected})"
+
+
 def format_status(appid: str | None = None) -> str:
     config = load_config()
     if appid:
@@ -438,7 +502,13 @@ def format_status(appid: str | None = None) -> str:
                 "\nConfigured WeMod: " + str(entry.get("client", "")) +
                 "\nTrainer auto-start: " +
                 ("ENABLED" if entry.get("trainer_enabled") else "DISABLED") +
-                "\nActual Steam compatibility-tool selection: NOT VERIFIED" +
+                "\nSteam Compatibility selection: " +
+                steam_compat_selection(appid, configured_proton=Path(entry.get("proton", ""))) +
+                "\nEnhancer patch prerequisites: " +
+                ("PRESENT (files only; DLL runtime loading not verified)"
+                 if (Path(entry.get("client", "")) / "version.dll").is_file()
+                 and (Path(entry.get("client", "")) / "resources/app.asar.backup").is_file()
+                 else "MISSING or unverified") +
                 "\nChanges take effect on the next game launch.")
     return (f"Staged launcher: {private_tool_dir() / 'launcher.py'}\n" +
             f"Configured AppIDs: {', '.join(sorted(config)) or 'none'}\n" +
