@@ -312,6 +312,8 @@ jobs:
             exit 1
           fi
           echo "PASS: current host-dependent AppDir correctly rejected by strict portability gate"
+      - name: Test merged-usr license evidence lookup
+        run: python3 -m unittest discover -s scripts -p 'test_pc2_license_evidence.py' -v
       - name: Collect Ubuntu library copyright provenance hints
         run: |
           python3 scripts/pc2-license-evidence.py \
