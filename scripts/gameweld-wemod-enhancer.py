@@ -831,7 +831,9 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(
                 ("GameWeld PC2 Wand live handoff: App ID " + appid + "\n"
-                 + "Mode: direct X11 wineserver join" + (" + software rendering requested" if software_render else "") + "\n"
+                 + "Mode: " + ("existing Steam per-game container service"
+                               if join_steam_container else "direct X11 wineserver join")
+                 + (" + software rendering requested" if software_render else "") + "\n"
                  + "Client executable: " + str(executable) + "\n"
                  + "Legacy unpatched client baseline: " + str(legacy_baseline) + "\n"
                  + "In-process GPU experiment: " + str(in_process_gpu) + "\n"
