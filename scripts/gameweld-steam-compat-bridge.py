@@ -9,6 +9,7 @@ ONLY after Steam itself selects GameWeld Bridge for that title.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -169,6 +170,86 @@ def configure(appid: str, proton: Path, client: Path, *,
     write_config(config)
 
 
+def resolve_setup(appid: str, game_dir: Path, *,
+                  steam_root: Path | None = None,
+                  proton: Path | None = None,
+                  client: Path | None = None) -> tuple[Path, Path, Path]:
+    """Resolve only exact installed-game evidence; no arbitrary Proton guessing.
+
+    A setup request never changes a title that has existing Bridge settings.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid selected Steam AppID")
+    if appid in load_config():
+        raise ValueError("Steam Bridge already configured for this game; existing working setup preserved")
+    game = game_dir.expanduser().resolve(strict=True)
+    library = game.parent.parent.parent
+    if not (game.is_dir() and game.parent.name == "common"
+            and game.parent.parent.name == "steamapps"
+            and (library / "steamapps" / ("appmanifest_" + appid + ".acf")).is_file()):
+        raise ValueError("Selected game must be a Steam installation with a matching AppID manifest")
+    if steam_root:
+        root = steam_root.expanduser().resolve(strict=True)
+    else:
+        # The Steam client root, not an arbitrary secondary game-library root.
+        candidates = (Path.home() / ".steam/root", Path.home() / ".local/share/Steam")
+        found = [p.resolve() for p in candidates if p.is_dir()
+                 and (p / "steamapps").is_dir()]
+        distinct = list(dict.fromkeys(found))
+        if len(distinct) == 1:
+            root = distinct[0]
+        elif not distinct and (library / "steam.sh").is_file():
+            root = library
+        else:
+            raise ValueError("Cannot unambiguously locate the Steam client root; pass --steam-root")
+    if not (root / "steamapps").is_dir():
+        raise ValueError("Selected Steam client root has no steamapps directory")
+
+    if proton:
+        selected_proton = validate_proton(proton)
+    else:
+        helper = Path(__file__).with_name("gameweld-deckcheatz-proton.py")
+        if not helper.is_file():
+            raise ValueError("GameWeld Steam Proton resolver is not installed")
+        spec = importlib.util.spec_from_file_location("gw_bridge_proton_resolver", helper)
+        if spec is None or spec.loader is None:
+            raise ValueError("Cannot load exact-game Proton resolver")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        options = argparse.Namespace(
+            appid=appid, steam_root=str(root), install_dir=str(game),
+            compatdata=str(library / "steamapps/compatdata" / appid),
+            preferred_name="", preferred_path="")
+        resolution = module.resolve(options)
+        path = resolution.get("selected", "")
+        ranked = resolution.get("candidates", [])
+        best = next((c for c in ranked if c.get("path") == path), None)
+        if not path or not best or best.get("score", 0) < 90:
+            raise ValueError(
+                "No exact Proton mapping or prefix runtime hint for this title; "
+                "select Proton in Steam or provide --proton explicitly"
+            )
+        selected_proton = validate_proton(Path(path))
+    managed = xdg_dir("XDG_DATA_HOME", ".local/share") / "gameweld/deckcheatz/wemod_data/wemod_bin"
+    selected_client = validate_client(client if client else managed)
+    return root, selected_proton, selected_client
+
+
+def setup_game(appid: str, game_dir: Path, *,
+               steam_root: Path | None = None,
+               proton: Path | None = None,
+               client: Path | None = None) -> Path:
+    """Register an optional Steam tool and save a NEW game in game-only mode."""
+    root, selected_proton, selected_client = resolve_setup(
+        appid, game_dir, steam_root=steam_root, proton=proton, client=client)
+    # Recheck just before mutation: never clobber a working configured title.
+    if appid in load_config():
+        raise ValueError("Bridge configuration changed during setup; refusing overwrite")
+    target = register(root)
+    configure(appid, selected_proton, selected_client, enabled=False)
+    return target
+
+
 def set_trainer_enabled(appid: str, enabled: bool) -> bool:
     """Update an existing verified per-game bridge config; never select Steam's tool."""
     if not valid_appid(appid):
@@ -312,10 +393,11 @@ def format_status(appid: str | None = None) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "trainer-on", "trainer-off"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "setup", "trainer-on", "trainer-off"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "register", "configure", "trainer-on", "trainer-off"))
+        parser.add_argument("action", choices=("status", "register", "configure", "setup", "trainer-on", "trainer-off"))
         parser.add_argument("--steam-root", type=Path)
+        parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
         parser.add_argument("--proton", type=Path)
         parser.add_argument("--client", type=Path)
@@ -335,6 +417,16 @@ def main() -> int:
             target = register(args.steam_root.expanduser().resolve(strict=True))
             print(f"Registered: {target}")
             print("Restart Steam, then explicitly select GameWeld Bridge (Experimental) per game.")
+        elif args.action == "setup":
+            if not all((args.appid, args.game_dir)):
+                raise ValueError("Setup requires --appid and --game-dir")
+            target = setup_game(args.appid, args.game_dir,
+                                steam_root=args.steam_root,
+                                proton=args.proton, client=args.client)
+            print(f"Steam Bridge registered: {target}")
+            print(f"Steam Bridge configured AppID {args.appid}: game-only (trainer disabled)")
+            print("Restart Steam and select GameWeld Bridge (Experimental) under this game's Compatibility tab.")
+            print("Steam Launch Options and other game configurations remain unchanged.")
         elif args.action in {"trainer-on", "trainer-off"}:
             if not args.appid:
                 raise ValueError("Trainer toggle requires --appid")
