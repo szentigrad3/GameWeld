@@ -614,6 +614,7 @@ static void on_pc2_bridge_status(GtkButton*,void*);
 static void on_pc2_bridge_upgrade(GtkButton*,void*);
 static void on_pc2_bridge_play(GtkButton*,void*);
 static void on_pc2_bridge_primary(GtkButton*,void*);
+static void pc2_launch_with_steam_bridge(Game*);
 static void pc2_bridge_readiness_for_game(Game*);
 static void pc2_bridge_readiness_invalidate(void);
 static void on_pc2_bridge_setup(GtkButton*,void*);
@@ -2193,6 +2194,12 @@ static void refresh_ui(void) {
             pc2_bridge_readiness_for_game(g);
         }
     }
+    if(!pc2_discovery_only()&&pc2_provider_controls_allowed()){
+        if(g&&game_is_steam(g)&&!game_is_steam_shortcut(g)&&
+           g->install_dir[0]&&g->appid[0])
+            pc2_bridge_readiness_for_game(g);
+        else pc2_bridge_readiness_invalidate();
+    }
     if(g){
         const char *src=game_source_name(g);
         refresh_artwork(g);set_label(G.hero_name,g->name);
@@ -2645,7 +2652,7 @@ static void on_launch_with_cheat_table(GtkButton*b,void*d){
     log_line("Cheat Engine table is assigned to %s, but Cheat Engine is not ready. Open Settings → Managed Cheat Engine Provider (.CT), install or choose CE, then retry.",g->name);
 }
 
-static void on_launch_with_wemod(GtkButton*b,void*d){(void)b;(void)d;if(G.selected<0||G.selected>=G.game_count){log_line("Choose a game first.");return;}Game*g=&G.games[G.selected];if(lutris_test4_extended_blocked(g,"WeMod launch"))return;if(!game_wemod_supported(g)){if(game_is_steam_shortcut(g))log_line("WeMod is not yet validated for Steam non-Steam shortcuts. Use Assigned Trainer, Aurora, Cheat Evolution, or a custom trainer for this shortcut.");else log_line("WeMod cannot launch for %s because the exact Heroic Wine/Proton runner or prefix is unresolved. Refresh Game Sources after launching the game once through Heroic.",g->name);return;}if(universal_pending_manager_path[0]){log_line("Universal launch: a trainer manager is already waiting for this game session. Let that launch finish before starting WeMod.");return;}if(game_is_steam(g)){start_job(JOB_WEMOD,g->appid,"Universal launch: preparing Steam game + WeMod compatibility provider…");return;}start_heroic_wemod_job(g);}
+static void on_launch_with_wemod(GtkButton*b,void*d){(void)b;(void)d;if(G.selected<0||G.selected>=G.game_count){log_line("Choose a game first.");return;}Game*g=&G.games[G.selected];if(lutris_test4_extended_blocked(g,"WeMod launch"))return;if(!game_wemod_supported(g)){if(game_is_steam_shortcut(g))log_line("WeMod is not yet validated for Steam non-Steam shortcuts. Use Assigned Trainer, Aurora, Cheat Evolution, or a custom trainer for this shortcut.");else log_line("WeMod cannot launch for %s because the exact Heroic Wine/Proton runner or prefix is unresolved. Refresh Game Sources after launching the game once through Heroic.",g->name);return;}if(universal_pending_manager_path[0]){log_line("Universal launch: a trainer manager is already waiting for this game session. Let that launch finish before starting WeMod.");return;}if(game_is_steam(g)){pc2_launch_with_steam_bridge(g);return;}start_heroic_wemod_job(g);}
 static void on_launch_with_aurora(GtkButton*b,void*d){(void)b;(void)d;universal_launch_manager("cheat-happens-aurora","Cheat Happens Aurora");}
 static void on_launch_with_cheat_evolution(GtkButton*b,void*d){(void)b;(void)d;universal_launch_manager("cheat-evolution","Cheat Evolution");}
 static void on_launch_custom_trainer(GtkButton*b,void*d){
@@ -4630,6 +4637,44 @@ static void on_pc2_bridge_primary(GtkButton*b,void*d){
         gtk_dialog_run((GtkDialog*)dialog);
         gtk_widget_destroy(dialog);
     }
+}
+/* All Steam WeMod entry points, including a saved one-click default,
+ * must use the verified Steam Bridge. Never call PC1 /api/set-game in PC2. */
+static void pc2_launch_with_steam_bridge(Game *game){
+    if(!pc2_provider_controls_allowed()){
+        log_line("Steam Bridge launch unavailable in this build; legacy WeMod backend is intentionally disabled.");
+        return;
+    }
+    if(!game||!game_is_steam(game)||game_is_steam_shortcut(game)||!game->appid[0]){
+        log_line("Steam Bridge: select an installed Steam Windows game first.");
+        return;
+    }
+    if(strcmp(pc2_bridge_ready_appid,game->appid)||!pc2_bridge_ready_state[0]){
+        log_line("Steam Bridge: checking %s (%s) before launch. Click Play with WeMod again when readiness completes.",
+            game->name,game->appid);
+        pc2_bridge_readiness_for_game(game);
+        return;
+    }
+    if(!strcmp(pc2_bridge_ready_state,"checking")){
+        log_line("Steam Bridge: still checking readiness for %s. No launch attempted.",game->name);
+        return;
+    }
+    if(!strcmp(pc2_bridge_ready_state,"play")){
+        log_line("Steam Bridge: requesting Steam Play with WeMod for %s. Confirmation required.",game->name);
+        on_pc2_bridge_primary(NULL,NULL);
+        return;
+    }
+    if(!strcmp(pc2_bridge_ready_state,"setup")||
+       !strcmp(pc2_bridge_ready_state,"enable")||
+       !strcmp(pc2_bridge_ready_state,"steam")||
+       !strcmp(pc2_bridge_ready_state,"repair")){
+        log_line("Steam Bridge: %s is not ready to play with WeMod: %s",
+            game->name,pc2_bridge_ready_reason);
+        on_pc2_bridge_primary(NULL,NULL);
+        return;
+    }
+    log_line("Steam Bridge: refusing launch for %s; readiness state: %s. %s",
+        game->name,pc2_bridge_ready_state,pc2_bridge_ready_reason);
 }
 static void on_pc2_bridge_setup(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("setup");}
 static void on_pc2_bridge_enable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-on");}
