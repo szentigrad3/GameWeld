@@ -50,6 +50,12 @@ def main():
                 raise ValueError(f"Missing legal approval: {name}")
             if not entry.get("license_spdx") or not entry.get("notice_path"):
                 raise ValueError(f"Missing license notice details: {name}")
+            notice = Path(entry["notice_path"])
+            if not notice.is_file() or notice.is_symlink() or not notice.stat().st_size:
+                raise ValueError(f"License notice missing, linked or empty: {name}")
+            expected_notice = entry.get("notice_sha256")
+            if not expected_notice or digest(notice) != expected_notice:
+                raise ValueError(f"License notice hash mismatch: {name}")
             source = Path(entry["source_path"])
             if not source.is_file() or source.is_symlink() or digest(source) != expected:
                 raise ValueError(f"Source missing, linked or hash mismatch: {name}")
