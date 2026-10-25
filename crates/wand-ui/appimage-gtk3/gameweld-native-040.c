@@ -620,6 +620,8 @@ static void pc2_bridge_readiness_invalidate(void);
 static void on_pc2_bridge_setup(GtkButton*,void*);
 static void on_pc2_bridge_enable(GtkButton*,void*);
 static void on_pc2_bridge_disable(GtkButton*,void*);
+static void on_pc2_bridge_gpu_off(GtkButton*,void*);
+static void on_pc2_bridge_gpu_on(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
@@ -663,7 +665,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4572,6 +4574,17 @@ static void pc2_steam_bridge_action(const char *action){
                 "settings, or start another instance of an already-running game.\n\n"
                 "Game window and trainer activation remain unverified until "
                 "observed in-game. Continue?",g->name);
+        }else if(!strcmp(action,"trainer-gpu-off")||!strcmp(action,"trainer-gpu-on")){
+            snprintf(question,sizeof question,
+                "%s WeMod GPU rendering for %s (Steam AppID %s)?\n\n"
+                "This is a reversible per-game display troubleshooting option. "
+                "It adds --disable-gpu ONLY to WeMod.exe on the next launch. "
+                "Game graphics, Steam compatibility, Proton, other game settings and "
+                "working titles such as Astrometica are not changed. "
+                "This does not guarantee a blank WeMod screen is fixed.\n\n"
+                "Close the game and WeMod first. Continue?",
+                !strcmp(action,"trainer-gpu-off")?"DISABLE":"RESTORE NORMAL",
+                g->name,g->appid);
         }else if(!strcmp(action,"setup")){
             snprintf(question,sizeof question,
                 "Set up GameWeld Steam Bridge for %s (AppID %s)?\n\n"
@@ -4679,6 +4692,8 @@ static void pc2_launch_with_steam_bridge(Game *game){
 static void on_pc2_bridge_setup(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("setup");}
 static void on_pc2_bridge_enable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-on");}
 static void on_pc2_bridge_disable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-off");}
+static void on_pc2_bridge_gpu_off(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-gpu-off");}
+static void on_pc2_bridge_gpu_on(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-gpu-on");}
 
 /* WeMod Enhancer is integrated into GameWeld PC2. The Linux release's
  * Python CLI is used, not its separate GUI or the Windows Wand WPF tool.
@@ -5612,6 +5627,25 @@ static GtkWidget *build_settings(void){
         pack(bridge_controls,bridge_enable,1);
         pack(bridge_controls,bridge_disable,1);
         pack(bridge_card,bridge_controls,0);
+        GtkWidget*gpu_helper=gtk_expander_new("WeMod blank/white window — per-game display fix");
+        gtk_expander_set_expanded(gpu_helper,FALSE);
+        GtkWidget*gpu_box=box(GTK_ORIENTATION_VERTICAL,6);
+        GtkWidget*gpu_help=label(
+            "If WeMod is blank for this game but works for others, try disabling "
+            "WeMod's hardware-accelerated UI only for this title. Close the game "
+            "before changing; this does not modify game graphics. Revert if worse.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)gpu_help,TRUE);
+        pack(gpu_box,gpu_help,0);
+        GtkWidget*gpu_actions=box(GTK_ORIENTATION_HORIZONTAL,8);
+        GtkWidget*gpu_off=button("WeMod display: Try GPU off for this game","action");
+        GtkWidget*gpu_on=button("WeMod display: Restore normal for this game","action");
+        g_signal_connect_data(gpu_off,"clicked",(GCallback)on_pc2_bridge_gpu_off,NULL,NULL,0);
+        g_signal_connect_data(gpu_on,"clicked",(GCallback)on_pc2_bridge_gpu_on,NULL,NULL,0);
+        pack(gpu_actions,gpu_off,1);
+        pack(gpu_actions,gpu_on,1);
+        pack(gpu_box,gpu_actions,0);
+        gtk_container_add(gpu_helper,gpu_box);
+        pack(bridge_card,gpu_helper,0);
         pc2_steam_bridge_status=label(
             "Select an installed Steam game, then choose Check selected game.",
             "muted");
