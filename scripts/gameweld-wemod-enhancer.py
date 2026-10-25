@@ -709,12 +709,14 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         raise ValueError("XDG_STATE_HOME must be an absolute path")
     state = (Path(state_home) if state_home else Path.home() / ".local/state") / "gameweld"
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
-    log = state / ("wand-live-" + appid + ".log")
-    if log.is_symlink():
-        raise ValueError("Refusing to write a Wand launch log through a symbolic link")
-    # Avoid an indefinitely growing file. Previous launch logs are retained
-    # only when they fit; next launch truncates this app-scoped log.
-    descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    # A previous WeMod child may keep writing to its log after our launcher
+    # returns. NEVER truncate a reused filename: its old open descriptor may
+    # append beyond the new EOF and fill the file with NUL holes, mixing logs
+    # and creating misleading crash counts. Isolate every live handoff.
+    import time
+    log = state / ("wand-live-" + appid + "-" + str(os.getpid()) + "-"
+                   + str(time.time_ns()) + ".log")
+    descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
         os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
@@ -738,6 +740,7 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         ) from exc
     print("Wand startup mode: " + launch_mode, flush=True)
     print("Wand startup diagnostic log: " + str(log), flush=True)
+    print("Wand launch child PID: " + str(child.pid), flush=True)
     # A Proton launcher can exit after handing off to another process; exit 0
     # still does not attest to a visible Wand window or trainer attachment.
     import time
