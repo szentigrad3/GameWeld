@@ -39,7 +39,7 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("pc2_bridge_readiness_for_game(g)", text)
         self.assertIn("pc2_bridge_readiness_invalidate();", text)
         self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],title)', text)
-        self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,allowed)", text)
+        self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,FALSE)", text)
         self.assertIn('!strcmp(g->appid,"2353250")', text)
         self.assertIn("WeMod launches only for a configured Steam Bridge title", text)
         self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_primary', text)
