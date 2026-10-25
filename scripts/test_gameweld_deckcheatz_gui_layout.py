@@ -41,7 +41,7 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],title)', text)
         self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,FALSE)", text)
         self.assertIn("pc2_bridge_ready_appid", text)
-        self.assertIn("Select GameWeld Bridge (Experimental)", (ROOT / "scripts/gameweld-steam-compat-bridge.py").read_text())
+        self.assertIn("Select GameWeld Bridge (Experimental)", (SOURCE.parents[3] / "scripts/gameweld-steam-compat-bridge.py").read_text())
         self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_primary', text)
         self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary', text)
         self.assertNotIn('on_pc2_deckcheatz_experimental', text)
