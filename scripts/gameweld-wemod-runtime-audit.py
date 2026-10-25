@@ -63,13 +63,15 @@ def game_launcher_service_owned(appid: str) -> bool | None:
 
 
 def audit(session: dict, proc: Path = Path("/proc"), *, appid: str | None = None) -> str:
+    # appid identifies the GAME; require_tool_appid identifies the RUNTIME.
+    # Never use the runtime's AppID when checking the game's D-Bus launcher.
     proton = Path(session["proton"])
     manifest = proton.parent / "toolmanifest.vdf"
-    appid = None
+    runtime_appid = None
     if manifest.is_file():
-        appid = parse_required_runtime(manifest.read_text(errors="replace"))
+        runtime_appid = parse_required_runtime(manifest.read_text(errors="replace"))
     steamroot = Path(session["steamroot"])
-    runtime_name = RUNTIME_NAMES.get(appid, "") if appid else ""
+    runtime_name = RUNTIME_NAMES.get(runtime_appid, "") if runtime_appid else ""
     runtime = (steamroot / "steamapps/common" / runtime_name / "_v2-entry-point"
                if runtime_name else None)
     game_ns = read_namespace(str(session["game_pid"]), proc)
@@ -84,7 +86,8 @@ def audit(session: dict, proc: Path = Path("/proc"), *, appid: str | None = None
         f"Active Proton: {proton}",
         f"Steam root: {steamroot}",
         f"Proton runtime manifest: {manifest if manifest.is_file() else 'not found'}",
-        f"Required Steam runtime AppID: {appid or 'not specified'}",
+        f"Game Steam AppID: {appid or 'not supplied'}",
+        f"Required Steam runtime AppID: {runtime_appid or 'not specified'}",
         f"Expected runtime: {runtime_name or 'unknown or not required'}",
         f"Runtime entry point: {runtime if runtime else 'unknown'}",
         f"Runtime entry point exists: {bool(runtime and runtime.is_file())}",
