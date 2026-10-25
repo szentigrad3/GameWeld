@@ -63,6 +63,32 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('if(job->generation==pc2_bridge_readiness_generation', text)
         self.assertIn('const char *state="blocked"', text)
 
+    def test_primary_action_dispatch_blocks_unready_launch(self):
+        apply = function_body(
+            "static void pc2_bridge_apply_primary(const char *state,const char *reason){",
+            "static gboolean pc2_bridge_readiness_done(gpointer data){",
+        )
+        dispatch = function_body(
+            "static void on_pc2_bridge_primary(GtkButton*b,void*d){",
+            "static void on_pc2_bridge_setup(GtkButton*b,void*d){",
+        )
+        self.assertIn('else{title="Checking WeMod…";actionable=0;}', apply)
+        self.assertIn('gtk_widget_set_sensitive(buttons[i],actionable)', apply)
+        self.assertIn('if(G.selected<0||G.selected>=G.game_count)return;', dispatch)
+        self.assertIn('if(strcmp(game->appid,pc2_bridge_ready_appid))return;', dispatch)
+        self.assertRegex(dispatch, r'if\(!strcmp\(state,"play"\)\)pc2_steam_bridge_action\("play"\)')
+        self.assertIn('else if(!strcmp(state,"setup"))pc2_steam_bridge_action("setup")', dispatch)
+        self.assertIn('else if(!strcmp(state,"enable"))pc2_steam_bridge_action("trainer-on")', dispatch)
+        self.assertIn('else if(!strcmp(state,"steam")||!strcmp(state,"repair"))', dispatch)
+        self.assertNotIn('pc2_steam_bridge_action("play")', dispatch.split('else if(!strcmp(state,"steam")||!strcmp(state,"repair"))')[1])
+        done = function_body(
+            "static gboolean pc2_bridge_readiness_done(gpointer data){",
+            "static void *pc2_bridge_readiness_worker(void *data){",
+        )
+        self.assertIn("job->generation==pc2_bridge_readiness_generation", done)
+        self.assertIn('!strcmp(G.games[G.selected].appid,job->appid)', done)
+        self.assertIn('const char *state="blocked"', done)
+
     def test_overview_is_game_first_without_visible_pc2_diagnostics(self):
         overview = function_body("static GtkWidget *build_home(void){",
                                  "/* PC2 Library width adapts")
