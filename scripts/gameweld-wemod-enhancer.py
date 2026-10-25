@@ -859,16 +859,23 @@ def main() -> int:
         install_helper()
         return 0
     if args.action == "live-launch":
-        # The user already confirmed a real launch. Match the same uniquely
-        # patched client that game-test could safely identify, never one of
-        # three installs picked arbitrarily. Patch/Restore never use this.
-        folder, reason = resolve_read_only_client(candidates, installed_helper_dir())
-        if folder is None:
-            raise ValueError(
-                "Live Wand launch blocked: " + reason +
-                ". Choose the exact patched app-version in Settings."
-            )
-        print("Selected Wand client: " + folder.name + " (" + reason + ")", flush=True)
+        if args.legacy_baseline:
+            # Clean renderer-only baseline is explicitly chosen and verified
+            # by the pinned archive manifest, NOT by an Enhancer patch.
+            folder = client_root(Path(args.install_dir))
+            if folder is None:
+                raise ValueError("Verified 11.6.0 baseline client directory not found")
+            verify_legacy_baseline(folder)
+            print("Selected Wand client: unpatched 11.6.0 baseline", flush=True)
+        else:
+            # Normal launches continue to require the uniquely patched client.
+            folder, reason = resolve_read_only_client(candidates, installed_helper_dir())
+            if folder is None:
+                raise ValueError(
+                    "Live Wand launch blocked: " + reason +
+                    ". Choose the exact patched app-version in Settings."
+                )
+            print("Selected Wand client: " + folder.name + " (" + reason + ")", flush=True)
         print("Selected Wand installation: " + str(folder), flush=True)
     if folder is None:
         raise ValueError("No unique Wand/WeMod client selected. Choose the app-version folder with resources/app.asar; this is distinct from the Proton compatibility tool.")
