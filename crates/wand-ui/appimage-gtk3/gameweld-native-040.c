@@ -4523,7 +4523,7 @@ static void *pc2_steam_bridge_worker(void *data){
         const char *argv[16];int n=0;
         argv[n++]="python3";argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
         if(j->appid[0]){argv[n++]="--appid";argv[n++]=j->appid;}
-        if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")||!strcmp(j->action,"netfx-status")){
+        if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")||!strcmp(j->action,"preflight")||!strcmp(j->action,"netfx-status")){
             if(j->game_dir[0]){
                 argv[n++]="--game-dir";argv[n++]=j->game_dir;
             }
@@ -4531,7 +4531,7 @@ static void *pc2_steam_bridge_worker(void *data){
                 argv[n++]="--steam-root";argv[n++]=j->steam_root;
             }
         }
-        if(strcmp(j->action,"status")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
+        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char *const*)argv);_exit(127);
     }
@@ -4563,7 +4563,7 @@ static void pc2_steam_bridge_action(const char *action){
             return;
         }
     }
-    if(strcmp(action,"status")&&strcmp(action,"netfx-status")){
+    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-status")){
         char question[1024];
         if(global_upgrade){
             snprintf(question,sizeof question,
@@ -4639,7 +4639,7 @@ static void pc2_steam_bridge_action(const char *action){
     else{pc2_steam_bridge_busy=0;free(j);if(pc2_steam_bridge_status)
         set_label(pc2_steam_bridge_status,"Failed to start Steam Bridge helper thread.");}
 }
-static void on_pc2_bridge_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("status");}
+static void on_pc2_bridge_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("preflight");}
 static void on_pc2_bridge_upgrade(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("upgrade");}
 static void on_pc2_bridge_play(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("play");}
 static void on_pc2_bridge_primary(GtkButton*b,void*d){
@@ -5623,7 +5623,7 @@ static GtkWidget *build_settings(void){
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)bridge_note,TRUE);
         pack(bridge_card,bridge_note,0);
-        GtkWidget*bridge_status=button("Steam Bridge: Check selected game","action");
+        GtkWidget*bridge_status=button("Check WeMod readiness","action");
         GtkWidget*bridge_setup=button("Steam Bridge: Set up selected game","action");
         g_signal_connect_data(bridge_status,"clicked",(GCallback)on_pc2_bridge_status,NULL,NULL,0);
         g_signal_connect_data(bridge_setup,"clicked",(GCallback)on_pc2_bridge_setup,NULL,NULL,0);
@@ -5662,7 +5662,7 @@ static GtkWidget *build_settings(void){
         gtk_container_add(gpu_helper,gpu_box);
         pack(bridge_card,gpu_helper,0);
         pc2_steam_bridge_status=label(
-            "Select an installed Steam game, then choose Check selected game.",
+            "Select an installed Steam game, then choose Check WeMod readiness.",
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
         pack(bridge_card,pc2_steam_bridge_status,0);
