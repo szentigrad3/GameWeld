@@ -285,6 +285,39 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 bridge.resolve_setup("2353250", game, client=self.client)
             self.assertFalse(bridge.config_path().exists())
 
+    def test_primary_action_setup_enable_steam_repair_and_play_states(self):
+        with patch.dict(os.environ, self.env):
+            self.assertEqual(bridge.primary_ui_state("2353250")[0], "setup")
+            self.assertEqual(bridge.primary_ui_state("wrong-id")[0], "blocked")
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=False)
+            self.assertEqual(bridge.primary_ui_state("2353250")[0], "enable")
+            bridge.set_trainer_enabled("2353250", True)
+            with patch.object(bridge, "steam_compat_selection", return_value="UNVERIFIED"):
+                self.assertEqual(bridge.primary_ui_state("2353250")[0], "steam")
+            with patch.object(bridge, "steam_compat_selection",
+                              return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"):
+                self.assertEqual(bridge.primary_ui_state("2353250")[0], "repair")
+                (self.client / "version.dll").write_bytes(b"fixture")
+                (self.client / "resources/app.asar.backup").write_bytes(b"fixture")
+                state, message = bridge.primary_ui_state("2353250")
+                self.assertEqual(state, "play")
+                self.assertIn("requires confirmation", message)
+                self.assertTrue(bridge.load_config()["2353250"]["trainer_enabled"])
+
+    def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            original = bridge.config_path().read_bytes()
+            with patch.object(bridge, "steam_compat_selection",
+                              return_value="OTHER TOOL SELECTED (saved Steam mapping: Proton Experimental)"):
+                state, reason = bridge.primary_ui_state("2353250")
+                self.assertEqual(state, "steam")
+                self.assertIn("Properties > Compatibility", reason)
+            self.assertEqual(bridge.config_path().read_bytes(), original)
+            self.assertFalse((self.steam / "config/config.vdf").exists())
+
     def test_bridge_play_uses_steam_and_never_starts_a_second_proton(self):
         from unittest.mock import Mock
         with patch.dict(os.environ, self.env):
