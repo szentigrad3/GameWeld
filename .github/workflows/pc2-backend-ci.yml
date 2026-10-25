@@ -360,6 +360,12 @@ jobs:
           assert not data["missing_evidence"], data["missing_evidence"]
           print("PASS: candidates found and remain unapproved for redistribution")
           PY
+      - name: Preview private transitive GTK ELF dependencies
+        run: |
+          python3 scripts/pc2-transitive-elf-preview.py \
+            --candidates build/pc2-source/ubuntu-bundle-candidates.json \
+            --inventory build/pc2-source/ubuntu-dependency-inventory.json \
+            --out build/pc2-source/ubuntu-transitive-elf-preview.json
       - name: Summarize private runtime audit gates
         run: |
           python3 - <<'PY'
@@ -396,6 +402,7 @@ jobs:
             build/pc2-source/ubuntu-license-evidence.json
             build/pc2-source/private-bundling-decision.json
             build/pc2-source/ubuntu-bundle-candidates.json
+            build/pc2-source/ubuntu-transitive-elf-preview.json
           if-no-files-found: error
           retention-days: 7
       - name: Publication remains blocked
