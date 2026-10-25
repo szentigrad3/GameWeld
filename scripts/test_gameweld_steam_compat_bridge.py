@@ -37,7 +37,14 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         (self.client / "resources").mkdir(parents=True)
         (self.client / "WeMod.exe").write_bytes(b"MZ-TEST")
         (self.client / "resources/app.asar").write_bytes(b"ASAR")
+        # Isolate HOME as well as XDG paths: Steam compatibility lookups
+        # inspect ~/.steam/root and ~/.local/share/Steam unless explicitly
+        # pointed at a fixture root. Do not read the developer's actual
+        # installed games or Steam per-AppID mappings during unit tests.
+        self.home = self.root / "home"
+        self.home.mkdir()
         self.env = {
+            "HOME": str(self.home),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CONFIG_HOME": str(self.config),
         }
@@ -86,6 +93,9 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertIn("GameWeld Bridge AppID: 2353250", report)
             self.assertIn("Trainer auto-start: ENABLED", report)
             self.assertIn("Steam Compatibility selection: UNVERIFIED", report)
+            # Deliberately assert the fixture report, independent of any
+            # real Steam mapping under the invoking developer's HOME.
+            self.assertNotIn("GAMEWELD BRIDGE SELECTED", report)
             self.assertIn("Enhancer patch prerequisites: MISSING or unverified", report)
             self.assertEqual(bridge.config_path().read_bytes(), prior)
             self.assertIn("NOT CONFIGURED", bridge.format_status("2353251"))
