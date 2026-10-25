@@ -370,6 +370,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn(
             'GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui
         )
+        self.assertIn("Steam Play request accepted. Game and WeMod startup are NOT YET VERIFIED", ui)
+        self.assertNotIn("Steam launch ASSOCIATION OBSERVED", ui)
 
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
         with patch.dict(os.environ, self.env):
