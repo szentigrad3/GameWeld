@@ -20,6 +20,24 @@ class WeModRuntimeAuditTests(unittest.TestCase):
         self.assertEqual(audit.parse_required_runtime(sample), "4183110")
         self.assertIsNone(audit.parse_required_runtime('// "require_tool_appid" "4183110"'))
 
+    def test_service_probe_only_queries_name_has_owner(self):
+        from unittest.mock import patch
+        from subprocess import CompletedProcess
+        with patch.object(audit.shutil, "which", return_value="/usr/bin/gdbus"):
+            with patch.object(audit.subprocess, "run", return_value=CompletedProcess(
+                ["gdbus"], 0, stdout="(true,)\n", stderr="")) as probe:
+                self.assertTrue(audit.game_launcher_service_owned("2353250"))
+                args = probe.call_args.args[0]
+                self.assertEqual(args[-1], "com.steampowered.App2353250")
+                self.assertIn("org.freedesktop.DBus.NameHasOwner", args)
+            with patch.object(audit.subprocess, "run", return_value=CompletedProcess(
+                ["gdbus"], 0, stdout="(false,)\n", stderr="")):
+                self.assertFalse(audit.game_launcher_service_owned("2353250"))
+        with patch.object(audit.shutil, "which", return_value=None):
+            self.assertIsNone(audit.game_launcher_service_owned("2353250"))
+        with self.assertRaises(ValueError):
+            audit.game_launcher_service_owned("2353250;sh")
+
     def test_reports_runtime_entry_point_without_starting_it(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -43,6 +61,7 @@ class WeModRuntimeAuditTests(unittest.TestCase):
             self.assertIn("Required Steam runtime AppID: 4183110", report)
             self.assertIn("Runtime entry point exists: True", report)
             self.assertIn("Mount namespaces differ: True", report)
+            self.assertIn("Existing game launcher service: UNVERIFIED", report)
 
 
 if __name__ == "__main__":
