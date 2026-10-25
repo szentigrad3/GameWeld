@@ -2888,15 +2888,11 @@ static GtkWidget *build_home(void){
         GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");
         g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);
         pack(diagbox,deckcheatz_preview,0);
-        GtkWidget*native_readiness=button("Check GameWeld Managed Wand (read-only)","action");
-        g_signal_connect_data(native_readiness,"clicked",(GCallback)on_pc2_native_check,NULL,NULL,0);
-        pack(diagbox,native_readiness,0);
-        GtkWidget*proven=button("Play Game + Wand (managed Proton, opt-in)","action");
-        g_signal_connect_data(proven,"clicked",(GCallback)on_pc2_native_play,NULL,NULL,0);
-        pack(diagbox,proven,0);
-        GtkWidget*notice=label(pc2_steam_launch_allowed()?
-            "Prior PC2 handoffs produced a white Wand window. Check integrated managed readiness; CLOSE the game before using managed Play.":
-            "PC2 game-only launch is disabled. Check GameWeld managed readiness, then CLOSE the selected game before managed Play.","muted");
+        GtkWidget*notice=label(
+            "For the working Steam + WeMod same-runtime path, use the Steam Bridge "
+            "controls in Settings → Advanced Providers. Legacy host-Wine and "
+            "alternate Proton launch experiments are no longer offered here.",
+            "muted");
         gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
         pack(diagbox,notice,0);
     }
