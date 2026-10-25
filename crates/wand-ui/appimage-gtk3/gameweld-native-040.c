@@ -1369,7 +1369,7 @@ static void discover_running_steam_roots(char roots[][4096],int *count,int max){
 static void discover_mount_steam_roots(char roots[][4096],int *count,int max){
     const char *bases[]={"/mnt","/media","/run/media"};const char *user=getenv("USER");
     for(size_t bi=0;bi<3;bi++){char base[4096];snprintf(base,sizeof base,"%s",bases[bi]);if(bi==2&&user&&*user)snprintf(base,sizeof base,"/run/media/%s",user);DIR*d=opendir(base);if(!d)continue;struct dirent*de;
-        while((de=readdir(d))){if(de->d_name[0]=='.')continue;char p1[4096];if(strlen(base)+strlen(de->d_name)+2>sizeof p1)continue;snprintf(p1,sizeof p1,"%s/%s",base,de->d_name);add_steam_root(roots,count,max,p1);DIR*d2=opendir(p1);if(!d2)continue;struct dirent*de2;while((de2=readdir(d2))){if(de2->d_name[0]=='.')continue;char p2[4096];if(strlen(p1)+strlen(de2->d_name)+2>sizeof p2)continue;snprintf(p2,sizeof p2,"%s/%s",p1,de2->d_name);add_steam_root(roots,count,max,p2);}closedir(d2);
+        while((de=readdir(d))){if(de->d_name[0]=='.')continue;char p1[4096];if(strlen(base)+strlen(de->d_name)+2>sizeof p1)continue;memcpy(p1,base,strlen(base));p1[strlen(base)]='/';strcpy(p1+strlen(base)+1,de->d_name);add_steam_root(roots,count,max,p1);DIR*d2=opendir(p1);if(!d2)continue;struct dirent*de2;while((de2=readdir(d2))){if(de2->d_name[0]=='.')continue;char p2[4096];if(strlen(p1)+strlen(de2->d_name)+2>sizeof p2)continue;memcpy(p2,p1,strlen(p1));p2[strlen(p1)]='/';strcpy(p2+strlen(p1)+1,de2->d_name);add_steam_root(roots,count,max,p2);}closedir(d2);
         }closedir(d);
     }
 }
@@ -1382,7 +1382,7 @@ static int cleanup_legacy_steam_hooks(char *last_backup,size_t cap,int *files_ch
     int cleaned=0,files=0;
     for(int ri=0;ri<root_count;ri++){char userroot[4096];if(strlen(roots[ri])+sizeof "/userdata">sizeof userroot)continue;snprintf(userroot,sizeof userroot,"%s/userdata",roots[ri]);DIR*d=opendir(userroot);if(!d)continue;
         struct dirent*de;while((de=readdir(d))){if(de->d_name[0]=='.')continue;int numeric=1;for(const char*q=de->d_name;*q;q++)if(!isdigit((unsigned char)*q)){numeric=0;break;}if(!numeric)continue;
-            char cfg[4096];if(strlen(userroot)+strlen(de->d_name)+sizeof "//config/localconfig.vdf">sizeof cfg)continue;snprintf(cfg,sizeof cfg,"%s/%s/config/localconfig.vdf",userroot,de->d_name);struct stat st;if(stat(cfg,&st)!=0||!S_ISREG(st.st_mode))continue;
+            char cfg[4096];if(strlen(userroot)+strlen(de->d_name)+sizeof "//config/localconfig.vdf">sizeof cfg)continue;memcpy(cfg,userroot,strlen(userroot));cfg[strlen(userroot)]='/';strcpy(cfg+strlen(userroot)+1,de->d_name);strcat(cfg,"/config/localconfig.vdf");struct stat st;if(stat(cfg,&st)!=0||!S_ISREG(st.st_mode))continue;
             char b[4096]={0};if(cleanup_localconfig_file(cfg,b,sizeof b)){cleaned++;files++;if(last_backup&&cap&&b[0])snprintf(last_backup,cap,"%s",b);}
         }closedir(d);
     }
@@ -1491,7 +1491,7 @@ static int detect_managed_cheat_engine(const char *appid,char *out,size_t cap){
     if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%.*s",(int)(cap?cap-1:0),line);ok=1;}}pclose(f);return ok;
 }
 static int detect_managed_windows_ce(const char *appid,char *out,size_t cap){
-    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' windows-detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%s",line);ok=1;}}pclose(f);return ok;
+    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' windows-detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){if(out&&cap&&strlen(line)<cap){memcpy(out,line,strlen(line)+1);ok=1;}}}pclose(f);return ok;
 }
 static pid_t spawn_managed_ce_install(const char *appid,const char *installer){pid_t p=fork();if(p==0){execl(cheat_engine_manager(),cheat_engine_manager(),"install",appid,installer,(char*)NULL);_exit(127);}return p;}
 static pid_t spawn_managed_ce_download_install(const char *appid){pid_t p=fork();if(p==0){execl(cheat_engine_manager(),cheat_engine_manager(),"download-install",appid,(char*)NULL);_exit(127);}return p;}
@@ -1546,7 +1546,7 @@ static int save_cheat_table(const char *appid,const char *table){
     if(in){while(fgets(line,sizeof line,in)){char copy[4096];snprintf(copy,sizeof copy,"%s",line);char *tab=strchr(copy,'\t');if(tab){*tab=0;if(!strcmp(copy,appid))continue;}fputs(line,out);}fclose(in);}if(table&&*table)fprintf(out,"%s\t%s\n",appid,table);fclose(out);if(rename(tmp,path)!=0){unlink(tmp);return 0;}return 1;
 }
 static int load_cheat_engine(char *out,size_t cap){
-    if(out&&cap)out[0]=0;char p[2048];cheat_engine_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;char line[4096];if(!fgets(line,sizeof line,f)){fclose(f);return 0;}fclose(f);line[strcspn(line,"\r\n")]=0;if(!*line)return 0;snprintf(out,cap,"%s",line);return 1;
+    if(out&&cap)out[0]=0;char p[2048];cheat_engine_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;char line[4096];if(!fgets(line,sizeof line,f)){fclose(f);return 0;}fclose(f);line[strcspn(line,"\r\n")]=0;if(!*line)return 0;if(!out||!cap||strlen(line)>=cap)return 0;memcpy(out,line,strlen(line)+1);return 1;
 }
 static int save_cheat_engine(const char *exe){
     char path[2048],dir[2048];cheat_engine_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;
@@ -1752,7 +1752,7 @@ static long long art_score(const char *path,int cover){
 }
 static void scan_art_dir(const char *dir,const char *appid,int require_prefix,int cover,char *best,size_t cap,long long *best_score){
     DIR*d=opendir(dir);if(!d)return;struct dirent*e;char p[2048];size_t alen=appid?strlen(appid):0;
-    while((e=readdir(d))){if(e->d_name[0]=='.'||!image_name(e->d_name))continue;if(require_prefix&&appid&&strncmp(e->d_name,appid,alen)!=0)continue;snprintf(p,sizeof p,"%s/%s",dir,e->d_name);long long sc=art_score(p,cover);if(sc>*best_score){*best_score=sc;snprintf(best,cap,"%s",p);}}
+    while((e=readdir(d))){if(e->d_name[0]=='.'||!image_name(e->d_name))continue;if(require_prefix&&appid&&strncmp(e->d_name,appid,alen)!=0)continue;if(strlen(dir)+strlen(e->d_name)+2>sizeof p)continue;memcpy(p,dir,strlen(dir));p[strlen(dir)]='/';strcpy(p+strlen(dir)+1,e->d_name);long long sc=art_score(p,cover);if(sc>*best_score){*best_score=sc;snprintf(best,cap,"%s",p);}}
     closedir(d);
 }
 static void scan_art_tree(const char *dir,const char *appid,int require_prefix,int cover,int depth,char *best,size_t cap,long long *best_score){
@@ -1786,7 +1786,7 @@ static int resolve_game_art(const Game *g,int cover,char *out,size_t cap){
     long long best_score=-1; char best[2048]={0};
     for(int i=0;i<nr;i++){
         if(try_named_art(roots[i],g->appid,cover,out,cap))return 1;
-        snprintf(p,sizeof p,"%s/%s",roots[i],g->appid);
+        if(strlen(roots[i])+strlen(g->appid)+2>sizeof p)continue;memcpy(p,roots[i],strlen(roots[i]));p[strlen(roots[i])]='/';strcpy(p+strlen(roots[i])+1,g->appid);
         if(try_named_art(p,NULL,cover,out,cap))return 1;
         scan_art_tree(p,NULL,0,cover,3,best,sizeof best,&best_score);
         if(best[0]){snprintf(out,cap,"%s",best);return 1;}
@@ -2527,7 +2527,7 @@ static int launch_steam_shortcut_restart_free(Game*g,const char*context){
     pid_t p=fork();if(p<0){close(fd[0]);close(fd[1]);log_line("%s: could not fork restart-free Steam runtime launch for %s.",context?context:"Universal launch",g->name);return 0;}
     if(p==0){close(fd[0]);dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);close(fd[1]);clear_desktop_activation_env();execl(steam_shortcut_live_launch_tool(),steam_shortcut_live_launch_tool(),g->appid,g->launch_id,g->compatdata,g->compat_tool_path,g->executable,g->install_dir,g->steam_root,g->launch_options,(char*)NULL);_exit(127);}
     close(fd[1]);char buf[8192];size_t used=0;ssize_t n;while(used+1<sizeof buf&&(n=read(fd[0],buf+used,sizeof buf-used-1))>0)used+=(size_t)n;close(fd[0]);int st=0;while(waitpid(p,&st,0)<0&&errno==EINTR){}buf[used]=0;
-    char *line=strstr(buf,"STATUS\t");if(!line)line=buf;char code[96]={0},msg[4096]={0},detail[2048]={0};if(sscanf(line,"STATUS\t%95[^\t]\t%4095[^\t\n]\t%2047[^\n]",code,msg,detail)<1){snprintf(code,sizeof code,"error");snprintf(msg,sizeof msg,"%s",buf);}
+    char *line=strstr(buf,"STATUS\t");if(!line)line=buf;char code[96]={0},msg[4096]={0},detail[2048]={0};if(sscanf(line,"STATUS\t%95[^\t]\t%4095[^\t\n]\t%2047[^\n]",code,msg,detail)<1){snprintf(code,sizeof code,"error");snprintf(msg,sizeof msg,"%.*s",(int)sizeof(msg)-1,buf);}
     int ok=WIFEXITED(st)&&WEXITSTATUS(st)==0&&!strcmp(code,"started");
     if(ok){log_line("%s: restart-free Steam shortcut session started for %s. Steam stayed running; no shortcut database mutation or client restart was used.%s%s",context?context:"Universal launch",g->name,detail[0]?" Log: ":"",detail[0]?detail:"");return 1;}
     log_line("%s: restart-free Steam shortcut session failed for %s (%s). %s",context?context:"Universal launch",g->name,code[0]?code:"unknown",msg);
