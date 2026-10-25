@@ -18,6 +18,9 @@ class ReviewedLibraryStagingTests(unittest.TestCase):
         self.src = self.root / "libexample.so"
         self.src.write_bytes(b"isolated-fixture-not-a-real-ELF")
         self.digest = hashlib.sha256(self.src.read_bytes()).hexdigest()
+        self.notice = self.root / "fixture-LICENSE.txt"
+        self.notice.write_text("MIT fixture text")
+        self.notice_digest = hashlib.sha256(self.notice.read_bytes()).hexdigest()
         self.review = self.root / "review.json"
         self.approved = self.root / "approved.json"
         self.dest = self.root / "libs"
@@ -33,7 +36,7 @@ class ReviewedLibraryStagingTests(unittest.TestCase):
             "soname": "libexample.so", "sha256": self.digest,
             "source_path": str(self.src), "redistribution_approved": True,
             "license_verified": True, "license_spdx": "MIT",
-            "notice_path": "fixture-LICENSE.txt",
+            "notice_path": str(self.notice), "notice_sha256": self.notice_digest,
         }
         entry.update(changes)
         self.approved.write_text(json.dumps({"approved_libraries": [entry]}))
@@ -57,6 +60,14 @@ class ReviewedLibraryStagingTests(unittest.TestCase):
         self.assertFalse(self.dest.exists())
     def test_missing_license_approval_rejected(self):
         self.write_approval(license_verified=False)
+        self.assertNotEqual(self.invoke().returncode, 0)
+        self.assertFalse(self.dest.exists())
+    def test_license_notice_hash_mismatch_rejected(self):
+        self.write_approval(notice_sha256="0" * 64)
+        self.assertNotEqual(self.invoke().returncode, 0)
+        self.assertFalse(self.dest.exists())
+    def test_missing_license_notice_rejected(self):
+        self.write_approval(notice_path=str(self.root / "missing-license"))
         self.assertNotEqual(self.invoke().returncode, 0)
         self.assertFalse(self.dest.exists())
     def test_host_dependency_never_staged(self):
