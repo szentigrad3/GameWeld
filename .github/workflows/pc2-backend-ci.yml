@@ -165,6 +165,7 @@ jobs:
           test -s "$app/usr/libexec/gameweld-deckcheatz-install.py"
           test -s "$app/usr/libexec/gameweld-deckcheatz-direct.py"
           test -s "$app/usr/libexec/gameweld-deckcheatz-proton.py"
+          test -s "$app/usr/libexec/gameweld-steam-compat-bridge.py"
           ! find "$app" -type l -print -quit | grep -q .
           ! find "$app" -type f -name 'wemod.py' -print -quit | grep -q .
       - name: Integrated WeMod Enhancer GUI helper fixtures
@@ -184,6 +185,9 @@ jobs:
           python3 -m py_compile scripts/gameweld-steam-compat-bridge.py
           python3 -m unittest discover -s scripts -p 'test_gameweld_steam_compat_bridge.py' -v
           python3 scripts/gameweld-steam-compat-bridge.py status
+          grep -Fq 'Steam Bridge: Check selected game' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+          grep -Fq 'Steam Bridge: Enable WeMod next launch' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+          grep -Fq 'Steam Bridge: Disable WeMod next launch' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
       - name: Verify pinned upstream WeMod Enhancer Linux package
         run: |
           TMP_XDG="$(mktemp -d)"
