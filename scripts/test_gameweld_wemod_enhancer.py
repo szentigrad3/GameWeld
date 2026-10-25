@@ -358,6 +358,11 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
             (directory / "comm").write_text(process + "\n", encoding="utf-8")
         return proc, prefix, proton
 
+    def test_container_runtime_option_requires_confirmed_live_action(self):
+        response = self.cmd("status", "--join-steam-container")
+        self.assertNotEqual(response.returncode, 0)
+        self.assertIn("only supports confirmed live-launch", response.stdout)
+
     def test_game_container_join_rejects_missing_dbus_service(self):
         from unittest.mock import patch
         from subprocess import CompletedProcess
