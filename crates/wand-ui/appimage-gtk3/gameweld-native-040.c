@@ -4368,7 +4368,8 @@ static int pc2_bridge_has_stale_launcher(const char *state,const char *reason){
     /* Only this exact, source-verified failure routes to launcher-only repair.
      * Other repair conditions must not silently alter the Steam Bridge. */
     return state && reason && !strcmp(state,"repair") &&
-        strstr(reason,"Installed Steam Bridge launcher is outdated or unverified:")!=NULL;
+        strstr(reason,"Installed Steam Bridge launcher is outdated or unverified:")!=NULL &&
+        strstr(reason,"UPDATE AVAILABLE (")!=NULL;
 }
 static void pc2_bridge_apply_primary(const char *state,const char *reason){
     const char *title="Set Up WeMod";
