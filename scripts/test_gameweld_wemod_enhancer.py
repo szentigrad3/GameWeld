@@ -568,8 +568,8 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         capture = self.root / "baseline-env.txt"
         wine = proton.parent / "files" / "bin" / "wine"
         wine.write_text(
-            '#!/bin/sh\\n'
-            'printf "dll=%s\\n" "$WINEDLLOVERRIDES" > "$GAMEWELD_TEST_CAPTURE"\\n',
+            '#!/bin/sh\n'
+            'printf "dll=%s\n" "$WINEDLLOVERRIDES" > "$GAMEWELD_TEST_CAPTURE"\n',
             encoding="utf-8"
         )
         game_dir = self.root / "Astrometica"
