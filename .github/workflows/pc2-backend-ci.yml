@@ -298,6 +298,31 @@ jobs:
           file build/pc2-source/private-AppDir/usr/bin/wand-native-backend
           readelf -W -V build/pc2-source/private-AppDir/usr/bin/gameweld | grep -E 'GLIBC_|GLIBCXX_' || true
           sha256sum build/pc2-source/private-AppDir/usr/bin/gameweld build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+      - name: Summarize private runtime audit gates
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          base = Path("build/pc2-source")
+          closure = json.loads((base / "ubuntu-runtime-closure.json").read_text())
+          review = json.loads((base / "ubuntu-dependency-review.json").read_text())
+          lines = [
+              "## GameWeld private Ubuntu portability audit",
+              "",
+              f"- Direct unbundled ELF SONAMEs: {len(closure['unbundled_dependencies'])}",
+              f"- Dependencies requiring manual review: {review['review_required']}",
+              "- Portable AppImage: **not verified**",
+              "- Redistribution: **not approved**",
+              "",
+              "### Direct unbundled dependencies",
+              *[f"- `{name}`" for name in closure['unbundled_dependencies']],
+              "",
+              "Static analysis does not cover dlopen modules, runtime launch, or cross-distro compatibility."
+          ]
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write("\n".join(lines) + "\n")
+          PY
       - name: Upload private audit JSON reports (no executables)
         uses: actions/upload-artifact@v4
         with:
