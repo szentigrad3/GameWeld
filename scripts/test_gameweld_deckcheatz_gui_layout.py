@@ -39,7 +39,10 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_overview_play,allowed)", text)
         self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,allowed)", text)
         self.assertIn('!strcmp(g->appid,"2353250")', text)
-        self.assertIn("Experimental for this game", text)
+        self.assertIn("WeMod launches only for a configured Steam Bridge title", text)
+        self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_play', text)
+        self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_play', text)
+        self.assertNotIn('on_pc2_deckcheatz_experimental', text)
 
     def test_advanced_launch_controls_are_collapsed(self):
         self.assertIn('gtk_expander_new("Advanced Steam / WeMod diagnostics")', text)
@@ -142,7 +145,9 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("Other titles and machines must be tested", text)
 
     def test_launch_preview_and_prefix_consent_remain_separate(self):
-        self.assertIn("pc2_deckcheatz_flow(1)", text)
+        self.assertIn("pc2_deckcheatz_flow(0)", text)
+        self.assertNotIn("pc2_deckcheatz_flow(1)", text)
+        self.assertIn('pc2_steam_bridge_action("play")', text)
         self.assertIn("pc2_deckcheatz_show_preview(output)", text)
         self.assertIn("if(!ok || !experimental_launch)return", text)
         self.assertIn("GTK_BUTTONS_YES_NO", text)
