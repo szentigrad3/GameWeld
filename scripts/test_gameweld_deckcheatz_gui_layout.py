@@ -44,11 +44,24 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_play', text)
         self.assertNotIn('on_pc2_deckcheatz_experimental', text)
 
-    def test_advanced_launch_controls_are_collapsed(self):
-        self.assertIn('gtk_expander_new("Advanced Steam / WeMod diagnostics")', text)
+    def test_overview_is_game_first_without_visible_pc2_diagnostics(self):
+        overview = function_body("static GtkWidget *build_home(void){",
+                                 "/* PC2 Library width adapts")
+        self.assertNotIn('gtk_expander_new("Advanced Steam / WeMod diagnostics")', overview)
+        self.assertNotIn('button("Check Steam session (read-only)"', overview)
+        self.assertNotIn('button("Install DeckCheatz 1.x (managed)"', overview)
+        self.assertIn('button("Play with WeMod","primary-action")', overview)
+        self.assertIn("gtk_widget_set_no_show_all(lower,TRUE)", overview)
+        self.assertIn("gtk_widget_hide(lower)", overview)
+        self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", overview)
+        self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", overview)
+        # The old refresh/log widgets are still built to avoid breaking
+        # callbacks, but PC2 show_all() must not make them visible.
+        self.assertIn('pack(readiness,label("SESSION READINESS"', overview)
+        self.assertIn('pack(aht,label("ACTIVITY"', overview)
+        self.assertIn('pack(context,label("SESSION CONTEXT"', overview)
+        # Library diagnostics are still available outside Overview.
         self.assertIn('gtk_expander_new("Advanced trainer / launch diagnostics")', text)
-        self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", text)
-        self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", text)
 
     def test_screen_policy_is_windowed_at_every_resolution(self):
         self.assertIn("static void pc2_primary_monitor_pixels(", text)
