@@ -18,6 +18,7 @@ import stat
 import sys
 import tempfile
 from urllib.request import urlopen
+from urllib.error import HTTPError
 import zipfile
 
 VERSION = "11.6.0"
@@ -103,7 +104,26 @@ def download(package: Path, url: str = PACKAGE_URL, expected_sha: str = SHA256) 
         raise ValueError("Official WeMod package SHA-256 mismatch; rejected")
 
 
-def stage(destination: Path) -> None:
+def copy_verified_package(source: Path, destination: Path) -> None:
+    """Copy a user-supplied official archive into private staging; verify pinned hash."""
+    if not source.is_file() or source.is_symlink():
+        raise ValueError("Local package must be an existing regular .nupkg file (not a symlink)")
+    if source.suffix.lower() != ".nupkg":
+        raise ValueError("Local package must be the original .nupkg archive")
+    digest = hashlib.sha256()
+    amount = 0
+    with source.open("rb") as src, destination.open("xb") as dst:
+        while chunk := src.read(1024 * 1024):
+            amount += len(chunk)
+            if amount > MAX_DOWNLOAD_BYTES:
+                raise ValueError("Local package exceeds maximum accepted size")
+            digest.update(chunk)
+            dst.write(chunk)
+    if digest.hexdigest() != SHA256:
+        raise ValueError("Local package SHA-256 mismatch; refusing unverified WeMod archive")
+
+
+def stage(destination: Path, package_path: Path | None = None) -> None:
     if destination.exists():
         if installed(destination):
             print(f"WeMod {VERSION} already staged: {destination}")
@@ -114,8 +134,21 @@ def stage(destination: Path) -> None:
         temp = Path(td)
         package = temp / "original.nupkg"
         unpacked = temp / "client"
-        print("Downloading pinned official WeMod package and checking SHA-256...", flush=True)
-        download(package)
+        if package_path is not None:
+            print(f"Validating user-supplied WeMod archive: {package_path}", flush=True)
+            copy_verified_package(package_path, package)
+        else:
+            print("Downloading pinned official WeMod package and checking SHA-256...", flush=True)
+            try:
+                download(package)
+            except HTTPError as exc:
+                if exc.code == 403:
+                    raise ValueError(
+                        "Official WeMod CDN returned HTTP 403 (Forbidden). No package was staged. "
+                        "If you already have the original WeMod-11.6.0-full.nupkg, "
+                        "use 'stage --confirm --package /absolute/path/to/file.nupkg'."
+                    ) from exc
+                raise
         print("Package SHA-256 verified; extracting portable lib/net45 client...", flush=True)
         unpack(package, unpacked)
         manifest = {
@@ -138,7 +171,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("status", "stage"))
     parser.add_argument("--confirm", action="store_true",
-                        help="Explicitly approve downloading and staging the pinned client")
+                        help="Explicitly approve downloading or importing the pinned client")
+    parser.add_argument("--package", type=Path,
+                        help="Use an existing official 11.6.0 full .nupkg instead of downloading; exact SHA-256 required")
     args = parser.parse_args()
     try:
         destination = installation_path()
@@ -150,9 +185,11 @@ def main() -> int:
             print(f"Already staged: {'yes' if installed(destination) else 'no'}")
             print("Status is read-only. The existing DeckCheatz WeMod is never replaced.")
             return 0
+        if args.package is not None and args.action != "stage":
+            raise ValueError("--package is only valid with stage")
         if not args.confirm:
             raise ValueError("Staging requires explicit --confirm")
-        stage(destination)
+        stage(destination, package_path=args.package)
         return 0
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
         print(f"GameWeld legacy WeMod staging: {exc}", file=sys.stderr)
