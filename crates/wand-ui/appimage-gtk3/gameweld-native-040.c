@@ -1990,7 +1990,19 @@ static void set_label(GtkWidget *w,const char *s){ if(w)gtk_label_set_text((GtkL
  * change the active game; the Play with WeMod button handles launch consent. */
 static GameWeldPC2RecentHistory pc2_recents={0};
 static GtkWidget *pc2_recent_tiles=NULL;
+static int pc2_recent_render_queued=0;
 static void pc2_recent_render(void);
+static gboolean pc2_recent_render_idle(void *unused){
+    (void)unused;
+    pc2_recent_render_queued=0;
+    pc2_recent_render();
+    return FALSE;
+}
+static void pc2_schedule_recent_render(void){
+    if(pc2_recent_render_queued)return;
+    pc2_recent_render_queued=1;
+    g_idle_add(pc2_recent_render_idle,NULL);
+}
 
 static int pc2_recent_path(char *out,size_t cap,int create_dir){
     const char *xdg=getenv("XDG_CONFIG_HOME"),*home=getenv("HOME");
@@ -2063,7 +2075,7 @@ static void pc2_recent_select(GtkButton *button,void *userdata){
     if(index<0||index>=G.game_count)return;
     if(G.selected==index){
         pc2_recent_record(index);
-        pc2_recent_render();
+        pc2_schedule_recent_render();
         return;
     }
     if(G.game_list&&G.game_rows[index]){
@@ -2073,7 +2085,7 @@ static void pc2_recent_select(GtkButton *button,void *userdata){
         G.selected=index;
         pc2_recent_record(index);
         refresh_ui();
-        pc2_recent_render();
+        pc2_schedule_recent_render();
     }
 }
 static void pc2_recent_clear_child(GtkWidget *child,void *unused){
@@ -2134,7 +2146,7 @@ static void selected_changed(GtkListBox *list,GtkListBoxRow *row,void *data){
         G.selected=idx;
         pc2_recent_record(idx);
         refresh_ui();
-        pc2_recent_render();
+        pc2_schedule_recent_render();
         trainer_update_context_refresh();
     }
 }
