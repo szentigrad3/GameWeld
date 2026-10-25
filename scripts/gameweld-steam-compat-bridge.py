@@ -297,17 +297,17 @@ def format_status(appid: str | None = None) -> str:
             raise ValueError("Invalid game Steam AppID")
         entry = config.get(appid)
         if not isinstance(entry, dict):
-            return (f"GameWeld Bridge AppID {appid}: NOT CONFIGURED\\n"
+            return (f"GameWeld Bridge AppID {appid}: NOT CONFIGURED\n"
                     "No Steam compatibility selection was changed.")
         return ("GameWeld Bridge AppID: " + appid +
-                "\\nConfigured Proton: " + str(entry.get("proton", "")) +
-                "\\nConfigured WeMod: " + str(entry.get("client", "")) +
-                "\\nTrainer auto-start: " +
+                "\nConfigured Proton: " + str(entry.get("proton", "")) +
+                "\nConfigured WeMod: " + str(entry.get("client", "")) +
+                "\nTrainer auto-start: " +
                 ("ENABLED" if entry.get("trainer_enabled") else "DISABLED") +
-                "\\nActual Steam compatibility-tool selection: NOT VERIFIED" +
-                "\\nChanges take effect on the next game launch.")
-    return (f"Staged launcher: {private_tool_dir() / 'launcher.py'}\\n" +
-            f"Configured AppIDs: {', '.join(sorted(config)) or 'none'}\\n" +
+                "\nActual Steam compatibility-tool selection: NOT VERIFIED" +
+                "\nChanges take effect on the next game launch.")
+    return (f"Staged launcher: {private_tool_dir() / 'launcher.py'}\n" +
+            f"Configured AppIDs: {', '.join(sorted(config)) or 'none'}\n" +
             "No Steam game compatibility setting or launch option has been changed.")
 
 
