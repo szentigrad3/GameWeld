@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
@@ -117,6 +118,16 @@ def stage(destination: Path) -> None:
         download(package)
         print("Package SHA-256 verified; extracting portable lib/net45 client...", flush=True)
         unpack(package, unpacked)
+        manifest = {
+            "tool": "gameweld-isolated-wemod-baseline",
+            "version": VERSION,
+            "package_sha256": SHA256,
+            "exe_sha256": hashlib.sha256((unpacked / "WeMod.exe").read_bytes()).hexdigest(),
+            "asar_sha256": hashlib.sha256((unpacked / "resources/app.asar").read_bytes()).hexdigest(),
+        }
+        marker = unpacked / ".gameweld-baseline.json"
+        marker.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
+        marker.chmod(0o600)
         # Atomic rename on same filesystem. No changes to current installation.
         unpacked.rename(destination)
     print(f"WeMod {VERSION} staged separately at: {destination}")
