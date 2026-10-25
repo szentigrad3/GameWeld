@@ -27,10 +27,20 @@ bash scripts/pc2-stage-private-appdir.sh >"$OUT/build.log" 2>&1 || { tail -60 "$
 echo "2/4 Structural audit"
 GAMEWELD_PC2_AUDIT_REPORT="$OUT/appdir-audit.txt" bash scripts/pc2-audit-private-appdir.sh >"$OUT/audit.log" 2>&1 || { tail -60 "$OUT/audit.log"; exit 1; }
 echo "3/4 GUI launch check"
-GAMEWELD_GUI_SMOKE_SECONDS=30 bash scripts/pc2-headless-gui-smoke.sh >"$OUT/gui-smoke.log" 2>&1 || { tail -60 "$OUT/gui-smoke.log"; exit 1; }
+SMOKE_STATUS="passed"
+if command -v xvfb-run >/dev/null 2>&1; then
+  GAMEWELD_GUI_SMOKE_SECONDS=30 bash scripts/pc2-headless-gui-smoke.sh >"$OUT/gui-smoke.log" 2>&1 || { tail -60 "$OUT/gui-smoke.log"; exit 1; }
+elif (( LAUNCH )) && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+  SMOKE_STATUS="skipped_no_xvfb"
+  echo "SKIP: xvfb-run unavailable; live GUI launch will be tested on your desktop." | tee "$OUT/gui-smoke.log"
+else
+  echo "FAIL: xvfb-run missing. Install xorg-server-xvfb, or use --launch from a graphical desktop." >&2
+  exit 2
+fi
+export SMOKE_STATUS
 echo "4/4 Result manifest"
 python3 - "$OUT" <<'PY'
-import hashlib, json, pathlib, platform, sys
+import hashlib, json, os, pathlib, platform, sys
 root=pathlib.Path(sys.argv[1])
 app=root/"AppDir"
 p={
@@ -39,13 +49,13 @@ p={
  "functional_gui_sha256":hashlib.sha256((app/"usr/bin/gameweld").read_bytes()).hexdigest(),
  "functional_backend_sha256":hashlib.sha256((app/"usr/bin/wand-native-backend").read_bytes()).hexdigest(),
  "appdir_audit":"passed",
- "headless_gui_smoke":"passed",
+ "headless_gui_smoke":os.environ["SMOKE_STATUS"],
  "portable":False,"steam_game_launch_tested":False,"wemod_tested":False,
  "redistribution_approved":False
 }
 (root/"summary.json").write_text(json.dumps(p,indent=2)+"\n")
 PY
-echo "PASS: private functional source build, local audit, GUI smoke"
+echo "PASS: private functional source build and audit (headless GUI smoke: $SMOKE_STATUS)"
 echo "Report: $OUT/summary.json"
 if (( LAUNCH )); then
   echo "Opening GameWeld functional GUI for manual testing."
