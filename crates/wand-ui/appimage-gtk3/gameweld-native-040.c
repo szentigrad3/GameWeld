@@ -4847,7 +4847,8 @@ static void on_pc2_deckcheatz_detect(GtkButton*b,void*d){
         "%s/usr/libexec/gameweld-deckcheatz-direct.py",appdir);
     else snprintf(helper,sizeof helper,"gameweld-deckcheatz-direct.py");
     int fd[2];
-    if(pipe(fd)!=0){log_line("DeckCheatz 1.x detection: could not open output pipe.");return;}
+    if(pipe(fd)!=0){log_line("DeckCheatz 1.x detection: could not open output pipe.");
+        if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,"DeckCheatz detection failed: cannot create scanner pipe.");return;}
     pid_t pid=fork();
     if(pid==0){
         close(fd[0]);dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);close(fd[1]);
@@ -4856,21 +4857,28 @@ static void on_pc2_deckcheatz_detect(GtkButton*b,void*d){
         _exit(127);
     }
     close(fd[1]);
-    if(pid<0){close(fd[0]);log_line("DeckCheatz 1.x detection: could not start scanner.");return;}
+    if(pid<0){close(fd[0]);log_line("DeckCheatz 1.x detection: could not start scanner.");
+        if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,"DeckCheatz detection failed: scanner could not start.");return;}
     char output[4096]={0};
     int status=bounded_child_output(pid,fd[0],output,sizeof output,10);
     if(!status){
         log_line("DeckCheatz 1.x discovery failed. Existing Steam games/LaunchOptions unchanged.");
+        if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+            "Detection failed or timed out. Existing installations were not changed.");
         if(G.library_detail_status)set_label(G.library_detail_status,
             "DeckCheatz discovery unavailable; no game or trainer launched.");
         return;
     }
     if(strstr(output,"\"available_count\": 0")){
         log_line("DeckCheatz 1.x: not yet installed. Click Install DeckCheatz 1.x (managed), or select Preview to download automatically after consent. Steam LaunchOptions unchanged.");
+        if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+            "DeckCheatz not detected. You can install a separate managed checkout after confirmation.");
         if(G.library_detail_status)set_label(G.library_detail_status,
             "DeckCheatz 1.x not installed. GameWeld can download it on first use. No game or trainer launched.");
     }else{
         log_line("DeckCheatz 1.x detected (read-only). GameWeld direct launch requires per-game EXE, Proton and prefix selection plus explicit consent; real handoff NOT yet validated.");
+        if(pc2_deckcheatz_update_status)set_label(pc2_deckcheatz_update_status,
+            "DeckCheatz detected. No Steam Launch Options were changed; direct launch remains experimental.");
         if(G.library_detail_status)set_label(G.library_detail_status,
             "DeckCheatz 1.x detected. No Steam launch options needed; direct launch still experimental.");
     }
