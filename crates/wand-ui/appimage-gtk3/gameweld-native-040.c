@@ -4838,6 +4838,7 @@ static void on_pc2_wemod_verify_selected(GtkButton*b,void*d){(void)b;(void)d;pc2
  * LaunchOptions changes, zero trainer/game starts, and no bundled AGPL code.
  * Actual direct game launch remains a separately consented, UNVERIFIED
  * provider path. The source helper runs only on button click. */
+static GtkWidget *pc2_deckcheatz_update_status=NULL;
 static void on_pc2_deckcheatz_detect(GtkButton*b,void*d){
     (void)b;(void)d;
     if(!pc2_provider_controls_allowed())return;
@@ -4900,7 +4901,6 @@ typedef struct {
 } PC2DeckCheatzInstallJob;
 
 static int pc2_deckcheatz_install_busy=0;
-static GtkWidget *pc2_deckcheatz_update_status=NULL;
 static void pc2_deckcheatz_flow(int experimental_launch);
 
 static int pc2_deckcheatz_find_launcher(char *target,size_t cap){
