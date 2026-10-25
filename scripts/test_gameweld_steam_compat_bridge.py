@@ -147,6 +147,47 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 bridge.resolve_setup("2353250", game, client=self.client)
             self.assertFalse(bridge.config_path().exists())
 
+    def test_bridge_play_uses_steam_and_never_starts_a_second_proton(self):
+        from unittest.mock import Mock
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            play = Mock(return_value=0)
+            count = Mock(return_value=0)
+            result = bridge.play_configured_game(
+                "2353250", launch=play, associated_processes=count)
+            self.assertEqual(result, 0)
+            play.assert_called_once_with("2353250")
+            count.assert_called_once_with("2353250")
+
+    def test_bridge_play_refuses_disabled_unconfigured_or_duplicate_sessions(self):
+        from unittest.mock import Mock
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=False)
+            play = Mock(return_value=0)
+            with self.assertRaisesRegex(ValueError, "DISABLED"):
+                bridge.play_configured_game(
+                    "2353250", launch=play, associated_processes=lambda _: 0)
+            with self.assertRaisesRegex(ValueError, "no GameWeld Bridge"):
+                bridge.play_configured_game(
+                    "2353251", launch=play, associated_processes=lambda _: 0)
+            bridge.set_trainer_enabled("2353250", True)
+            with self.assertRaisesRegex(ValueError, "existing same-AppID"):
+                bridge.play_configured_game(
+                    "2353250", launch=play, associated_processes=lambda _: 1)
+            play.assert_not_called()
+
+    def test_bridge_play_requires_installed_tool_without_changing_steam(self):
+        from unittest.mock import Mock
+        with patch.dict(os.environ, self.env):
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            play = Mock(return_value=0)
+            with self.assertRaisesRegex(ValueError, "not registered"):
+                bridge.play_configured_game(
+                    "2353250", launch=play, associated_processes=lambda _: 0)
+            play.assert_not_called()
+
     def test_runtime_comes_from_exact_configured_proton(self):
         with patch.dict(os.environ, self.env):
             runtime = (self.steam /
