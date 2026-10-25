@@ -36,13 +36,32 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
 
     def test_button_is_steam_only_and_other_games_stay_experimental(self):
         self.assertIn("game_is_steam(g)&&!game_is_steam_shortcut(g)", text)
-        self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_overview_play,allowed)", text)
+        self.assertIn("pc2_bridge_readiness_for_game(g)", text)
+        self.assertIn("pc2_bridge_readiness_invalidate();", text)
+        self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],title)', text)
         self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,allowed)", text)
         self.assertIn('!strcmp(g->appid,"2353250")', text)
         self.assertIn("WeMod launches only for a configured Steam Bridge title", text)
-        self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_play', text)
-        self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_play', text)
+        self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_primary', text)
+        self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary', text)
         self.assertNotIn('on_pc2_deckcheatz_experimental', text)
+
+    def test_primary_we_mod_action_is_per_game_and_fails_closed(self):
+        for state, label in [
+            ("play", "Play with WeMod"),
+            ("setup", "Set Up WeMod"),
+            ("enable", "Enable WeMod"),
+            ("steam", "Finish Steam Setup"),
+            ("repair", "Repair WeMod"),
+        ]:
+            self.assertIn(f'!strcmp(state,"{state}")', text)
+            self.assertIn(f'title="{label}"', text)
+        self.assertIn('pc2_steam_bridge_action("play")', text)
+        self.assertIn('pc2_steam_bridge_action("setup")', text)
+        self.assertIn('pc2_steam_bridge_action("trainer-on")', text)
+        self.assertIn('pc2_bridge_readiness_generation', text)
+        self.assertIn('if(job->generation==pc2_bridge_readiness_generation', text)
+        self.assertIn('const char *state="blocked"', text)
 
     def test_overview_is_game_first_without_visible_pc2_diagnostics(self):
         overview = function_body("static GtkWidget *build_home(void){",
