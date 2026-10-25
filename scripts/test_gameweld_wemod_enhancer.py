@@ -526,7 +526,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         game_dir = self.root / "Astrometica"
         game_dir.mkdir()
         wine = proton.parent / "files" / "bin" / "wine"
-        wine.write_text('#!/bin/sh\\necho fake WeMod child\\n', encoding="utf-8")
+        wine.write_text('#!/bin/sh\necho fake WeMod child\n', encoding="utf-8")
         self.assertEqual(
             self.cmd("patch", "--install-dir", str(self.client),
                      "--confirm").returncode, 0
@@ -547,7 +547,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertEqual(first.read_bytes(), original)
         other = next(path for path in logs if path != first)
         self.assertIn(b"software rendering requested", other.read_bytes())
-        self.assertNotIn(b"\\x00", other.read_bytes())
+        self.assertNotIn(b"\x00", other.read_bytes())
 
     def test_software_render_only_allowed_for_confirmed_live_launch(self):
         status = self.cmd("status", "--software-render", "--appid", "2353250")
