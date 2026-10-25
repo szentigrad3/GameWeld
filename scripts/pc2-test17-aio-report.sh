@@ -17,7 +17,7 @@ gcc -fsyntax-only -Werror=implicit-function-declaration -pthread \
     $(pkg-config --cflags gtk+-3.0) \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
 grep -Fq '"live-render"' "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
-grep -Fq 'Retry Wand (GPU Off, opt-in)' \
+! grep -Fq 'GtkWidget*live_render=button(' \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
 grep -Fq 'wand-live-' "$ROOT/scripts/gameweld-wemod-enhancer.py"
 {
@@ -25,7 +25,7 @@ grep -Fq 'wand-live-' "$ROOT/scripts/gameweld-wemod-enhancer.py"
   echo 'Result: PASS'
   echo 'GTK source syntax and declared APIs: PASS'
   echo 'Wand helper unit tests (including software-render launch): PASS'
-  echo 'Explicit confirmation required for software-render retry: PASS'
+  echo 'Legacy CLI software-render confirmation preserved; obsolete GUI retry removed: PASS'
   echo 'Same live Proton runtime and prefix preserved: PASS (fixtures only)'
   echo 'Chromium --disable-gpu and --disable-gpu-compositing sent: PASS (fixtures only)'
   echo 'Steam game launch options modified: false'
