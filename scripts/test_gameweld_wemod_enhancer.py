@@ -363,23 +363,23 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         from subprocess import CompletedProcess
         proc, prefix, proton = self.make_live_proton_fixture()
         (proton.parent / "toolmanifest.vdf").write_text(
-            '// "require_tool_appid" "999"\\n"require_tool_appid" "4183110"'
+            '// "require_tool_appid" "999"\n"require_tool_appid" "4183110"'
         )
         client = (self.root / "steam-root/steamapps/common/SteamLinuxRuntime_4"
                   / "pressure-vessel/bin/steam-runtime-launch-client")
         client.parent.mkdir(parents=True)
-        client.write_text("#!/bin/sh\\nexit 0\\n")
+        client.write_text("#!/bin/sh\nexit 0\n")
         client.chmod(0o755)
         session = bridge.live_steam_proton_session("2353250", proc)
         with patch.object(bridge.shutil, "which", return_value="/usr/bin/gdbus"):
             with patch.object(bridge.subprocess, "run", return_value=CompletedProcess(
-                    ["gdbus"], 0, stdout="(false,)\\n", stderr="")) as check:
+                    ["gdbus"], 0, stdout="(false,)\n", stderr="")) as check:
                 with self.assertRaisesRegex(ValueError, "No active per-game Steam container"):
                     bridge.live_steam_container_launch_client(session, "2353250")
                 self.assertEqual(check.call_args.args[0][-1],
                                  "com.steampowered.App2353250")
             with patch.object(bridge.subprocess, "run", return_value=CompletedProcess(
-                    ["gdbus"], 0, stdout="(true,)\\n", stderr="")):
+                    ["gdbus"], 0, stdout="(true,)\n", stderr="")):
                 self.assertEqual(
                     bridge.live_steam_container_launch_client(session, "2353250"), client)
 
@@ -391,7 +391,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         client = (self.root / "steam-root/steamapps/common/SteamLinuxRuntime_4"
                   / "pressure-vessel/bin/steam-runtime-launch-client")
         client.parent.mkdir(parents=True)
-        client.write_text("#!/bin/sh\\nexit 0\\n")
+        client.write_text("#!/bin/sh\nexit 0\n")
         client.chmod(0o755)
         game_dir = self.root / "Astrometica"
         game_dir.mkdir()
@@ -403,7 +403,7 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         with patch.dict(os.environ, {"DISPLAY": ":0", "XDG_STATE_HOME": str(self.root / "state")}):
             with patch.object(bridge.shutil, "which", return_value="/usr/bin/gdbus"):
                 with patch.object(bridge.subprocess, "run", return_value=CompletedProcess(
-                        ["gdbus"], 0, stdout="(true,)\\n", stderr="")):
+                        ["gdbus"], 0, stdout="(true,)\n", stderr="")):
                     with patch.object(bridge.subprocess, "Popen", return_value=FakeChild()) as start:
                         bridge.launch_wand_in_live_game(
                             self.client, self.helper, "2353250", str(game_dir), proc,
