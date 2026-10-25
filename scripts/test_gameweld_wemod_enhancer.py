@@ -471,7 +471,9 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertIn("arg=--disable-gpu-compositing", argv)
         self.assertIn("arg=--enable-logging=stderr", argv)
         self.assertNotIn("arg=runinprefix", argv)
-        log = state / "gameweld" / "wand-live-2353250.log"
+        logs = list((state / "gameweld").glob("wand-live-2353250-*.log"))
+        self.assertEqual(len(logs), 1)
+        log = logs[0]
         self.assertTrue(log.is_file())
         self.assertIn("direct X11 wineserver join + software rendering", log.read_text())
         self.assertIn("Client executable: " + str(self.client / "WeMod.exe"), log.read_text())
@@ -512,9 +514,40 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertIn("arg=--in-process-gpu", argv)
         self.assertIn("arg=--disable-gpu", argv)
         self.assertNotIn("arg=runinprefix", argv)
-        log = (self.root / "private-state/gameweld/wand-live-2353250.log").read_text()
+        logs = list((self.root / "private-state/gameweld").glob("wand-live-2353250-*.log"))
+        self.assertEqual(len(logs), 1)
+        log = logs[0].read_text()
         self.assertIn("In-process GPU experiment: True", log)
         self.assertIn("WeMod-only DLL load trace: True", log)
+
+    def test_repeated_handoffs_keep_independent_logs(self):
+        from unittest.mock import patch
+        proc, prefix, proton = self.make_live_proton_fixture()
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        wine = proton.parent / "files" / "bin" / "wine"
+        wine.write_text('#!/bin/sh\\necho fake WeMod child\\n', encoding="utf-8")
+        self.assertEqual(
+            self.cmd("patch", "--install-dir", str(self.client),
+                     "--confirm").returncode, 0
+        )
+        state = self.root / "private-state"
+        with patch.dict(os.environ, {"XDG_STATE_HOME": str(state), "DISPLAY": ":0"}):
+            bridge.launch_wand_in_live_game(
+                self.client, self.helper, "2353250", str(game_dir), proc)
+            logs = list((state / "gameweld").glob("wand-live-2353250-*.log"))
+            self.assertEqual(len(logs), 1)
+            first = logs[0]
+            original = first.read_bytes()
+            bridge.launch_wand_in_live_game(
+                self.client, self.helper, "2353250", str(game_dir), proc,
+                software_render=True)
+        logs = list((state / "gameweld").glob("wand-live-2353250-*.log"))
+        self.assertEqual(len(logs), 2)
+        self.assertEqual(first.read_bytes(), original)
+        other = next(path for path in logs if path != first)
+        self.assertIn(b"software rendering requested", other.read_bytes())
+        self.assertNotIn(b"\\x00", other.read_bytes())
 
     def test_software_render_only_allowed_for_confirmed_live_launch(self):
         status = self.cmd("status", "--software-render", "--appid", "2353250")
