@@ -237,7 +237,7 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('if(global_upgrade)', text)
         self.assertIn('gtk_message_dialog_new((GtkWindow*)G.window,GTK_DIALOG_MODAL', text)
         self.assertIn('if(reply!=GTK_RESPONSE_YES)return;', text)
-        self.assertIn('if(strcmp(j->action,"status"))argv[n++]="--confirm"', text)
+        self.assertIn('if(strcmp(j->action,"status")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm"', text)
         self.assertIn('Steam Bridge: Update installed launcher")', text)
 
     def test_settings_separates_maintenance_and_advanced(self):
