@@ -312,6 +312,11 @@ jobs:
             exit 1
           fi
           echo "PASS: current host-dependent AppDir correctly rejected by strict portability gate"
+      - name: Collect Ubuntu library copyright provenance hints
+        run: |
+          python3 scripts/pc2-license-evidence.py \
+            --inventory build/pc2-source/ubuntu-dependency-inventory.json \
+            --out build/pc2-source/ubuntu-license-evidence.json
       - name: Summarize private runtime audit gates
         run: |
           python3 - <<'PY'
@@ -345,6 +350,7 @@ jobs:
             build/pc2-source/ubuntu-dependency-inventory.json
             build/pc2-source/ubuntu-dependency-review.json
             build/pc2-source/ubuntu-runtime-closure.json
+            build/pc2-source/ubuntu-license-evidence.json
           if-no-files-found: error
           retention-days: 7
       - name: Publication remains blocked
