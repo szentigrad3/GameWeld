@@ -10,9 +10,15 @@ case "${1:-}" in
   --launch) LAUNCH=1 ;;
   *) echo "Usage: $0 [--launch]" >&2; exit 2 ;;
 esac
-OUT="${GAMEWELD_RC_TEST_DIR:-$ROOT/build/pc2-source/functional-rc-validation}"
-[[ ! -e "$OUT" ]] || { echo "Refusing overwrite: $OUT" >&2; exit 2; }
-mkdir -p "$OUT"
+BASE="$ROOT/build/pc2-source"
+mkdir -p "$BASE"
+if [[ -n "${GAMEWELD_RC_TEST_DIR:-}" ]]; then
+  OUT="$GAMEWELD_RC_TEST_DIR"
+  [[ ! -e "$OUT" ]] || { echo "Refusing overwrite: $OUT" >&2; exit 2; }
+  mkdir -p "$OUT"
+else
+  OUT="$(mktemp -d "$BASE/functional-rc-validation.XXXXXXXX")"
+fi
 export GAMEWELD_PC2_BUILD_MODE=functional
 export GAMEWELD_PC2_ENABLE_FUNCTIONAL_TEST=I_UNDERSTAND_PRIVATE_TEST_ONLY
 export GAMEWELD_PC2_STAGE="$OUT/AppDir"
