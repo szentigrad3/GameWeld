@@ -563,13 +563,17 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
 def launch_wand_in_live_game(folder: Path, helper: Path,
                              appid: str, game_dir: str,
                              proc_root: Path = Path("/proc"),
-                             *, software_render: bool = False) -> None:
+                             *, software_render: bool = False,
+                             in_process_gpu: bool = False,
+                             trace_dll_load: bool = False) -> None:
     """Opt-in external client launch using the running game's exact Proton.
 
     Never runs a random Wine binary against an active Steam Proton prefix.
     Does not install or patch Wand, change Steam settings, or attach a trainer.
     """
     validate_appid(appid)
+    if in_process_gpu and not software_render:
+        raise ValueError("--in-process-gpu requires --software-render")
     if not game_dir or not Path(game_dir).is_dir():
         raise ValueError("The selected Steam game installation directory is not verified")
     patched, report = verify_patch_files(folder, helper)
@@ -672,6 +676,10 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     overrides = [part for part in environment.get("WINEDLLOVERRIDES", "").split(";")
                  if part.strip() and part.split("=", 1)[0].strip().lower() != "version"]
     environment["WINEDLLOVERRIDES"] = ";".join(overrides + ["version=n,b"])
+    if trace_dll_load:
+        # Diagnostic only: trace DLL selection for THIS WeMod child, never
+        # enable Wine tracing on the live game or modify the shared prefix.
+        environment["WINEDEBUG"] = "-all,+loaddll"
     environment["WINE_GRAPHICS_DRIVER"] = "x11"
     environment["PROTON_USE_X11_EXCLUSIVE"] = executable.name
     environment.pop("MANGOHUD", None)
@@ -682,9 +690,18 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         # window rendering or trainer attachment.
         command.extend(("--disable-gpu", "--disable-gpu-compositing",
                         "--enable-logging=stderr"))
+    if in_process_gpu:
+        # Electron can still spawn a GPU child under --disable-gpu. This
+        # opt-in Chromium diagnostic keeps it in-process instead, at the cost
+        # of reduced GPU-process isolation; never enable for the game.
+        command.append("--in-process-gpu")
     launch_mode = "direct active Proton wineserver join + Wand-only X11"
     if software_render:
         launch_mode += " (software rendering requested)"
+    if in_process_gpu:
+        launch_mode += " (in-process GPU experiment)"
+    if trace_dll_load:
+        launch_mode += " (DLL load trace)"
     # Capture only the explicitly confirmed client session. Do not change
     # Steam's launch options, Wine registry, caches, or existing game prefixes.
     state_home = os.environ.get("XDG_STATE_HOME")
@@ -705,6 +722,8 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
                 ("GameWeld PC2 Wand live handoff: App ID " + appid + "\n"
                  + "Mode: direct X11 wineserver join" + (" + software rendering requested" if software_render else "") + "\n"
                  + "Client executable: " + str(executable) + "\n"
+                 + "In-process GPU experiment: " + str(in_process_gpu) + "\n"
+                 + "WeMod-only DLL load trace: " + str(trace_dll_load) + "\n"
                  + "Renderer and login status: NOT VERIFIED\n"
                  + "==== Proton/Wand child output ====\n").encode("utf-8"))
             stream.flush()
@@ -737,6 +756,10 @@ def main() -> int:
     parser.add_argument("--install-dir", help="Folder containing WeMod.exe and resources/app.asar")
     parser.add_argument("--confirm", action="store_true", help="Required for install/patch/restore and launch actions")
     parser.add_argument("--software-render", action="store_true", help="Retry live Wand with Electron GPU acceleration disabled")
+    parser.add_argument("--in-process-gpu", action="store_true",
+                        help="EXPERIMENTAL: keep Chromium GPU work in WeMod's main process (requires --software-render)")
+    parser.add_argument("--trace-dll-load", action="store_true",
+                        help="Trace Wine DLL loading for this confirmed WeMod launch only")
     parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
     parser.add_argument("--appid", default="")
     parser.add_argument("--game-name", default="")
@@ -747,6 +770,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.software_render and args.action != "live-launch":
         raise ValueError("--software-render is only supported for a confirmed live Wand launch")
+    if (args.in_process_gpu or args.trace_dll_load) and args.action != "live-launch":
+        raise ValueError("GPU and DLL trace options require a confirmed live Wand launch")
+    if args.in_process_gpu and not args.software_render:
+        raise ValueError("--in-process-gpu requires --software-render")
     candidates = available_clients(args.install_dir) if args.action != "install" else []
     folder = candidates[0] if len(candidates) == 1 else None
     if args.action == "status":
@@ -800,7 +827,9 @@ def main() -> int:
             raise ValueError("Live Wand handoff is limited to a selected standard Steam game")
         launch_wand_in_live_game(folder, installed_helper_dir(),
                                  args.appid, args.game_dir,
-                                 **({"software_render": True} if args.software_render else {}))
+                                 **({**({"software_render": True} if args.software_render else {}),
+                                     **({"in_process_gpu": True} if args.in_process_gpu else {}),
+                                     **({"trace_dll_load": True} if args.trace_dll_load else {})}))
         return 0
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
