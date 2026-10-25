@@ -275,6 +275,10 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_pc2_runtime_closure.py' -v
       - name: Build private source AppDir
         run: bash scripts/pc2-stage-private-appdir.sh
+      - name: Headless GTK GUI startup smoke test (no Steam/game)
+        run: |
+          sudo apt-get install -y xvfb xauth
+          bash scripts/pc2-headless-gui-smoke.sh
       - name: Audit AppDir against Ubuntu baseline
         run: bash scripts/pc2-audit-private-appdir.sh
       - name: Inventory dependency provenance (no bundling)
