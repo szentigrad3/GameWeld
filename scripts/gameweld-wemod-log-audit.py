@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import os
 from pathlib import Path
 import re
@@ -10,6 +11,7 @@ import sys
 
 MAX_READ = 64 * 1024 * 1024
 CRASH_COUNTER = re.compile(r"The GPU process has crashed (\d+) time\(s\)", re.I)
+GPU_ERROR_CODE = re.compile(r"GPU process launch failed: error_code=(\d+)", re.I)
 
 
 def newest_log(appid: str, state: Path) -> Path:
@@ -20,7 +22,7 @@ def newest_log(appid: str, state: Path) -> Path:
     return max(files, key=lambda p: (p.stat().st_mtime_ns, p.name))
 
 
-def audit(path: Path) -> str:
+def audit(path: Path, *, details: bool = False) -> str:
     if path.is_symlink() or not path.is_file():
         raise ValueError("Log must be an existing regular file, not a symlink")
     size = path.stat().st_size
@@ -61,6 +63,24 @@ def audit(path: Path) -> str:
     header.extend("  " + line[:360] for line in dll[:12])
     if not dll:
         header.append("  No version.dll trace found; loading remains unverified.")
+    if details:
+        gpu_codes = Counter(m.group(1) for row in gpu
+                            if (m := GPU_ERROR_CODE.search(row)))
+        header.append("GPU failure codes: " +
+                      (", ".join(f"{k}={v}" for k, v in sorted(gpu_codes.items()))
+                       if gpu_codes else "not found"))
+        other = [line for line in rows
+                 if any(word in line.lower() for word in (
+                     "err:", "error", "fatal", "exception", "failed", "not found",
+                     "unhandled", "mscoree", "dotnet", "mono", "crash"))
+                 and "gpu_process_host" not in line.lower()
+                 and "GPU process has crashed" not in line]
+        header.append(f"Other error/warning candidates: {len(other)}")
+        header.extend("  " + line[:360] for line in other[:24])
+        if not other:
+            header.append("  None found in scanned log (this does not prove correct startup).")
+        header.append("First log lines (up to 18):")
+        header.extend("  " + line[:360] for line in rows[:18])
     return "\n".join(header)
 
 
@@ -68,6 +88,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--appid", default="2353250")
     parser.add_argument("--log", type=Path, help="Inspect an explicit log path")
+    parser.add_argument("--details", action="store_true",
+                        help="Include failure codes and the first non-GPU error excerpts")
     args = parser.parse_args()
     if not args.appid.isascii() or not args.appid.isdecimal():
         parser.error("--appid must be decimal digits")
@@ -77,7 +99,7 @@ def main() -> int:
     state = (Path(home) if home else Path.home() / ".local/state") / "gameweld"
     try:
         log = args.log or newest_log(args.appid, state)
-        print(audit(log))
+        print(audit(log, details=args.details))
         return 0
     except (OSError, ValueError) as exc:
         print(f"GameWeld WeMod log audit: {exc}", file=sys.stderr)
