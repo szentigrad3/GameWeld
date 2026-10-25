@@ -9,6 +9,7 @@ ONLY after Steam itself selects GameWeld Bridge for that title.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -150,6 +151,82 @@ def register(steam_root: Path, *, source: Path | None = None) -> Path:
     else:
         target.symlink_to(install, target_is_directory=True)
     return target
+
+
+def bridge_launcher_sync(*, source: Path | None = None) -> str:
+    """Read-only comparison; a repository update does not refresh Steam's copy."""
+    install = private_tool_dir()
+    launcher = install / "launcher.py"
+    source = source or Path(__file__).resolve()
+    if (install.is_symlink() or not install.is_dir() or
+            launcher.is_symlink() or not launcher.is_file()):
+        return "NOT INSTALLED or unsafe installation"
+    if source.is_symlink() or not source.is_file():
+        return "UNKNOWN (source unavailable)"
+    try:
+        installed_hash = hashlib.sha256(launcher.read_bytes()).hexdigest()
+        source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    except OSError:
+        return "UNKNOWN (unreadable installation/source)"
+    if installed_hash == source_hash:
+        return "UP TO DATE"
+    return "UPDATE AVAILABLE (registered Steam launcher differs from current GameWeld source)"
+
+
+def upgrade_bridge(*, source: Path | None = None) -> tuple[Path, Path | None]:
+    """Explicitly update only the registered private launcher; never Steam settings.
+
+    Atomically replaces launcher.py, retaining a hash-named backup. Existing
+    per-game mappings and working Proton/client configurations stay unchanged.
+    """
+    install = private_tool_dir()
+    launcher = install / "launcher.py"
+    source = source or Path(__file__).resolve()
+    if (install.is_symlink() or not install.is_dir() or
+            launcher.is_symlink() or not launcher.is_file() or
+            source.is_symlink() or not source.is_file()):
+        raise ValueError("GameWeld Bridge is not safely installed; cannot update launcher")
+    if not ((install / "compatibilitytool.vdf").is_file() and
+            (install / "toolmanifest.vdf").is_file() and
+            (install / "compatibilitytool.vdf").read_text() == VDF_COMPAT and
+            (install / "toolmanifest.vdf").read_text() == VDF_TOOL):
+        raise ValueError("Registered Bridge manifests differ from the expected files")
+    # Do not change an unknown tool simply because its path resembles GameWeld.
+    current = launcher.read_bytes()
+    candidate = source.read_bytes()
+    if not candidate or b"def steam_invocation(" not in candidate or b"TOOL_ID =" not in candidate:
+        raise ValueError("GameWeld Bridge source failed launcher integrity checks")
+    if current == candidate:
+        return launcher, None
+    old_hash = hashlib.sha256(current).hexdigest()
+    backup = install / f"launcher.py.backup-{old_hash[:16]}"
+    if backup.is_symlink():
+        raise ValueError("Refusing symlinked Bridge launcher backup")
+    if backup.exists():
+        if not backup.is_file() or backup.read_bytes() != current:
+            raise ValueError("Existing Bridge backup has unexpected contents")
+    else:
+        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(current)
+                out.flush()
+                os.fsync(out.fileno())
+        except BaseException:
+            backup.unlink(missing_ok=True)
+            raise
+    fd, temporary = tempfile.mkstemp(prefix=".gameweld-launcher-", dir=install)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(candidate)
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(temporary, 0o755)
+        os.replace(temporary, launcher)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return launcher, backup
 
 
 def configure(appid: str, proton: Path, client: Path, *,
@@ -521,6 +598,7 @@ def format_status(appid: str | None = None, *,
                 ("ENABLED" if entry.get("trainer_enabled") else "DISABLED") +
                 "\nSteam Compatibility selection: " +
                 steam_compat_selection(appid, configured_proton=Path(entry.get("proton", ""))) +
+                "\nInstalled Steam Bridge launcher: " + bridge_launcher_sync() +
                 "\nEnhancer patch prerequisites: " +
                 ("PRESENT (files only; DLL runtime loading not verified)"
                  if (Path(entry.get("client", "")) / "version.dll").is_file()
@@ -528,14 +606,15 @@ def format_status(appid: str | None = None, *,
                  else "MISSING or unverified") +
                 "\nChanges take effect on the next game launch.")
     return (f"Staged launcher: {private_tool_dir() / 'launcher.py'}\n" +
+            f"Installed Steam Bridge launcher: {bridge_launcher_sync()}\n" +
             f"Configured AppIDs: {', '.join(sorted(config)) or 'none'}\n" +
             "No Steam game compatibility setting or launch option has been changed.")
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "setup", "trainer-on", "trainer-off", "play"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "register", "configure", "setup", "trainer-on", "trainer-off", "play"))
+        parser.add_argument("action", choices=("status", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -552,7 +631,15 @@ def main() -> int:
             return 0
         if not args.confirm:
             raise ValueError("Registration/configuration requires explicit --confirm")
-        if args.action == "register":
+        if args.action == "upgrade":
+            launcher, backup = upgrade_bridge()
+            print(f"GameWeld Bridge launcher: {launcher}")
+            print("Update result: " + ("UPDATED" if backup is not None else "ALREADY CURRENT"))
+            if backup is not None:
+                print(f"Previous launcher backup: {backup}")
+            print("No game, Wine prefix, WeMod patch, per-game setting or Steam mapping changed.")
+            print("Restart Steam before the next game launch to load the updated compatibility-tool launcher.")
+        elif args.action == "register":
             if args.steam_root is None:
                 raise ValueError("Register requires --steam-root")
             target = register(args.steam_root.expanduser().resolve(strict=True))
