@@ -4336,11 +4336,11 @@ static void on_wand_detect(GtkButton *b,gpointer d){(void)b;(void)d;wand_detect_
  * Bridge state. A result from a previously selected game is never allowed to
  * update the current game's Play/Setup button. */
 typedef struct {
-    char appid[32],result[2048];
+    char appid[192],result[2048];
     unsigned generation;
     int ok;
 } PC2BridgeReadiness;
-static char pc2_bridge_ready_appid[32]={0};
+static char pc2_bridge_ready_appid[192]={0};
 static char pc2_bridge_ready_state[24]="blocked";
 static char pc2_bridge_ready_reason[2048]={0};
 static unsigned pc2_bridge_readiness_generation=0;
@@ -4384,7 +4384,7 @@ static gboolean pc2_bridge_readiness_done(gpointer data){
                 }
             }
         }
-        snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"%s",state);
+        snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"%.*s",(int)sizeof(pc2_bridge_ready_state)-1,state);
         snprintf(pc2_bridge_ready_reason,sizeof pc2_bridge_ready_reason,"%s",reason);
         pc2_bridge_apply_primary(state,reason);
     }
@@ -4446,7 +4446,7 @@ static void pc2_bridge_readiness_invalidate(void){
  * original live-Wine launcher. Status is read-only; per-game toggles require
  * confirmation and take effect only on the next Steam launch. */
 typedef struct {
-    char action[24],appid[32],game[256],output[4096];
+    char action[24],appid[192],game[256],output[4096];
     char game_dir[2048],steam_root[1024];
     int ok;
 } PC2SteamBridgeJob;
