@@ -1,6 +1,6 @@
 # GameWeld Steam Compatibility Bridge (experimental)
 
-This is a developer-only prototype for Windows games using Steam/Proton, not an RC release. It does not yet prove WeMod rendering or trainer attachment.
+This remains a development feature, not an RC release. Astrometica + Proton Experimental + WeMod has passed a real in-game test on one CachyOS system; other games and configurations remain unverified.
 
 ## Why
 
@@ -38,24 +38,35 @@ python3 scripts/gameweld-steam-compat-bridge.py configure \
   --enable-trainer
 ~~~
 
-The already-patched WeMod installation must exist. This does not patch WeMod, install .NET, or modify the game's Steam launch options or prefix. The window and trainer functionality remain unverified.
+The already-patched WeMod installation must exist. This does not patch WeMod, install .NET, or modify the game's Steam launch options or prefix. Astrometica's window and trainer function were confirmed on one system, but trainer functionality in other games remains unverified.
 
 Per-session logs: ~/.local/state/gameweld/steam-bridge-<appid>-*.log
 
 ## GameWeld PC2 GUI controls
 
-In the PC2 development GUI, select an installed Steam title and open the
-WeMod Enhancer settings area. The **Steam Bridge — Verified Runtime Path**
+In the PC2 development GUI, select an installed Steam title and open
+**Settings → Advanced Providers**. The primary **Steam Bridge — Game + WeMod**
 panel now offers:
 
-- **Check selected game** (read-only; displays saved Bridge Proton/client paths)
+- **Check selected game** (read-only; displays saved Proton/client paths)
+- **Set up selected game** (confirmed: registers the Bridge and creates a NEW
+  game-only configuration, requiring an exact Proton mapping or prefix hint)
 - **Enable WeMod next launch** (confirmed, per-game)
 - **Disable WeMod next launch** (confirmed, per-game)
 
-These actions only manage an **already configured** title. They do not
-install/register the compatibility tool, select it in Steam, or restart a
-running game. A first-time Steam Bridge registration still uses the command
-line and Steam Compatibility selection described above.
+First-time setup refuses to overwrite an already-configured title and refuses
+to guess between Proton versions. It uses the managed DeckCheatz WeMod
+installation and never downloads clients automatically. If exact Proton
+evidence is unavailable, use the manual configuration commands above.
+
+After new setup, **restart Steam and select GameWeld Bridge (Experimental)**
+under that game's Properties → Compatibility. No Steam Launch Options change.
+The UI cannot yet automatically select this compatibility tool for you.
+
+The old direct-host-Wine, white-window GPU-off, and alternate managed launch
+experiments are no longer presented as GUI buttons. Advanced patch/restore
+and legacy launch-hook cleanup remain under separate collapsed sections.
+The low-level diagnostic scripts are retained in the source tree.
 
 Launch the current source GUI with:
 
@@ -67,4 +78,4 @@ bash scripts/run-pc2-source-frontend.sh
 
 If the game does not start, change its Steam Compatibility selection back to **Proton Experimental**. Do not delete compatdata or run wineserver -k against the game.
 
-The prototype has basic per-game GUI status and trainer toggle controls, but first-time setup and Steam tool selection are not GUI-integrated yet. It requires a one-time compatibility-tool selection in Steam, and it has not completed live Steam Runtime 4 or gameplay validation. Avoid multiplayer and anti-cheat games.
+The prototype has an opt-in first-time setup flow and per-game trainer controls in the GTK GUI, but it cannot yet choose a Steam Compatibility tool automatically. Astrometica has passed live Steam Runtime 4 and gameplay validation on one host; other games still require testing. Avoid multiplayer and anti-cheat games.
