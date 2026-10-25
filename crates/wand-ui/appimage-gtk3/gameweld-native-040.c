@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include "gameweld-pc2-window-policy.h"
 #include "gameweld-pc2-window-state.h"
+#include "gameweld-pc2-recent-history.h"
 
 /* Minimal GTK3 declarations. We intentionally build against the stable GTK3 ABI
  * already used by the proven 0.1.41 AppImage. This keeps the redesign independent
@@ -81,6 +82,7 @@ extern void gtk_label_set_markup(GtkLabel *, const char *);
 extern void gtk_label_set_xalign(GtkLabel *, float);
 extern void gtk_label_set_yalign(GtkLabel *, float);
 extern void gtk_label_set_line_wrap(GtkLabel *, gboolean);
+extern void gtk_label_set_ellipsize(GtkLabel *, int);
 extern GtkWidget *gtk_button_new(void);
 extern GtkWidget *gtk_button_new_with_label(const char *);
 extern void gtk_button_set_label(GtkButton *, const char *);
@@ -536,6 +538,12 @@ static const char *CSS =
 "list{background:transparent}row{background:#0f141b;color:#d9e1e9;border-radius:9px;margin:3px 0;border:1px solid #1d2530}row:hover{background:#151b24;border-color:#313b49}row:selected{background:#201a35;color:white;border-color:#5a4290}"
 ".library-row{padding:0}"
 ".game-row-title{font-size:12px;font-weight:900;color:#f5f7fa}.game-thumb{background:#090c11;border:1px solid #242d38;border-radius:7px;padding:2px}"
+".recent-tile{background:#11161e;border:1px solid #26303d;border-radius:11px;padding:10px;min-width:128px;box-shadow:none}"
+".recent-tile:hover{background:#19202a;border-color:#7860bb}"
+".recent-tile-selected{background:#211a34;border-color:#8162d7}"
+".recent-tile-name{color:#f4f6fb;font-size:11px;font-weight:800}"
+".recent-tile-source{color:#96a3b5;font-size:9px}"
+".recent-tile-cover{background:#0b0f16;border:1px solid #273140;border-radius:7px;padding:2px}"
 "treeview.view{background:#0d1117;color:#cdd5df;border:0}"
 "treeview.view header button{background:#131820;color:#8f9bab;border:0;border-bottom:1px solid #29313e;padding:7px;font-size:10px;font-weight:800}"
 "treeview.view:selected{background:#312653;color:#ffffff}"
@@ -1977,7 +1985,159 @@ static void on_pc2_window_size_reset(GtkButton *button,void *unused){
 }
 static void spawn_detached(const char *a,const char *b,const char *c){pid_t p=fork();if(p==0){clear_desktop_activation_env();if(c)execlp(a,a,b,c,(char*)NULL);else if(b)execlp(a,a,b,(char*)NULL);else execlp(a,a,(char*)NULL);_exit(127);}}
 static void set_label(GtkWidget *w,const char *s){ if(w)gtk_label_set_text((GtkLabel*)w,s?s:""); }
-static void selected_changed(GtkListBox *list,GtkListBoxRow *row,void *data){(void)list;(void)data;if(!row)return; int idx=gtk_list_box_row_get_index(row); if(idx>=0&&idx<G.game_count){G.selected=idx;refresh_ui();trainer_update_context_refresh();}}
+/* Recent Games is a local recently-SELECTED history. It is not Steam
+ * playtime, launch history or trainer availability evidence. All tiles only
+ * change the active game; the Play with WeMod button handles launch consent. */
+static GameWeldPC2RecentHistory pc2_recents={0};
+static GtkWidget *pc2_recent_tiles=NULL;
+static void pc2_recent_render(void);
+
+static int pc2_recent_path(char *out,size_t cap,int create_dir){
+    const char *xdg=getenv("XDG_CONFIG_HOME"),*home=getenv("HOME");
+    char dir[4096]={0};
+    int n=0;
+    if(xdg&&xdg[0]=='/')n=snprintf(dir,sizeof dir,"%s/gameweld",xdg);
+    else if(home&&home[0]=='/')n=snprintf(dir,sizeof dir,"%s/.config/gameweld",home);
+    if(n<=0||(size_t)n>=sizeof dir)return 0;
+    if(create_dir&&g_mkdir_with_parents(dir,0700)!=0)return 0;
+    n=snprintf(out,cap,"%s/pc2-recent-games.txt",dir);
+    return n>0&&(size_t)n<cap;
+}
+static void pc2_recent_load(void){
+    memset(&pc2_recents,0,sizeof pc2_recents);
+    if(!pc2_discovery_only())return;
+    char path[4096];
+    if(!pc2_recent_path(path,sizeof path,0))return;
+    struct stat st;
+    if(lstat(path,&st)!=0||!S_ISREG(st.st_mode)||st.st_size>16384)return;
+    FILE *file=fopen(path,"r");
+    if(!file)return;
+    char line[GAMEWELD_PC2_RECENT_KEY_SIZE+4];
+    char saved[GAMEWELD_PC2_RECENT_COUNT][GAMEWELD_PC2_RECENT_KEY_SIZE]={{0}};
+    int n=0;
+    while(n<GAMEWELD_PC2_RECENT_COUNT&&fgets(line,sizeof line,file)){
+        if(!strchr(line,'\n')&&!feof(file)){n=0;break;}
+        line[strcspn(line,"\r\n")]=0;
+        if(gameweld_pc2_recent_key_ok(line))
+            snprintf(saved[n++],sizeof saved[0],"%s",line);
+    }
+    fclose(file);
+    /* Stored order is newest-first. Replay oldest-first through the same
+     * checked LRU operation so it remains deterministic and deduplicated. */
+    for(int i=n-1;i>=0;i--)gameweld_pc2_recent_push(&pc2_recents,saved[i]);
+}
+static void pc2_recent_save(void){
+    if(!pc2_discovery_only())return;
+    char path[4096];
+    if(!pc2_recent_path(path,sizeof path,1))return;
+    char temporary[4200];
+    int n=snprintf(temporary,sizeof temporary,"%s.tmp-XXXXXX",path);
+    if(n<=0||(size_t)n>=sizeof temporary)return;
+    int fd=mkstemp(temporary);
+    if(fd<0)return;
+    fchmod(fd,0600);
+    FILE *file=fdopen(fd,"w");
+    if(!file){close(fd);unlink(temporary);return;}
+    int ok=1;
+    for(int i=0;i<pc2_recents.count;i++)
+        if(fprintf(file,"%s\n",pc2_recents.keys[i])<0){ok=0;break;}
+    if(fflush(file)!=0)ok=0;
+    if(ok&&fsync(fd)!=0)ok=0;
+    if(fclose(file)!=0)ok=0;
+    if(!ok||rename(temporary,path)!=0)unlink(temporary);
+}
+static void pc2_recent_record(int index){
+    if(!pc2_discovery_only()||index<0||index>=G.game_count)return;
+    if(gameweld_pc2_recent_push(&pc2_recents,game_key(&G.games[index])))
+        pc2_recent_save();
+}
+static int pc2_recent_index_of(const char *key){
+    if(!key||!*key)return -1;
+    for(int i=0;i<G.game_count;i++)
+        if(!strcmp(game_key(&G.games[i]),key))return i;
+    return -1;
+}
+static void pc2_recent_select(GtkButton *button,void *userdata){
+    (void)button;
+    int index=GPOINTER_TO_INT(userdata)-1;
+    if(index<0||index>=G.game_count)return;
+    if(G.selected==index){
+        pc2_recent_record(index);
+        pc2_recent_render();
+        return;
+    }
+    if(G.game_list&&G.game_rows[index]){
+        gtk_list_box_select_row((GtkListBox*)G.game_list,
+                                (GtkListBoxRow*)G.game_rows[index]);
+    }else{
+        G.selected=index;
+        pc2_recent_record(index);
+        refresh_ui();
+        pc2_recent_render();
+    }
+}
+static void pc2_recent_clear_child(GtkWidget *child,void *unused){
+    (void)unused;gtk_widget_destroy(child);
+}
+static void pc2_recent_render(void){
+    if(!pc2_discovery_only()||!pc2_recent_tiles)return;
+    gtk_container_foreach(pc2_recent_tiles,pc2_recent_clear_child,NULL);
+    int ids[GAMEWELD_PC2_RECENT_COUNT],is_recent[GAMEWELD_PC2_RECENT_COUNT];
+    int count=0;
+    for(int i=0;i<pc2_recents.count&&count<GAMEWELD_PC2_RECENT_COUNT;i++){
+        int idx=pc2_recent_index_of(pc2_recents.keys[i]);
+        if(idx>=0){ids[count]=idx;is_recent[count++]=1;}
+    }
+    /* Fill unused slots from the installed Library without implying those
+     * games were played or selected in the past. */
+    for(int idx=0;idx<G.game_count&&count<GAMEWELD_PC2_RECENT_COUNT;idx++){
+        int duplicate=0;
+        for(int j=0;j<count;j++)if(ids[j]==idx){duplicate=1;break;}
+        if(!duplicate){ids[count]=idx;is_recent[count++]=0;}
+    }
+    for(int i=0;i<count;i++){
+        int idx=ids[i];
+        Game *game=&G.games[idx];
+        GtkWidget *tile=gtk_button_new();
+        style(tile,"recent-tile");
+        if(idx==G.selected)style(tile,"recent-tile-selected");
+        GtkWidget *content=box(GTK_ORIENTATION_VERTICAL,6);
+        GtkWidget *cover=gtk_image_new();
+        style(cover,"recent-tile-cover");
+        char art[2048]={0};
+        if(!resolve_game_art(game,1,art,sizeof art))
+            resolve_game_art(game,0,art,sizeof art);
+        set_image_path(cover,art[0]?art:NULL,105,125);
+        pack(content,cover,0);
+        GtkWidget *name=label(game->name,"recent-tile-name");
+        gtk_label_set_ellipsize((GtkLabel*)name,3);
+        gtk_widget_set_size_request(name,130,-1);
+        pack(content,name,0);
+        const char *provider=game_is_steam(game)?"Steam":
+                             game_is_lutris(game)?"Lutris":"Heroic";
+        char source[64];
+        snprintf(source,sizeof source,"%s • %s",is_recent[i]?"Recently selected":"Library",provider);
+        GtkWidget *hint=label(source,"recent-tile-source");
+        pack(content,hint,0);
+        gtk_container_add(tile,content);
+        g_signal_connect_data(tile,"clicked",(GCallback)pc2_recent_select,
+                              GINT_TO_POINTER(idx+1),NULL,0);
+        pack(pc2_recent_tiles,tile,0);
+    }
+    gtk_widget_show_all(pc2_recent_tiles);
+}
+static void selected_changed(GtkListBox *list,GtkListBoxRow *row,void *data){
+    (void)list;(void)data;
+    if(!row)return;
+    int idx=gtk_list_box_row_get_index(row);
+    if(idx>=0&&idx<G.game_count){
+        G.selected=idx;
+        pc2_recent_record(idx);
+        refresh_ui();
+        pc2_recent_render();
+        trainer_update_context_refresh();
+    }
+}
 
 static void refresh_ui(void) {
     char b[4096]; Game *g=(G.selected>=0&&G.selected<G.game_count)?&G.games[G.selected]:NULL;
@@ -2866,6 +3026,24 @@ static GtkWidget *build_home(void){
      * the legacy experimental launch toolbox under Play with WeMod. */
     pack(spot,copy,0);
     GtkWidget*art=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(art,"hero-art");G.hero_image=gtk_image_new();gtk_widget_set_size_request(G.hero_image,520,300);pack(art,G.hero_image,1);pack(spot,art,1);pack(page,spot,0);
+    if(pc2_discovery_only()){
+        GtkWidget *recent=box(GTK_ORIENTATION_VERTICAL,11);style(recent,"panel");
+        GtkWidget *row=box(GTK_ORIENTATION_HORIZONTAL,10);
+        pack(row,label("RECENT GAMES","section-kicker"),0);
+        GtkWidget *description=label(
+            "Recently selected first, then other installed games. Click a cover to select; Play with WeMod launches separately.",
+            "muted");
+        gtk_label_set_line_wrap((GtkLabel*)description,TRUE);
+        pack(row,description,1);
+        pack(recent,row,0);
+        GtkWidget *scroll=gtk_scrolled_window_new(NULL,NULL);
+        gtk_scrolled_window_set_policy((GtkScrolledWindow*)scroll,
+                                       GTK_POLICY_AUTOMATIC,GTK_POLICY_NEVER);
+        pc2_recent_tiles=box(GTK_ORIENTATION_HORIZONTAL,11);
+        gtk_container_add(scroll,pc2_recent_tiles);
+        pack(recent,scroll,0);
+        pack(page,recent,0);
+    }
 
     GtkWidget*launchwith=box(GTK_ORIENTATION_VERTICAL,10);style(launchwith,"panel");
     GtkWidget*lwh=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*lwt=box(GTK_ORIENTATION_VERTICAL,2);pack(lwt,label("LAUNCH WITH","section-kicker"),0);pack(lwt,label("Choose how to start the selected game","card-title"),0);pack(lwh,lwt,1);G.overview_launch_hint=label("Select a game in Library. Its launch options stay here on Overview.","muted");gtk_label_set_line_wrap((GtkLabel*)G.overview_launch_hint,TRUE);pack(lwh,G.overview_launch_hint,1);pack(launchwith,lwh,0);
@@ -5351,7 +5529,19 @@ static void build_ui(void){
     GtkWidget*root=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(root,"root");gtk_container_add(G.window,root);GtkWidget*nav=box(GTK_ORIENTATION_HORIZONTAL,5);gtk_widget_set_name(nav,"navstrip");G.nav_home=make_nav("go-home-symbolic","Overview",(GCallback)nav_home);G.nav_library=make_nav("view-grid-symbolic","Library",(GCallback)nav_library);G.nav_trainers=make_nav("applications-engineering-symbolic","Trainer Library",(GCallback)nav_trainers);G.nav_setup=make_nav("emblem-system-symbolic","Compatibility",(GCallback)nav_setup);G.nav_diag=make_nav("help-browser-symbolic","Support",(GCallback)nav_diag);G.nav_settings=make_nav("preferences-system-symbolic","Settings",(GCallback)nav_settings);G.nav_about=make_nav("dialog-information-symbolic","About",(GCallback)nav_about);pack(nav,G.nav_home,0);pack(nav,G.nav_library,0);pack(nav,G.nav_trainers,0);pack(nav,gtk_separator_new(GTK_ORIENTATION_VERTICAL),0);pack(nav,G.nav_setup,0);pack(nav,G.nav_diag,0);GtkWidget*ng=box(GTK_ORIENTATION_HORIZONTAL,0);pack(nav,ng,1);GtkWidget*hint=label("Ctrl+F Search","command-hint");pack(nav,hint,0);pack(nav,G.nav_settings,0);pack(nav,G.nav_about,0);pack(root,nav,0);
     G.stack=gtk_stack_new();gtk_stack_set_hhomogeneous((GtkStack*)G.stack,FALSE);gtk_stack_set_vhomogeneous((GtkStack*)G.stack,FALSE);gtk_widget_set_hexpand(G.stack,TRUE);gtk_widget_set_vexpand(G.stack,TRUE);gtk_stack_add_named((GtkStack*)G.stack,build_home(),"home");gtk_stack_add_named((GtkStack*)G.stack,build_library(),"library");gtk_stack_add_named((GtkStack*)G.stack,build_trainer_library(),"trainers");gtk_stack_add_named((GtkStack*)G.stack,build_setup(),"setup");gtk_stack_add_named((GtkStack*)G.stack,build_diag(),"diag");gtk_stack_add_named((GtkStack*)G.stack,build_settings(),"settings");gtk_stack_add_named((GtkStack*)G.stack,build_about(),"about");pack(root,G.stack,1);
     {const char*start=getenv("WAND_NATIVE_START_PAGE");if(start&&!*start)start=NULL;if(start&&!strcmp(start,"library"))nav_activate(G.nav_library,"library");else if(start&&!strcmp(start,"trainers"))nav_activate(G.nav_trainers,"trainers");else if(start&&!strcmp(start,"setup"))nav_activate(G.nav_setup,"setup");else if(start&&!strcmp(start,"diag"))nav_activate(G.nav_diag,"diag");else if(start&&!strcmp(start,"settings"))nav_activate(G.nav_settings,"settings");else if(start&&!strcmp(start,"about"))nav_activate(G.nav_about,"about");else nav_activate(G.nav_home,"home");}
-    if(G.game_count>0){G.selected=0;gtk_list_box_select_row((GtkListBox*)G.game_list,(GtkListBoxRow*)G.game_rows[0]);}refresh_ui();log_line("Refreshing installed game sources (Steam, Heroic, Lutris)...");log_line("Steam games detected: %d (%d installed manifest(s) + %d non-Steam shortcut(s))",G.steam_game_count,G.steam_manifest_game_count,G.steam_shortcut_count);log_line("Heroic games detected: %d",G.heroic_game_count);log_line("Lutris games detected: %d (resolved entries can launch; local trainer handoff uses verified live sessions in Test 4)",G.lutris_game_count);if(G.wand_installed)log_line("Steam trainer provider ready");if(G.wand_healthy)log_line("Steam Proton tool ready: GE-Proton-Wand-SHA256");log_line("GameWeld providers ready. Smart Prepare Wand is in Settings; automatic compatibility checks never start an unverified patcher.");if(G.legacy_wrapper_neutralized)log_line("Legacy Steam wand-steam-wrap neutralized; direct Steam Play will no longer auto-start Wand. Backup: %s",G.legacy_wrapper_backup);GtkCssProvider*prov=gtk_css_provider_new();gtk_css_provider_load_from_data(prov,CSS,-1,NULL);gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),prov,GTK_STYLE_PROVIDER_PRIORITY_USER);g_object_unref(prov);gtk_widget_show_all(G.window);{const char*sp=getenv("WAND_NATIVE_START_PAGE");if(sp&&*sp&&(!strcmp(sp,"library")||!strcmp(sp,"trainers")||!strcmp(sp,"setup")||!strcmp(sp,"diag")||!strcmp(sp,"settings")||!strcmp(sp,"about")))gtk_stack_set_visible_child_name((GtkStack*)G.stack,sp);}if(pc2_discovery_only())log_line("PC2 discovery-only: legacy action buttons are blocked and trainer/monitor background jobs are disabled.");else start_trainer_library_scan();if(pc2_discovery_only()){
+    if(G.game_count>0){
+        int last=0;
+        if(pc2_discovery_only()){
+            for(int i=0;i<pc2_recents.count;i++){
+                int saved=pc2_recent_index_of(pc2_recents.keys[i]);
+                if(saved>=0){last=saved;break;}
+            }
+        }
+        G.selected=last;
+        gtk_list_box_select_row((GtkListBox*)G.game_list,(GtkListBoxRow*)G.game_rows[last]);
+    }
+    refresh_ui();
+    if(pc2_discovery_only())pc2_recent_render();log_line("Refreshing installed game sources (Steam, Heroic, Lutris)...");log_line("Steam games detected: %d (%d installed manifest(s) + %d non-Steam shortcut(s))",G.steam_game_count,G.steam_manifest_game_count,G.steam_shortcut_count);log_line("Heroic games detected: %d",G.heroic_game_count);log_line("Lutris games detected: %d (resolved entries can launch; local trainer handoff uses verified live sessions in Test 4)",G.lutris_game_count);if(G.wand_installed)log_line("Steam trainer provider ready");if(G.wand_healthy)log_line("Steam Proton tool ready: GE-Proton-Wand-SHA256");log_line("GameWeld providers ready. Smart Prepare Wand is in Settings; automatic compatibility checks never start an unverified patcher.");if(G.legacy_wrapper_neutralized)log_line("Legacy Steam wand-steam-wrap neutralized; direct Steam Play will no longer auto-start Wand. Backup: %s",G.legacy_wrapper_backup);GtkCssProvider*prov=gtk_css_provider_new();gtk_css_provider_load_from_data(prov,CSS,-1,NULL);gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),prov,GTK_STYLE_PROVIDER_PRIORITY_USER);g_object_unref(prov);gtk_widget_show_all(G.window);{const char*sp=getenv("WAND_NATIVE_START_PAGE");if(sp&&*sp&&(!strcmp(sp,"library")||!strcmp(sp,"trainers")||!strcmp(sp,"setup")||!strcmp(sp,"diag")||!strcmp(sp,"settings")||!strcmp(sp,"about")))gtk_stack_set_visible_child_name((GtkStack*)G.stack,sp);}if(pc2_discovery_only())log_line("PC2 discovery-only: legacy action buttons are blocked and trainer/monitor background jobs are disabled.");else start_trainer_library_scan();if(pc2_discovery_only()){
         /* One startup correction only, for stale KWin development sizes. */
         g_timeout_add(180,pc2_startup_fit_window,NULL);
     }else{
@@ -5360,4 +5550,4 @@ static void build_ui(void){
     }g_timeout_add(1000,heroic_session_status_tick,NULL);if(!pc2_discovery_only()){g_timeout_add(1500,trainer_monitor_initial_status,NULL);g_timeout_add(2800,trainer_dashboard_initial,NULL);g_timeout_add(45000,trainer_monitor_first_tick,NULL);g_timeout_add(1800000,trainer_monitor_tick,NULL);}
 }
 
-int main(int argc,char**argv){memset(&G,0,sizeof G);G.selected=-1;clear_desktop_activation_env();if(argc==2&&!strcmp(argv[1],"--pc2-launch-gate-status")){printf("PC2 Steam game-only launch: %s\n",pc2_steam_launch_allowed()?"enabled":"disabled");return 0;}if(argc>1&&!strcmp(argv[1],"--cleanup-steam-hooks")){if(pc2_discovery_only()){fprintf(stderr,"PC2 discovery-only: Steam hook cleanup disabled.\\n");return 3;}char backup[2048]={0};int files=0;int n=cleanup_legacy_steam_hooks(backup,sizeof backup,&files);if(n>0){printf("Removed legacy wand-steam-wrap Launch Options from %d Steam config file(s).\n",files);if(backup[0])printf("Last backup: %s\n",backup);printf("Restart Steam once before testing direct Play.\n");return 0;}printf("No legacy wand-steam-wrap Launch Options found.\n");return 0;}G.legacy_wrapper_neutralized=pc2_discovery_only()?0:neutralize_legacy_wrapper();gtk_init(&argc,&argv);if(!start_backend()){fprintf(stderr,"Could not start GameWeld backend.\n");return 2;}char *e=NULL;if(!refresh_model(&e)){fprintf(stderr,"Backend status failed: %s\n",e?e:"unknown");free(e);}build_ui();gtk_main();if(G.backend_pid>0){kill(G.backend_pid,SIGTERM);waitpid(G.backend_pid,NULL,WNOHANG);}return 0;}
+int main(int argc,char**argv){memset(&G,0,sizeof G);G.selected=-1;clear_desktop_activation_env();if(argc==2&&!strcmp(argv[1],"--pc2-launch-gate-status")){printf("PC2 Steam game-only launch: %s\n",pc2_steam_launch_allowed()?"enabled":"disabled");return 0;}if(argc>1&&!strcmp(argv[1],"--cleanup-steam-hooks")){if(pc2_discovery_only()){fprintf(stderr,"PC2 discovery-only: Steam hook cleanup disabled.\\n");return 3;}char backup[2048]={0};int files=0;int n=cleanup_legacy_steam_hooks(backup,sizeof backup,&files);if(n>0){printf("Removed legacy wand-steam-wrap Launch Options from %d Steam config file(s).\n",files);if(backup[0])printf("Last backup: %s\n",backup);printf("Restart Steam once before testing direct Play.\n");return 0;}printf("No legacy wand-steam-wrap Launch Options found.\n");return 0;}G.legacy_wrapper_neutralized=pc2_discovery_only()?0:neutralize_legacy_wrapper();gtk_init(&argc,&argv);if(!start_backend()){fprintf(stderr,"Could not start GameWeld backend.\n");return 2;}char *e=NULL;if(!refresh_model(&e)){fprintf(stderr,"Backend status failed: %s\n",e?e:"unknown");free(e);}if(pc2_discovery_only())pc2_recent_load();build_ui();gtk_main();if(G.backend_pid>0){kill(G.backend_pid,SIGTERM);waitpid(G.backend_pid,NULL,WNOHANG);}return 0;}
