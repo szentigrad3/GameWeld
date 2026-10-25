@@ -74,6 +74,30 @@ Launch the current source GUI with:
 bash scripts/run-pc2-source-frontend.sh
 ~~~
 
+## Main Play with WeMod buttons
+
+Overview → **Play with WeMod** and Library → **Play with WeMod** now use
+the same configured Steam Bridge route, rather than attempting DeckCheatz's
+older direct Steamless Proton launch. The confirmation explains that Steam's
+current per-game Compatibility selection is used.
+
+Before requesting Steam Play, GameWeld requires an explicit per-game Bridge
+configuration, `trainer_enabled=true`, a registered Bridge tool and no
+already-running same-AppID process. It will not change Steam settings, re-patch
+WeMod or spawn a second Proton process. Steam's handoff response proves at most
+a same-AppID process association; it does not by itself prove a visible window
+or successful trainer attachment.
+
+With Astrometica closed, this is the corresponding explicit CLI smoke test:
+
+~~~bash
+python3 scripts/gameweld-steam-compat-bridge.py play --confirm --appid 2353250
+~~~
+
+If Steam selects Proton Experimental instead of GameWeld Bridge, the game may
+start without WeMod. Confirm the Bridge selection under Steam Properties →
+Compatibility. GameWeld does not force or silently rewrite that choice.
+
 ## Recovery and limitations
 
 If the game does not start, change its Steam Compatibility selection back to **Proton Experimental**. Do not delete compatdata or run wineserver -k against the game.
