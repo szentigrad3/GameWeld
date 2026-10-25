@@ -359,6 +359,32 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 self.assertEqual(popen.call_args.args[0],
                     [str(self.proton),"runinprefix",str(self.client/"WeMod.exe")])
 
+    def test_netfx_readonly_scan_reports_prefix_evidence_without_modifying_files(self):
+        with patch.dict(os.environ, self.env):
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir(parents=True)
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text('"appid" "3008130"')
+            prefix = self.steam / "steamapps/compatdata/3008130/pfx"
+            prefix.mkdir(parents=True)
+            registry = prefix / "system.reg"
+            registry.write_text('[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\n"Release"=dword:00080cf0\n')
+            before = registry.read_bytes()
+            report = bridge.dotnet_prefix_status("3008130", game)
+            self.assertIn("00080cf0", report)
+            self.assertIn("read-only", report)
+            self.assertEqual(registry.read_bytes(), before)
+            self.assertFalse((self.steam / "steamapps/compatdata/2353250").exists())
+
+    def test_netfx_scan_handles_missing_prefix_and_rejects_wrong_game(self):
+        with patch.dict(os.environ, self.env):
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir(parents=True)
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text('"appid" "3008130"')
+            self.assertIn("not proof of missing .NET",
+                          bridge.dotnet_prefix_status("3008130", game))
+            with self.assertRaisesRegex(ValueError, "matching manifest"):
+                bridge.dotnet_prefix_status("2353250", game)
+
     def test_bridge_play_uses_steam_and_never_starts_a_second_proton(self):
         from unittest.mock import Mock
         with patch.dict(os.environ, self.env):
