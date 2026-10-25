@@ -89,6 +89,14 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('!strcmp(G.games[G.selected].appid,job->appid)', done)
         self.assertIn('const char *state="blocked"', done)
 
+    def test_steam_bridge_identifiers_match_game_capacity(self):
+        self.assertIn("char appid[192],result[2048];", text)
+        self.assertIn("static char pc2_bridge_ready_appid[192]={0};", text)
+        self.assertIn("char action[24],appid[192],game[256],output[4096];", text)
+        self.assertIn('snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"%.*s"', text)
+        self.assertNotIn("char appid[32],result[2048];", text)
+        self.assertNotIn("static char pc2_bridge_ready_appid[32]", text)
+
     def test_source_runner_wires_current_gui_and_bridge_helper(self):
         runner = (SOURCE.parents[3] / "scripts/run-pc2-source-frontend.sh").read_text(encoding="utf-8")
         self.assertIn('gameweld-native-040.c', runner)
