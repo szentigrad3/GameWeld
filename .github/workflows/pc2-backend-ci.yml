@@ -298,6 +298,20 @@ jobs:
           file build/pc2-source/private-AppDir/usr/bin/wand-native-backend
           readelf -W -V build/pc2-source/private-AppDir/usr/bin/gameweld | grep -E 'GLIBC_|GLIBCXX_' || true
           sha256sum build/pc2-source/private-AppDir/usr/bin/gameweld build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+      - name: Assert host-dependent AppDir fails strict portability gate
+        run: |
+          set +e
+          python3 scripts/pc2-audit-runtime-closure.py \
+            --appdir build/pc2-source/private-AppDir \
+            --report build/pc2-source/ubuntu-runtime-closure-strict.json \
+            --require-closure
+          status=$?
+          set -e
+          if [[ "$status" -ne 2 ]]; then
+            echo "FAIL: expected strict closure rejection (exit 2), got $status" >&2
+            exit 1
+          fi
+          echo "PASS: current host-dependent AppDir correctly rejected by strict portability gate"
       - name: Summarize private runtime audit gates
         run: |
           python3 - <<'PY'
