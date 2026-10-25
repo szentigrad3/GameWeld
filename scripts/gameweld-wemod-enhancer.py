@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
@@ -594,13 +595,58 @@ def live_steam_proton_session(appid: str, proc_root: Path = Path("/proc")) -> di
     return result
 
 
+def live_steam_container_launch_client(session: dict, appid: str) -> Path:
+    """Require a pre-existing per-game D-Bus launcher, never create another game container.
+
+    A fresh _v2-entry-point creates its own container; it is NOT guaranteed to
+    share the running game's Wine server. Refuse that misleading fallback.
+    """
+    validate_appid(appid)
+    manifest = Path(session["proton"]).parent / "toolmanifest.vdf"
+    if not manifest.is_file():
+        raise ValueError("Exact Proton runtime toolmanifest.vdf missing")
+    text = re.sub(r"//[^\\n]*", "", manifest.read_text(encoding="utf-8", errors="replace"))
+    match = re.search(r'"require_tool_appid"\\s+"(\\d+)"', text)
+    runtimes = {
+        "4183110": "SteamLinuxRuntime_4",
+        "1628350": "SteamLinuxRuntime_sniper",
+        "1391110": "SteamLinuxRuntime_soldier",
+    }
+    name = runtimes.get(match.group(1)) if match else None
+    if not name:
+        raise ValueError("Unsupported or unverified live Proton container runtime")
+    client = (Path(session["steamroot"]) / "steamapps/common" / name /
+              "pressure-vessel/bin/steam-runtime-launch-client")
+    if not client.is_file() or not os.access(client, os.X_OK):
+        raise ValueError("The selected game's Steam runtime launch-client is missing")
+    gdbus = shutil.which("gdbus")
+    if not gdbus:
+        raise ValueError("Cannot verify existing game container launcher: gdbus not installed")
+    try:
+        probe = subprocess.run([
+            gdbus, "call", "--session", "--dest", "org.freedesktop.DBus",
+            "--object-path", "/org/freedesktop/DBus",
+            "--method", "org.freedesktop.DBus.NameHasOwner",
+            "com.steampowered.App" + appid,
+        ], text=True, capture_output=True, timeout=4, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("Cannot verify the running game's D-Bus launcher service") from exc
+    if probe.returncode != 0 or probe.stdout.strip().lower() != "(true,)":
+        raise ValueError(
+            "No active per-game Steam container launcher service; refusing a second "
+            "container or host-Wine fallback. GameWeld did not modify Steam launch options."
+        )
+    return client
+
+
 def launch_wand_in_live_game(folder: Path, helper: Path,
                              appid: str, game_dir: str,
                              proc_root: Path = Path("/proc"),
                              *, software_render: bool = False,
                              in_process_gpu: bool = False,
                              trace_dll_load: bool = False,
-                             legacy_baseline: bool = False) -> None:
+                             legacy_baseline: bool = False,
+                             join_steam_container: bool = False) -> None:
     """Opt-in external client launch using the running game's exact Proton.
 
     Never runs a random Wine binary against an active Steam Proton prefix.
@@ -737,6 +783,26 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         # of reduced GPU-process isolation; never enable for the game.
         command.append("--in-process-gpu")
     launch_mode = "direct active Proton wineserver join + Wand-only X11"
+    if join_steam_container:
+        client = live_steam_container_launch_client(session, appid)
+        # The per-game Steam launcher provides the game's own mount namespace
+        # and runtime libraries. /usr/bin/env applies our WeMod-only overrides
+        # inside that container without changing the game's process env.
+        inner_env = [
+            "WINEPREFIX=" + str(Path(session["compat"]) / "pfx"),
+            "WINELOADER=" + str(wine),
+            "WINESERVER=" + str(wine_server),
+            "WINEDLLOVERRIDES=" + environment["WINEDLLOVERRIDES"],
+            "WINE_GRAPHICS_DRIVER=x11",
+        ]
+        if trace_dll_load:
+            inner_env.append("WINEDEBUG=-all,+loaddll")
+        command = [
+            str(client), "--bus-name=com.steampowered.App" + appid,
+            "--directory=" + str(folder), "--",
+            "/usr/bin/env", *inner_env, *command,
+        ]
+        launch_mode = "existing Steam per-game container service + Wand-only X11"
     if software_render:
         launch_mode += " (software rendering requested)"
     if in_process_gpu:
@@ -770,6 +836,7 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
                  + "Legacy unpatched client baseline: " + str(legacy_baseline) + "\n"
                  + "In-process GPU experiment: " + str(in_process_gpu) + "\n"
                  + "WeMod-only DLL load trace: " + str(trace_dll_load) + "\n"
+                 + "Steam game container join: " + str(join_steam_container) + "\n"
                  + "Renderer and login status: NOT VERIFIED\n"
                  + "==== Proton/Wand child output ====\n").encode("utf-8"))
             stream.flush()
@@ -809,6 +876,8 @@ def main() -> int:
                         help="Trace Wine DLL loading for this confirmed WeMod launch only")
     parser.add_argument("--legacy-baseline", action="store_true",
                         help="EXPERIMENTAL: compare the separately staged, verified official unpatched WeMod 11.6.0")
+    parser.add_argument("--join-steam-container", action="store_true",
+                        help="EXPERIMENTAL: use an existing per-game Steam container launcher; never change launch options")
     parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
     parser.add_argument("--appid", default="")
     parser.add_argument("--game-name", default="")
@@ -825,6 +894,8 @@ def main() -> int:
         raise ValueError("--in-process-gpu requires --software-render")
     if args.legacy_baseline and args.action != "live-launch":
         raise ValueError("--legacy-baseline only supports confirmed live-launch")
+    if args.join_steam_container and args.action != "live-launch":
+        raise ValueError("--join-steam-container only supports confirmed live-launch")
     if args.legacy_baseline and not args.install_dir:
         raise ValueError("--legacy-baseline requires an explicit --install-dir")
     candidates = available_clients(args.install_dir) if args.action != "install" else []
@@ -890,7 +961,8 @@ def main() -> int:
                                  **({**({"software_render": True} if args.software_render else {}),
                                      **({"in_process_gpu": True} if args.in_process_gpu else {}),
                                      **({"trace_dll_load": True} if args.trace_dll_load else {}),
-                                     **({"legacy_baseline": True} if args.legacy_baseline else {})}))
+                                     **({"legacy_baseline": True} if args.legacy_baseline else {}),
+                                     **({"join_steam_container": True} if args.join_steam_container else {})}))
         return 0
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
