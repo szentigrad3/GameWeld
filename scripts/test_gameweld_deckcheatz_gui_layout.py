@@ -254,6 +254,15 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
                      "pc2_deckcheatz_request_update", "pc2_steam_bridge_action"):
             self.assertIn(name, text)
 
+    def test_gpu_display_workaround_is_per_game_opt_in_not_global(self):
+        self.assertIn('gtk_expander_new("WeMod blank/white window — per-game display fix")',text)
+        self.assertIn('button("WeMod display: Try GPU off for this game","action")',text)
+        self.assertIn('button("WeMod display: Restore normal for this game","action")',text)
+        self.assertIn('pc2_steam_bridge_action("trainer-gpu-off")',text)
+        self.assertIn('pc2_steam_bridge_action("trainer-gpu-on")',text)
+        self.assertIn('"--confirm"',text)
+        self.assertIn('This does not guarantee a blank WeMod screen is fixed.',text)
+
     def test_about_and_compatibility_are_scoped_to_pc2(self):
         self.assertIn('pack(head,label("GameWeld PC2","workspace-title"),0)', text)
         self.assertIn('GtkWidget*intro=card("What GameWeld does"', text)
