@@ -158,18 +158,55 @@ def compare(library: Path, working: str, failing: str, backup: Path | None = Non
     }
 
 
+def human_summary(report: dict) -> str:
+    lines = ["GameWeld WeMod/Proton comparison — READ ONLY",
+             "No Windows installers, prefix changes, Steam edits or game launches.",
+             ""]
+    for label, desc in (("working", "WORKING REFERENCE"), ("failing", "FAILING GAME")):
+        row = report["evidence"][label]
+        prefix = row["prefix"]
+        lines += [f"{desc} — Steam AppID {row['appid']}",
+                  f"  Steam manifest: {'found' if row['manifest_found'] else 'not found'}",
+                  f"  Proton prefix: {'found' if prefix['present'] else prefix['reason']}"]
+        if prefix["present"]:
+            registry = prefix["registry"]
+            lines += [f"  .NET Framework v4 Full registry entries: {len(registry['framework_v4_full'])}",
+                      f"  .NET Framework v4 Client registry entries: {len(registry['framework_v4_client'])}",
+                      f"  mscoree.dll present (system32): {prefix['mscoree_system32']['present']}",
+                      f"  Wine Mono directory detected: {prefix['mono_directory']['present']}"]
+            for runtime, versions in prefix["net_shared_versions"].items():
+                lines.append(f"  {runtime}: {', '.join(versions) if versions else 'not detected'}")
+        config = report["bridge_configuration"].get(label)
+        if config:
+            lines += [f"  Configured Proton: {config['configured_proton']}",
+                      f"  WeMod GPU fallback: {config['wemod_gpu_fallback']}"]
+        lines.append("")
+    if report["backup"] is not None:
+        row = report["backup"]
+        lines += ["PRE-INSTALL BACKUP",
+                  "  Backup prefix present: " + str(row["prefix"]["present"]),
+                  "  Registry matches current Dying Light prefix: " +
+                  str(row.get("registry_matches_current", "not comparable")), ""]
+    lines.append("OBSERVATIONS")
+    lines += ["- " + note for note in report["observations"]] or ["- No verified differences identified"]
+    lines += ["", "Do not run dotnet48 again or delete the live game prefix based on registry evidence alone.",
+              "Use --json to obtain the complete machine-readable evidence."]
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steam-library", type=Path, required=True)
     parser.add_argument("--working-appid", default="2353250")
     parser.add_argument("--failing-appid", default="3008130")
     parser.add_argument("--preinstall-backup", type=Path)
+    parser.add_argument("--json", action="store_true", help="print detailed machine-readable report")
     parser.add_argument("--config", type=Path, default=(Path(os.environ.get("XDG_CONFIG_HOME",
         str(Path.home() / ".config"))) / "gameweld/steam-bridge-games.json"))
     args = parser.parse_args()
     result = compare(args.steam_library, args.working_appid,
                      args.failing_appid, args.preinstall_backup, args.config)
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=2) if args.json else human_summary(result))
     return 0
 
 
