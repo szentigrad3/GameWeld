@@ -4502,7 +4502,7 @@ static gboolean pc2_steam_bridge_done(gpointer data){
     }
     if(!strcmp(j->action,"play")){
         const char*state=j->ok?
-            "Steam launch ASSOCIATION OBSERVED. Check the game and WeMod windows.":
+            "Steam Play request accepted. Game and WeMod startup are NOT YET VERIFIED; check both windows.":
             "Steam Bridge launch was not confirmed. See Activity for the reported reason.";
         if(G.pc2_deckcheatz_overview_status)set_label(G.pc2_deckcheatz_overview_status,state);
         if(G.pc2_deckcheatz_library_status)set_label(G.pc2_deckcheatz_library_status,state);
