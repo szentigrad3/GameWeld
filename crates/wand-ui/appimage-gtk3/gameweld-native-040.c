@@ -757,10 +757,10 @@ static int heroic_managed_session_state(const Game*g,long*game_pid,long*trainer_
     FILE*f=fopen(path,"r");if(!f)return 0;
     while(fgets(line,sizeof line,f)){
         line[strcspn(line,"\r\n")]=0;
-        if(!strncmp(line,"state=",6))snprintf(state,sizeof state,"%s",line+6);
+        if(!strncmp(line,"state=",6))snprintf(state,sizeof state,"%.*s",(int)sizeof(state)-1,line+6);
         else if(!strncmp(line,"game_pid=",9))gp=strtol(line+9,NULL,10);
         else if(!strncmp(line,"trainer_pid=",12))tp=strtol(line+12,NULL,10);
-        else if(launch&&launch_cap&&!strncmp(line,"launch_path=",12))snprintf(launch,launch_cap,"%s",line+12);
+        else if(launch&&launch_cap&&!strncmp(line,"launch_path=",12))snprintf(launch,launch_cap,"%.*s",(int)(launch_cap?launch_cap-1:0),line+12);
     }
     fclose(f);
     int game_live=(gp>1&&kill((pid_t)gp,0)==0),trainer_live=(tp>1&&kill((pid_t)tp,0)==0);
@@ -1479,7 +1479,7 @@ static void cheat_engine_installer_path(char *out,size_t cap){
     else snprintf(out,cap,"%s/.config/gameweld/cheat-engine-installer.txt",home?home:".");
 }
 static int load_cheat_engine_installer(char *out,size_t cap){
-    if(out&&cap)out[0]=0;char p[2048];cheat_engine_installer_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;char line[4096];if(!fgets(line,sizeof line,f)){fclose(f);return 0;}fclose(f);line[strcspn(line,"\r\n")]=0;if(!*line)return 0;snprintf(out,cap,"%s",line);return 1;
+    if(out&&cap)out[0]=0;char p[2048];cheat_engine_installer_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;char line[4096];if(!fgets(line,sizeof line,f)){fclose(f);return 0;}fclose(f);line[strcspn(line,"\r\n")]=0;if(!*line)return 0;snprintf(out,cap,"%.*s",(int)(cap?cap-1:0),line);return 1;
 }
 static int save_cheat_engine_installer(const char *exe){
     char path[2048],dir[2048];cheat_engine_installer_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;
@@ -1488,7 +1488,7 @@ static int save_cheat_engine_installer(const char *exe){
 static int readable_file(const char *path);
 static const char *cheat_engine_manager(void){static char p[2048];const char *appdir=getenv("APPDIR");if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-cheat-engine-manager.sh",appdir);else snprintf(p,sizeof p,"gameweld-cheat-engine-manager.sh");return p;}
 static int detect_managed_cheat_engine(const char *appid,char *out,size_t cap){
-    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%s",line);ok=1;}}pclose(f);return ok;
+    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%.*s",(int)(cap?cap-1:0),line);ok=1;}}pclose(f);return ok;
 }
 static int detect_managed_windows_ce(const char *appid,char *out,size_t cap){
     if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' windows-detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%s",line);ok=1;}}pclose(f);return ok;
@@ -4169,7 +4169,7 @@ static int pc2_load_wand_choice(char *prefix,size_t pcap,char *install,size_t ic
         char*tab=strchr(line,'\t');
         if(tab){*tab++=0;
             if(pc2_wand_choice_clean(line)&&pc2_wand_choice_clean(tab)){
-                snprintf(prefix,pcap,"%s",line);
+                snprintf(prefix,pcap,"%.*s",(int)(pcap?pcap-1:0),line);
                 snprintf(install,icap,"%s",tab);
                 ok=1;
             }
@@ -4585,7 +4585,7 @@ static void pc2_steam_bridge_action(const char *action){
     snprintf(j->action,sizeof j->action,"%s",action);
     if(!global_upgrade){
         snprintf(j->appid,sizeof j->appid,"%s",g->appid);
-        snprintf(j->game,sizeof j->game,"%s",g->name);
+        snprintf(j->game,sizeof j->game,"%.*s",(int)sizeof(j->game)-1,g->name);
         snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
         snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
     }else{
