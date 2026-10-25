@@ -188,6 +188,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/gameweld-steam-compat-bridge.py
           python3 -m unittest discover -s scripts -p 'test_gameweld_steam_compat_bridge.py' -v
+          python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_prefix_compare.py' -v
           python3 -m unittest discover -s scripts -p 'test_gameweld_deckcheatz_gui_layout.py' -v
           python3 -m unittest discover -s scripts -p 'test_gameweld_pc2_recent_games.py' -v
           python3 scripts/gameweld-steam-compat-bridge.py status
