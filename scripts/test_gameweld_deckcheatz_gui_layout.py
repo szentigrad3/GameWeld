@@ -254,6 +254,12 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
                      "pc2_deckcheatz_request_update", "pc2_steam_bridge_action"):
             self.assertIn(name, text)
 
+    def test_netfx_runtime_inspection_stays_read_only(self):
+        self.assertIn('button("Check Windows .NET in this game (read-only)","action")',text)
+        self.assertIn('pc2_steam_bridge_action("netfx-status")',text)
+        self.assertIn('if(strcmp(action,"status")&&strcmp(action,"netfx-status"))',text)
+        self.assertIn('if(strcmp(j->action,"status")&&strcmp(j->action,"netfx-status"))',text)
+
     def test_gpu_display_workaround_is_per_game_opt_in_not_global(self):
         self.assertIn('gtk_expander_new("WeMod blank/white window — per-game display fix")',text)
         self.assertIn('button("WeMod display: Try GPU off for this game","action")',text)
