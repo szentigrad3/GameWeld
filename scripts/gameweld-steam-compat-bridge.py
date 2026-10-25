@@ -169,6 +169,22 @@ def configure(appid: str, proton: Path, client: Path, *,
     write_config(config)
 
 
+def set_trainer_enabled(appid: str, enabled: bool) -> bool:
+    """Update an existing verified per-game bridge config; never select Steam's tool."""
+    if not valid_appid(appid):
+        raise ValueError("Invalid game Steam AppID")
+    config = load_config()
+    entry = config.get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("GameWeld Bridge is not yet configured for this title")
+    # Fail closed on stale configuration; do not toggle an arbitrary path.
+    validate_proton(Path(entry["proton"]))
+    validate_client(Path(entry["client"]))
+    entry["trainer_enabled"] = bool(enabled)
+    write_config(config)
+    return enabled
+
+
 def game_appid() -> str:
     compat = os.environ.get("STEAM_COMPAT_DATA_PATH", "")
     if compat and Path(compat).name.isdecimal():
@@ -274,10 +290,31 @@ def steam_invocation(argv: list[str]) -> int:
     ], env=env)
 
 
+def format_status(appid: str | None = None) -> str:
+    config = load_config()
+    if appid:
+        if not valid_appid(appid):
+            raise ValueError("Invalid game Steam AppID")
+        entry = config.get(appid)
+        if not isinstance(entry, dict):
+            return (f"GameWeld Bridge AppID {appid}: NOT CONFIGURED\\n"
+                    "No Steam compatibility selection was changed.")
+        return ("GameWeld Bridge AppID: " + appid +
+                "\\nConfigured Proton: " + str(entry.get("proton", "")) +
+                "\\nConfigured WeMod: " + str(entry.get("client", "")) +
+                "\\nTrainer auto-start: " +
+                ("ENABLED" if entry.get("trainer_enabled") else "DISABLED") +
+                "\\nActual Steam compatibility-tool selection: NOT VERIFIED" +
+                "\\nChanges take effect on the next game launch.")
+    return (f"Staged launcher: {private_tool_dir() / 'launcher.py'}\\n" +
+            f"Configured AppIDs: {', '.join(sorted(config)) or 'none'}\\n" +
+            "No Steam game compatibility setting or launch option has been changed.")
+
+
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "trainer-on", "trainer-off"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "register", "configure"))
+        parser.add_argument("action", choices=("status", "register", "configure", "trainer-on", "trainer-off"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--appid")
         parser.add_argument("--proton", type=Path)
@@ -288,9 +325,7 @@ def main() -> int:
         args = parser.parse_args()
         if args.action == "status":
             print("GameWeld Bridge experimental compatibility tool (read-only)")
-            print(f"Staged launcher: {private_tool_dir() / 'launcher.py'}")
-            print(f"Configured AppIDs: {', '.join(sorted(load_config())) or 'none'}")
-            print("No Steam game compatibility setting or launch option has been changed.")
+            print(format_status(args.appid))
             return 0
         if not args.confirm:
             raise ValueError("Registration/configuration requires explicit --confirm")
@@ -300,6 +335,13 @@ def main() -> int:
             target = register(args.steam_root.expanduser().resolve(strict=True))
             print(f"Registered: {target}")
             print("Restart Steam, then explicitly select GameWeld Bridge (Experimental) per game.")
+        elif args.action in {"trainer-on", "trainer-off"}:
+            if not args.appid:
+                raise ValueError("Trainer toggle requires --appid")
+            enabled = set_trainer_enabled(args.appid, args.action == "trainer-on")
+            print(f"GameWeld Bridge trainer for AppID {args.appid}: " +
+                  ("ENABLED" if enabled else "DISABLED"))
+            print("Takes effect on the next Steam game launch; no Steam settings or running processes changed.")
         else:
             if not all((args.appid, args.proton, args.client)):
                 raise ValueError("Configure requires --appid, --proton and --client")
