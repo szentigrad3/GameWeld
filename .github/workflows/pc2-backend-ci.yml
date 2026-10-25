@@ -343,6 +343,23 @@ jobs:
           assert result["blockers"]
           print("PASS: no approved manifest => no private staging or public release")
           PY
+      - name: Generate unapproved GTK bundle candidates
+        run: |
+          python3 scripts/pc2-bundle-candidates.py \
+            --inventory build/pc2-source/ubuntu-dependency-inventory.json \
+            --review build/pc2-source/ubuntu-dependency-review.json \
+            --evidence build/pc2-source/ubuntu-license-evidence.json \
+            --closure build/pc2-source/ubuntu-runtime-closure.json \
+            --out build/pc2-source/ubuntu-bundle-candidates.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("build/pc2-source/ubuntu-bundle-candidates.json").read_text())
+          assert data["approved_libraries"] == []
+          assert not data["public_release_approved"]
+          assert not data["missing_evidence"], data["missing_evidence"]
+          print("PASS: candidates found and remain unapproved for redistribution")
+          PY
       - name: Summarize private runtime audit gates
         run: |
           python3 - <<'PY'
@@ -378,6 +395,7 @@ jobs:
             build/pc2-source/ubuntu-runtime-closure.json
             build/pc2-source/ubuntu-license-evidence.json
             build/pc2-source/private-bundling-decision.json
+            build/pc2-source/ubuntu-bundle-candidates.json
           if-no-files-found: error
           retention-days: 7
       - name: Publication remains blocked
