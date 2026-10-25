@@ -48,7 +48,12 @@ In the PC2 development GUI, select an installed Steam title and open
 **Settings → Advanced Providers**. The primary **Steam Bridge — Game + WeMod**
 panel now offers:
 
-- **Check selected game** (read-only; displays saved Proton/client paths)
+- **Check selected game** (read-only; displays saved Proton/client paths,
+  Steam's saved exact per-game compatibility selection when readable, and
+  whether the existing client has patch prerequisite files)
+  - For new/unconfigured games it also performs a **read-only setup preflight**,
+    reporting READY with the exact Proton and WeMod paths or BLOCKED with the
+    missing evidence. No compatibility settings or files are changed.
 - **Set up selected game** (confirmed: registers the Bridge and creates a NEW
   game-only configuration, requiring an exact Proton mapping or prefix hint)
 - **Enable WeMod next launch** (confirmed, per-game)
