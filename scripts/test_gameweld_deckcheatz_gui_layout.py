@@ -218,11 +218,17 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
 
     def test_settings_separates_maintenance_and_advanced(self):
         self.assertIn('label("Quick Start",NULL)', text)
-        self.assertIn('label("DeckCheatz / WeMod",NULL)', text)
+        self.assertIn('label("WeMod & DeckCheatz",NULL)', text)
         self.assertIn('label("Advanced Providers",NULL)', text)
         self.assertIn("pack(deckpage,dc,0)", text)
-        self.assertIn("pack(advancedpage,cols,1)", text)
+        self.assertIn("pack(advancedpage,advanced_expander,0)", text)
         self.assertIn("gtk_notebook_set_current_page((GtkNotebook*)tabs,0)", text)
+        self.assertIn("pack(deckpage,bridge_card,0)", text)
+        self.assertIn("on_settings_open_wemod", text)
+        self.assertIn("pc2_provider_controls_allowed()", text)
+        for name in ("on_pc2_deckcheatz_detect", "pc2_deckcheatz_request_install",
+                     "pc2_deckcheatz_request_update", "pc2_steam_bridge_action"):
+            self.assertIn(name, text)
 
     def test_about_and_compatibility_are_scoped_to_pc2(self):
         self.assertIn('pack(head,label("GameWeld PC2","workspace-title"),0)', text)
