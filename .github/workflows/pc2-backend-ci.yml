@@ -298,6 +298,11 @@ jobs:
           GAMEWELD_PC2_BUILD_MODE=functional GAMEWELD_PC2_ENABLE_FUNCTIONAL_TEST=I_UNDERSTAND_PRIVATE_TEST_ONLY GAMEWELD_PC2_STAGE="$PWD/build/pc2-source/private-functional-AppDir" bash scripts/pc2-stage-private-appdir.sh
           GAMEWELD_PC2_STAGE="$PWD/build/pc2-source/private-functional-AppDir" GAMEWELD_GUI_SMOKE_SECONDS=8 bash scripts/pc2-headless-gui-smoke.sh
           echo 'PASS: functional GUI variant stays running under virtual display'
+      - name: Test DeckCheatz and Steam Bridge settings button capability gate
+        run: |
+          bash scripts/test_pc2_provider_controls.sh \
+            build/pc2-source/private-AppDir/usr/bin/gameweld \
+            build/pc2-source/private-functional-AppDir/usr/bin/gameweld
       - name: Verify private functional build differs from discovery-only GUI
         run: |
           python3 scripts/pc2-verify-build-modes.py \
