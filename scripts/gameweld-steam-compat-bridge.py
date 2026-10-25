@@ -380,6 +380,44 @@ def play_configured_game(appid: str, *, launch=None,
     return int(launch(appid))
 
 
+def primary_ui_state(appid: str) -> tuple[str, str]:
+    """Read-only and fail-closed primary action for one Steam game.
+
+    This only describes the saved configuration. The actual game launch
+    continues to revalidate all prerequisites under play_configured_game.
+    """
+    if not valid_appid(appid):
+        return "blocked", "Select an installed Steam Windows game."
+    config = load_config()
+    entry = config.get(appid)
+    if not isinstance(entry, dict):
+        return "setup", "Steam Bridge isn't configured for this game. Set it up first."
+    try:
+        proton = validate_proton(Path(entry["proton"]))
+        client = validate_client(Path(entry["client"]))
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        return "repair", "Saved Steam Bridge installation needs repair: " + str(exc)
+    if not entry.get("trainer_enabled"):
+        return "enable", "Steam Bridge is configured; enable WeMod auto-start for the next launch."
+    selection = steam_compat_selection(appid, configured_proton=proton)
+    if not selection.startswith("GAMEWELD BRIDGE SELECTED"):
+        return "steam", (
+            "Select GameWeld Bridge (Experimental) under this game's Steam "
+            "Properties > Compatibility before playing with WeMod. " + selection
+        )
+    registered_roots = [proton.parents[3], Path.home() / ".steam/root",
+                        Path.home() / ".local/share/Steam"]
+    installed = private_tool_dir().resolve()
+    if not any((root / "compatibilitytools.d" / NAME).is_symlink()
+               and (root / "compatibilitytools.d" / NAME).resolve() == installed
+               for root in registered_roots):
+        return "repair", "Steam Bridge launcher registration is missing; repair setup in Settings."
+    if not ((client / "version.dll").is_file()
+            and (client / "resources/app.asar.backup").is_file()):
+        return "repair", "WeMod Enhancer patch prerequisites are missing; check Advanced Providers."
+    return "play", "Steam Bridge and WeMod are configured. Launch still requires confirmation."
+
+
 def set_trainer_enabled(appid: str, enabled: bool) -> bool:
     """Update an existing verified per-game bridge config; never select Steam's tool."""
     if not valid_appid(appid):
@@ -612,9 +650,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -624,6 +662,12 @@ def main() -> int:
         parser.add_argument("--delay-seconds", type=int, default=12)
         parser.add_argument("--confirm", action="store_true")
         args = parser.parse_args()
+        if args.action == "ui-state":
+            if not args.appid:
+                raise ValueError("UI state requires --appid")
+            action, reason = primary_ui_state(args.appid)
+            print(action + "\t" + reason.replace("\t", " ").replace("\n", " "))
+            return 0
         if args.action == "status":
             print("GameWeld Bridge experimental compatibility tool (read-only)")
             print(format_status(args.appid, game_dir=args.game_dir,
