@@ -605,6 +605,9 @@ static void on_pc2_deckcheatz_install(GtkButton*,void*);
 static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
 static void on_pc2_deckcheatz_update(GtkButton*,void*);
 static void on_pc2_deckcheatz_adopt(GtkButton*,void*);
+static void on_pc2_bridge_status(GtkButton*,void*);
+static void on_pc2_bridge_enable(GtkButton*,void*);
+static void on_pc2_bridge_disable(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
@@ -639,7 +642,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check GameWeld Managed Wand (read-only)") && strcmp(s, "Play Game + Wand (managed Proton, opt-in)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Launch Patched Wand (Smoke Test)") && strcmp(s, "Launch Wand in Running Steam Game (opt-in)") && strcmp(s, "Retry Wand (GPU Off, opt-in)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check GameWeld Managed Wand (read-only)") && strcmp(s, "Play Game + Wand (managed Proton, opt-in)") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4159,6 +4162,101 @@ static void wand_detect_start(void){
 }
 static void on_wand_detect(GtkButton *b,gpointer d){(void)b;(void)d;wand_detect_start();}
 
+/* Steam compatibility bridge management is deliberately isolated from the
+ * original live-Wine launcher. Status is read-only; per-game toggles require
+ * confirmation and take effect only on the next Steam launch. */
+typedef struct {
+    char action[24],appid[32],game[256],output[4096];
+    int ok;
+} PC2SteamBridgeJob;
+static int pc2_steam_bridge_busy=0;
+static GtkWidget *pc2_steam_bridge_status=NULL;
+static const char *pc2_steam_bridge_helper(void){
+    static char p[2048];const char *appdir=getenv("APPDIR");
+    if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-steam-compat-bridge.py",appdir);
+    else snprintf(p,sizeof p,"gameweld-steam-compat-bridge.py");
+    return p;
+}
+static gboolean pc2_steam_bridge_done(gpointer data){
+    PC2SteamBridgeJob*j=data;
+    pc2_steam_bridge_busy=0;
+    const char *msg=j->output[0]?j->output:(j->ok?"Complete.":"Steam Bridge operation failed.");
+    if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,msg);
+    log_line("Steam Bridge [%s] for %s (%s): %s — %.2000s",
+        j->action,j->game,j->appid,j->ok?"OK":"FAILED",msg);
+    free(j);return FALSE;
+}
+static void *pc2_steam_bridge_worker(void *data){
+    PC2SteamBridgeJob*j=data;
+    int pipefd[2];
+    if(pipe(pipefd)!=0){
+        snprintf(j->output,sizeof j->output,"Failed to create Steam Bridge diagnostic pipe.");
+        g_idle_add(pc2_steam_bridge_done,j);return NULL;
+    }
+    pid_t pid=fork();
+    if(pid==0){
+        setpgid(0,0);
+        close(pipefd[0]);dup2(pipefd[1],STDOUT_FILENO);dup2(pipefd[1],STDERR_FILENO);close(pipefd[1]);
+        const char *argv[]={
+            "python3",pc2_steam_bridge_helper(),j->action,
+            "--appid",j->appid,
+            strcmp(j->action,"status")?"--confirm":NULL,
+            NULL
+        };
+        execvp("python3",(char *const*)argv);_exit(127);
+    }
+    close(pipefd[1]);
+    if(pid<0){
+        close(pipefd[0]);snprintf(j->output,sizeof j->output,"Failed to launch Steam Bridge helper.");
+    }else{
+        j->ok=bounded_child_output(pid,pipefd[0],j->output,sizeof j->output,12);
+        if(!j->ok&&!j->output[0])snprintf(j->output,sizeof j->output,"Steam Bridge helper failed or timed out.");
+    }
+    g_idle_add(pc2_steam_bridge_done,j);
+    return NULL;
+}
+static void pc2_steam_bridge_action(const char *action){
+    if(!pc2_discovery_only()||pc2_steam_bridge_busy)return;
+    if(G.selected<0||G.selected>=G.game_count){
+        if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,"Select an installed Steam game in Library first.");
+        return;
+    }
+    Game *g=&G.games[G.selected];
+    if(!game_is_steam(g)||game_is_steam_shortcut(g)||!g->appid[0]){
+        if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,"Steam Bridge currently supports installed Steam Windows titles only.");
+        return;
+    }
+    if(strcmp(action,"status")){
+        const char *enabled=!strcmp(action,"trainer-on")?"ENABLE":"DISABLE";
+        char question[1024];
+        snprintf(question,sizeof question,
+            "%s WeMod auto-start for %s (Steam AppID %s)?\n\n"
+            "This changes only GameWeld's existing per-game Bridge configuration. "
+            "It will NOT change Steam Compatibility selection, launch options, "
+            "Proton, or running processes.\n\n"
+            "Close the game first. The change takes effect on the NEXT Steam launch. Continue?",
+            enabled,g->name,g->appid);
+        GtkWidget *dialog=gtk_message_dialog_new((GtkWindow*)G.window,GTK_DIALOG_MODAL,
+            GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,"%s",question);
+        int reply=gtk_dialog_run((GtkDialog*)dialog);
+        gtk_widget_destroy(dialog);
+        if(reply!=GTK_RESPONSE_YES)return;
+    }
+    PC2SteamBridgeJob*j=calloc(1,sizeof *j);if(!j)return;
+    snprintf(j->action,sizeof j->action,"%s",action);
+    snprintf(j->appid,sizeof j->appid,"%s",g->appid);
+    snprintf(j->game,sizeof j->game,"%s",g->name);
+    pc2_steam_bridge_busy=1;
+    if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,"Checking selected game's Steam Bridge configuration…");
+    pthread_t thread;
+    if(pthread_create(&thread,NULL,pc2_steam_bridge_worker,j)==0)pthread_detach(thread);
+    else{pc2_steam_bridge_busy=0;free(j);if(pc2_steam_bridge_status)
+        set_label(pc2_steam_bridge_status,"Failed to start Steam Bridge helper thread.");}
+}
+static void on_pc2_bridge_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("status");}
+static void on_pc2_bridge_enable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-on");}
+static void on_pc2_bridge_disable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-off");}
+
 /* WeMod Enhancer is integrated into GameWeld PC2. The Linux release's
  * Python CLI is used, not its separate GUI or the Windows Wand WPF tool.
  * Installation and patching require explicit confirmation and are isolated
@@ -5092,6 +5190,23 @@ static GtkWidget *build_settings(void){
         pack(testrow,verify,0);pack(testrow,launch_test,0);pack(eh,testrow,0);
         pack(eh,live_launch,0);pack(eh,live_render,0);
         pack(eh,native_check,0);pack(eh,native_play,0);
+        GtkWidget*bridge_card=box(GTK_ORIENTATION_VERTICAL,7);style(bridge_card,"card");
+        pack(bridge_card,label("Steam Bridge — Verified Runtime Path","card-title"),0);
+        GtkWidget*bridge_note=label("For Steam Windows games using GameWeld Bridge (Experimental) in Steam Compatibility. Astrometica was verified launching WeMod and working in-game through this path. Select a game to check or toggle its existing saved Bridge configuration. Changes apply to the next launch; setup or Steam Compatibility selection must already exist.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)bridge_note,TRUE);pack(bridge_card,bridge_note,0);
+        GtkWidget*bridge_status=button("Steam Bridge: Check selected game","action");
+        GtkWidget*bridge_enable=button("Steam Bridge: Enable WeMod next launch","primary-action");
+        GtkWidget*bridge_disable=button("Steam Bridge: Disable WeMod next launch","action");
+        g_signal_connect_data(bridge_status,"clicked",(GCallback)on_pc2_bridge_status,NULL,NULL,0);
+        g_signal_connect_data(bridge_enable,"clicked",(GCallback)on_pc2_bridge_enable,NULL,NULL,0);
+        g_signal_connect_data(bridge_disable,"clicked",(GCallback)on_pc2_bridge_disable,NULL,NULL,0);
+        pack(bridge_card,bridge_status,0);
+        pack(bridge_card,bridge_enable,0);
+        pack(bridge_card,bridge_disable,0);
+        pc2_steam_bridge_status=label("Select a configured Steam game and check GameWeld Bridge status.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
+        pack(bridge_card,pc2_steam_bridge_status,0);
+        pack(eh,bridge_card,0);
         GtkWidget*note=label("GameWeld's integrated managed flow follows the Wand Native 0.1.41 one-session architecture without requiring a separate wandctl. It requires the isolated GE Proton Wand SHA256 DLLs and DWriteCore already installed. Check readiness first and close the game before managed Play. The earlier white-window live handoffs remain for diagnostics only.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(eh,note,0);
         pc2_wemod_status=label("Searching for existing Wand/WeMod clients. Choose one installation before patching.","muted");
