@@ -103,6 +103,50 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not yet configured"):
                 bridge.set_trainer_enabled("2353251", True)
 
+    def test_setup_registers_new_game_only_without_changing_steam_config(self):
+        game = self.steam / "steamapps/common/ASTROMETICA"
+        game.mkdir()
+        (self.steam / "steamapps/appmanifest_2353250.acf").write_text("manifest")
+        existing = self.steam / "config/config.vdf"
+        existing.parent.mkdir()
+        existing.write_bytes(b"untouched steam user settings")
+        with patch.dict(os.environ, dict(self.env, HOME=str(self.root / "home"))):
+            target = bridge.setup_game("2353250", game, steam_root=self.steam,
+                                       proton=self.proton, client=self.client)
+            self.assertTrue(target.is_symlink())
+            entry = bridge.load_config()["2353250"]
+            self.assertEqual(entry["proton"], str(self.proton.resolve()))
+            self.assertEqual(entry["client"], str(self.client.resolve()))
+            self.assertFalse(entry["trainer_enabled"])
+            self.assertEqual(existing.read_bytes(), b"untouched steam user settings")
+            with self.assertRaisesRegex(ValueError, "already configured"):
+                bridge.setup_game("2353250", game, steam_root=self.steam,
+                                  proton=self.proton, client=self.client)
+            self.assertFalse(bridge.load_config()["2353250"]["trainer_enabled"])
+
+    def test_setup_wrong_manifest_fails_before_any_registration(self):
+        game = self.steam / "steamapps/common/ASTROMETICA"
+        game.mkdir()
+        with patch.dict(os.environ, self.env):
+            with self.assertRaisesRegex(ValueError, "matching AppID manifest"):
+                bridge.setup_game("2353250", game, steam_root=self.steam,
+                                  proton=self.proton, client=self.client)
+            self.assertFalse((self.steam / "compatibilitytools.d").exists())
+            self.assertFalse(bridge.config_path().exists())
+
+    def test_setup_no_proton_mapping_never_guesses_an_installed_tool(self):
+        from argparse import Namespace
+        from unittest.mock import patch as mocked
+        game = self.steam / "steamapps/common/ASTROMETICA"
+        game.mkdir()
+        (self.steam / "steamapps/appmanifest_2353250.acf").write_text("manifest")
+        resolver = SCRIPT.parent / "gameweld-deckcheatz-proton.py"
+        self.assertTrue(resolver.is_file())
+        with patch.dict(os.environ, dict(self.env, HOME=str(self.root / "home"))):
+            with self.assertRaisesRegex(ValueError, "Cannot unambiguously locate"):
+                bridge.resolve_setup("2353250", game, client=self.client)
+            self.assertFalse(bridge.config_path().exists())
+
     def test_runtime_comes_from_exact_configured_proton(self):
         with patch.dict(os.environ, self.env):
             runtime = (self.steam /
