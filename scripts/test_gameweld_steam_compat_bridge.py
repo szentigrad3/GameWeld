@@ -353,6 +353,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             'strstr(reason,"Installed Steam Bridge launcher is outdated or unverified:")',
             ui
         )
+        self.assertIn('strstr(reason,"UPDATE AVAILABLE (")!=NULL', ui)
         self.assertIn('title="Update Steam Bridge"', ui)
         self.assertIn(
             'else if(pc2_bridge_has_stale_launcher(state,pc2_bridge_ready_reason))',
