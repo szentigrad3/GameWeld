@@ -129,6 +129,16 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("return pc2_outer?pc2_outer:p", text)
         self.assertIn("gtk_scrolled_window_set_policy((GtkScrolledWindow*)pc2_outer", text)
 
+    def test_bridge_maintenance_is_collapsed_and_requires_confirmation(self):
+        self.assertIn('gtk_expander_new("Steam Bridge Maintenance (advanced)")', text)
+        self.assertIn('button("Steam Bridge: Update installed launcher","action")', text)
+        self.assertIn('pc2_steam_bridge_action("upgrade")', text)
+        self.assertIn('if(global_upgrade)', text)
+        self.assertIn('gtk_message_dialog_new((GtkWindow*)G.window,GTK_DIALOG_MODAL', text)
+        self.assertIn('if(reply!=GTK_RESPONSE_YES)return;', text)
+        self.assertIn('if(strcmp(j->action,"status"))argv[n++]="--confirm"', text)
+        self.assertIn('Steam Bridge: Update installed launcher")', text)
+
     def test_settings_separates_maintenance_and_advanced(self):
         self.assertIn('label("Quick Start",NULL)', text)
         self.assertIn('label("DeckCheatz / WeMod",NULL)', text)
