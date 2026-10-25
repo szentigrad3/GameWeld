@@ -605,8 +605,8 @@ def live_steam_container_launch_client(session: dict, appid: str) -> Path:
     manifest = Path(session["proton"]).parent / "toolmanifest.vdf"
     if not manifest.is_file():
         raise ValueError("Exact Proton runtime toolmanifest.vdf missing")
-    text = re.sub(r"//[^\\n]*", "", manifest.read_text(encoding="utf-8", errors="replace"))
-    match = re.search(r'"require_tool_appid"\\s+"(\\d+)"', text)
+    text = re.sub(r"//[^\n]*", "", manifest.read_text(encoding="utf-8", errors="replace"))
+    match = re.search(r'"require_tool_appid"\s+"(\d+)"', text)
     runtimes = {
         "4183110": "SteamLinuxRuntime_4",
         "1628350": "SteamLinuxRuntime_sniper",
