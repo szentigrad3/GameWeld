@@ -413,6 +413,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
         guard = guard.split('static GtkWidget *box(', 1)[0]
         self.assertIn('strcmp(s, "Check WeMod readiness")', guard)
+        self.assertIn('strcmp(s, "Open WeMod & DeckCheatz setup")', guard)
+        self.assertIn('gtk_notebook_set_current_page((GtkNotebook*)notebook,1);', ui)
         self.assertNotIn('strcmp(s, "Steam Bridge: Check selected game")', guard)
         self.assertIn('pc2_guard_button(w)', guard)
         self.assertIn('button("Check WeMod readiness","action")', ui)
