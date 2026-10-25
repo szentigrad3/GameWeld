@@ -1325,10 +1325,10 @@ static int cleanup_localconfig_file(const char *path,char *last_backup,size_t ca
         count++;
     }
     free(line);fclose(f);if(!changed){for(size_t i=0;i<count;i++)free(lines[i]);free(lines);return 0;}
-    char backup[4096];time_t now=time(NULL);snprintf(backup,sizeof backup,"%s.wand-native-backup-%ld",path,(long)now);
+    char backup[4096];time_t now=time(NULL);if(snprintf(backup,sizeof backup,"%s.wand-native-backup-%ld",path,(long)now)<0||strlen(path)+48>=sizeof backup){for(size_t i=0;i<count;i++)free(lines[i]);free(lines);return 0;}
     FILE*src=fopen(path,"rb"),*dst=fopen(backup,"wb");if(!src||!dst){if(src)fclose(src);if(dst)fclose(dst);for(size_t i=0;i<count;i++)free(lines[i]);free(lines);return 0;}
     char buf[16384];size_t r;while((r=fread(buf,1,sizeof buf,src))>0)fwrite(buf,1,r,dst);fclose(src);fclose(dst);
-    char tmp[4096];snprintf(tmp,sizeof tmp,"%s.wand-native-tmp-%ld",path,(long)getpid());FILE*out=fopen(tmp,"w");if(!out){for(size_t i=0;i<count;i++)free(lines[i]);free(lines);return 0;}
+    char tmp[4096];if(snprintf(tmp,sizeof tmp,"%s.wand-native-tmp-%ld",path,(long)getpid())<0||strlen(path)+48>=sizeof tmp){for(size_t i=0;i<count;i++)free(lines[i]);free(lines);return 0;}FILE*out=fopen(tmp,"w");if(!out){for(size_t i=0;i<count;i++)free(lines[i]);free(lines);return 0;}
     for(size_t i=0;i<count;i++){
         char *cur=lines[i];
         if(strstr(cur,"\"LaunchOptions\"")&&strstr(cur,"wand-steam-wrap")){
@@ -1351,12 +1351,12 @@ static int steam_root_seen(char roots[][4096],int count,const char *root){
 }
 static void add_steam_root(char roots[][4096],int *count,int max,const char *root){
     if(!root||!*root||*count>=max)return;char canon[4096];if(!realpath(root,canon))snprintf(canon,sizeof canon,"%s",root);
-    char user[4096];snprintf(user,sizeof user,"%s/userdata",canon);struct stat st;if(stat(user,&st)!=0||!S_ISDIR(st.st_mode))return;
+    char user[4096];if(strlen(canon)>sizeof user-sizeof "/userdata")return;if(snprintf(user,sizeof user,"%s/userdata",canon)<0)return;struct stat st;if(stat(user,&st)!=0||!S_ISDIR(st.st_mode))return;
     if(steam_root_seen(roots,*count,canon))return;snprintf(roots[*count],4096,"%s",canon);(*count)++;
 }
 static void discover_running_steam_roots(char roots[][4096],int *count,int max){
     DIR*d=opendir("/proc");if(!d)return;struct dirent*de;
-    while((de=readdir(d))){if(!isdigit((unsigned char)de->d_name[0]))continue;char cp[256];snprintf(cp,sizeof cp,"/proc/%s/cmdline",de->d_name);FILE*f=fopen(cp,"rb");if(!f)continue;char buf[16384];size_t n=fread(buf,1,sizeof buf-1,f);fclose(f);if(!n)continue;buf[n]=0;
+    while((de=readdir(d))){if(!isdigit((unsigned char)de->d_name[0]))continue;char cp[256];if(strlen(de->d_name)>sizeof cp-sizeof "/proc//cmdline")continue;snprintf(cp,sizeof cp,"/proc/%s/cmdline",de->d_name);FILE*f=fopen(cp,"rb");if(!f)continue;char buf[16384];size_t n=fread(buf,1,sizeof buf-1,f);fclose(f);if(!n)continue;buf[n]=0;
         for(size_t i=0;i<n;i++)if(buf[i]==0)buf[i]='\n';
         const char *tags[]={"-clientui=","-cachedir=","-steampath="};
         for(size_t ti=0;ti<3;ti++){char *m=strstr(buf,tags[ti]);if(!m)continue;m+=strlen(tags[ti]);char *e=strchr(m,'\n');size_t l=e?(size_t)(e-m):strlen(m);if(!l||l>=4096)continue;char v[4096];memcpy(v,m,l);v[l]=0;
@@ -1369,7 +1369,7 @@ static void discover_running_steam_roots(char roots[][4096],int *count,int max){
 static void discover_mount_steam_roots(char roots[][4096],int *count,int max){
     const char *bases[]={"/mnt","/media","/run/media"};const char *user=getenv("USER");
     for(size_t bi=0;bi<3;bi++){char base[4096];snprintf(base,sizeof base,"%s",bases[bi]);if(bi==2&&user&&*user)snprintf(base,sizeof base,"/run/media/%s",user);DIR*d=opendir(base);if(!d)continue;struct dirent*de;
-        while((de=readdir(d))){if(de->d_name[0]=='.')continue;char p1[4096];snprintf(p1,sizeof p1,"%s/%s",base,de->d_name);add_steam_root(roots,count,max,p1);DIR*d2=opendir(p1);if(!d2)continue;struct dirent*de2;while((de2=readdir(d2))){if(de2->d_name[0]=='.')continue;char p2[4096];snprintf(p2,sizeof p2,"%s/%s",p1,de2->d_name);add_steam_root(roots,count,max,p2);}closedir(d2);
+        while((de=readdir(d))){if(de->d_name[0]=='.')continue;char p1[4096];if(strlen(base)+strlen(de->d_name)+2>sizeof p1)continue;snprintf(p1,sizeof p1,"%s/%s",base,de->d_name);add_steam_root(roots,count,max,p1);DIR*d2=opendir(p1);if(!d2)continue;struct dirent*de2;while((de2=readdir(d2))){if(de2->d_name[0]=='.')continue;char p2[4096];if(strlen(p1)+strlen(de2->d_name)+2>sizeof p2)continue;snprintf(p2,sizeof p2,"%s/%s",p1,de2->d_name);add_steam_root(roots,count,max,p2);}closedir(d2);
         }closedir(d);
     }
 }
@@ -1380,9 +1380,9 @@ static int cleanup_legacy_steam_hooks(char *last_backup,size_t cap,int *files_ch
     const char *envroot=getenv("STEAM_COMPAT_CLIENT_INSTALL_PATH");if(envroot&&*envroot)add_steam_root(roots,&root_count,24,envroot);
     discover_running_steam_roots(roots,&root_count,24);discover_mount_steam_roots(roots,&root_count,24);
     int cleaned=0,files=0;
-    for(int ri=0;ri<root_count;ri++){char userroot[4096];snprintf(userroot,sizeof userroot,"%s/userdata",roots[ri]);DIR*d=opendir(userroot);if(!d)continue;
+    for(int ri=0;ri<root_count;ri++){char userroot[4096];if(strlen(roots[ri])+sizeof "/userdata">sizeof userroot)continue;snprintf(userroot,sizeof userroot,"%s/userdata",roots[ri]);DIR*d=opendir(userroot);if(!d)continue;
         struct dirent*de;while((de=readdir(d))){if(de->d_name[0]=='.')continue;int numeric=1;for(const char*q=de->d_name;*q;q++)if(!isdigit((unsigned char)*q)){numeric=0;break;}if(!numeric)continue;
-            char cfg[4096];snprintf(cfg,sizeof cfg,"%s/%s/config/localconfig.vdf",userroot,de->d_name);struct stat st;if(stat(cfg,&st)!=0||!S_ISREG(st.st_mode))continue;
+            char cfg[4096];if(strlen(userroot)+strlen(de->d_name)+sizeof "//config/localconfig.vdf">sizeof cfg)continue;snprintf(cfg,sizeof cfg,"%s/%s/config/localconfig.vdf",userroot,de->d_name);struct stat st;if(stat(cfg,&st)!=0||!S_ISREG(st.st_mode))continue;
             char b[4096]={0};if(cleanup_localconfig_file(cfg,b,sizeof b)){cleaned++;files++;if(last_backup&&cap&&b[0])snprintf(last_backup,cap,"%s",b);}
         }closedir(d);
     }
