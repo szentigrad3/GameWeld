@@ -53,15 +53,34 @@ class WeModRuntimeAuditTests(unittest.TestCase):
             (proc / "self/ns").mkdir(parents=True)
             (proc / "701/ns/mnt").symlink_to("mnt:[100]")
             (proc / "self/ns/mnt").symlink_to("mnt:[200]")
-            report = audit.audit({
+            from unittest.mock import patch
+            session = {
                 "proton": str(proton),
                 "steamroot": str(root),
                 "game_pid": 701,
-            }, proc=proc)
+            }
+            # A report with no game AppID must not probe a service at all.
+            with patch.object(audit, "game_launcher_service_owned") as probe:
+                report = audit.audit(session, proc=proc)
+                probe.assert_not_called()
+            self.assertIn("Game Steam AppID: not supplied", report)
             self.assertIn("Required Steam runtime AppID: 4183110", report)
             self.assertIn("Runtime entry point exists: True", report)
             self.assertIn("Mount namespaces differ: True", report)
             self.assertIn("Existing game launcher service: UNVERIFIED", report)
+
+            # The per-GAME service uses 2353250, not runtime AppID 4183110.
+            # Never contact the developer machine's real D-Bus in unit tests.
+            with patch.object(audit, "game_launcher_service_owned", return_value=False) as probe:
+                inactive = audit.audit(session, proc=proc, appid="2353250")
+                probe.assert_called_once_with("2353250")
+            self.assertIn("Game Steam AppID: 2353250", inactive)
+            self.assertIn("Required Steam runtime AppID: 4183110", inactive)
+            self.assertIn("Existing game launcher service: NOT ACTIVE", inactive)
+            with patch.object(audit, "game_launcher_service_owned", return_value=True) as probe:
+                active = audit.audit(session, proc=proc, appid="2353250")
+                probe.assert_called_once_with("2353250")
+            self.assertIn("Existing game launcher service: AVAILABLE", active)
 
 
 if __name__ == "__main__":
