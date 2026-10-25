@@ -4,6 +4,12 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+LAUNCH=0
+case "${1:-}" in
+  "") ;;
+  --launch) LAUNCH=1 ;;
+  *) echo "Usage: $0 [--launch]" >&2; exit 2 ;;
+esac
 OUT="${GAMEWELD_RC_TEST_DIR:-$ROOT/build/pc2-source/functional-rc-validation}"
 [[ ! -e "$OUT" ]] || { echo "Refusing overwrite: $OUT" >&2; exit 2; }
 mkdir -p "$OUT"
@@ -35,4 +41,10 @@ p={
 PY
 echo "PASS: private functional source build, local audit, GUI smoke"
 echo "Report: $OUT/summary.json"
-echo "NEXT: manually test actual Steam/WeMod on this machine; nothing installed or changed automatically."
+if (( LAUNCH )); then
+  echo "Opening GameWeld functional GUI for manual testing."
+  echo "IMPORTANT: Steam/WeMod setup and game actions are user-controlled; no automatic launch."
+  "$GAMEWELD_PC2_STAGE/AppRun"
+else
+  echo "NEXT: run this script with --launch to open functional GameWeld after validation."
+fi
