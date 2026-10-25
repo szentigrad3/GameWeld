@@ -343,6 +343,76 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 self.assertEqual(bridge.primary_ui_state("2353250")[0], "play")
             self.assertEqual(bridge.config_path().read_bytes(), before)
 
+    def test_preflight_is_game_scoped_read_only_and_never_claims_runtime(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            bridge.set_trainer_gpu_fallback("3008130", True)
+            (self.client / "version.dll").write_bytes(b"enhancer")
+            (self.client / "resources/app.asar.backup").write_bytes(b"original")
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir(parents=True)
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text(
+                '"appid" "3008130"'
+            )
+            prefix = self.steam / "steamapps/compatdata/3008130/pfx"
+            prefix.mkdir(parents=True)
+            registry = prefix / "system.reg"
+            registry.write_text(
+                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\\n'
+                '"Install"=dword:00000001\\n'
+            )
+            state_dir = self.home / ".local/state/gameweld"
+            state_dir.mkdir(parents=True)
+            (state_dir / "steam-bridge-3008130-111-222.log").write_text(
+                "GameWeld Steam bridge: unverified WeMod runtime\\n"
+                "WeMod GPU fallback: enabled\\n"
+            )
+            # A different title's GPU failures must never appear in the
+            # selected-game report.
+            (state_dir / "steam-bridge-2353250-333-444.log").write_text(
+                "WeMod GPU fallback: disabled\\n"
+                "GPU process has crashed 1603 time(s)\\n"
+            )
+            before_registry = registry.read_bytes()
+            before_config = bridge.config_path().read_bytes()
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)",
+            ):
+                report = bridge.preflight_report("3008130", game_dir=game)
+            self.assertIn("Next action: PLAY", report)
+            self.assertIn("GPU fallback: ENABLED", report)
+            self.assertIn("Previous Bridge handoff log: found; GPU fallback: ENABLED", report)
+            self.assertIn("registration entries found", report)
+            self.assertIn("runtime functionality NOT verified", report)
+            self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
+            self.assertNotIn("GPU process has crashed 1603", report)
+            self.assertEqual(registry.read_bytes(), before_registry)
+            self.assertEqual(bridge.config_path().read_bytes(), before_config)
+            self.assertFalse((self.steam / "config/config.vdf").exists())
+
+    def test_preflight_unconfigured_does_not_run_installers(self):
+        with patch.dict(os.environ, self.env):
+            with patch.object(
+                bridge.subprocess, "Popen",
+                side_effect=AssertionError("preflight must not launch processes"),
+            ):
+                report = bridge.preflight_report("3008130")
+            self.assertIn("Next action: SETUP", report)
+            self.assertIn("not configured", report)
+            self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
+            self.assertFalse(bridge.config_path().exists())
+
+    def test_preflight_gui_wiring_stays_read_only(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('button("Check WeMod readiness","action")', ui)
+        self.assertIn('pc2_steam_bridge_action("preflight");', ui)
+        self.assertIn('strcmp(action,"preflight")', ui)
+        self.assertIn('strcmp(j->action,"preflight")', ui)
+        self.assertIn('!strcmp(j->action,"preflight")', ui)
+
     def test_primary_gui_offers_confirmed_launcher_only_repair(self):
         # Static integration guard: GTK itself runs in the separate native CI
         # build, while the logic lives in the source-only Steam Bridge helper.
