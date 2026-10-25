@@ -34,6 +34,8 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_pc2_stage_reviewed_libraries.py' -v
       - name: Test bounded Steam configuration paths
         run: python3 -m unittest discover -s scripts -p 'test_pc2_steam_path_bounds.py' -v
+      - name: Test runtime closure classification (offline fixtures)
+        run: python3 -m unittest discover -s scripts -p 'test_pc2_runtime_closure.py' -v
       - name: Build private source AppDir
         run: bash scripts/pc2-stage-private-appdir.sh
       - name: Audit AppDir against Ubuntu baseline
@@ -59,6 +61,16 @@ jobs:
           file build/pc2-source/private-AppDir/usr/bin/wand-native-backend
           readelf -W -V build/pc2-source/private-AppDir/usr/bin/gameweld | grep -E 'GLIBC_|GLIBCXX_' || true
           sha256sum build/pc2-source/private-AppDir/usr/bin/gameweld build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+      - name: Upload private audit JSON reports (no executables)
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameweld-private-ubuntu-audit-json
+          path: |
+            build/pc2-source/ubuntu-dependency-inventory.json
+            build/pc2-source/ubuntu-dependency-review.json
+            build/pc2-source/ubuntu-runtime-closure.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Publication remains blocked
         run: |
           echo 'Ubuntu baseline build check only.'
