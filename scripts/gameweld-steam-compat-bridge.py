@@ -452,6 +452,70 @@ def set_trainer_gpu_fallback(appid: str, enabled: bool) -> bool:
     return enabled
 
 
+def dotnet_prefix_status(appid: str, game_dir: Path) -> str:
+    """Read-only Windows runtime evidence from this game's Steam Proton prefix.
+
+    Registry evidence alone cannot identify the exact runtime WeMod requires.
+    Never run Wine, Proton, protontricks, installers or modify the prefix.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid Steam AppID for .NET inspection")
+    game = game_dir.expanduser().resolve(strict=True)
+    steamapps = game.parent.parent
+    manifest = steamapps / ("appmanifest_" + appid + ".acf")
+    if game.parent.name != "common" or steamapps.name != "steamapps" or not manifest.is_file():
+        raise ValueError("Select an installed Steam game with matching manifest")
+    prefix = steamapps / "compatdata" / appid / "pfx"
+    lines = [f"GameWeld read-only WeMod .NET check for AppID {appid}",
+             "Scope: selected Steam game only; no prefix or game files changed.",
+             f"Candidate Proton prefix: {prefix}"]
+    if prefix.is_symlink() or not prefix.is_dir():
+        lines += ["Prefix evidence: unavailable at this library path (not proof of missing .NET).",
+                  "Check the game's actual STEAM_COMPAT_DATA_PATH before modifying anything."]
+        return "\n".join(lines)
+    registry = prefix / "system.reg"
+    evidence = []
+    if registry.is_file() and not registry.is_symlink() and registry.stat().st_size <= 32*1024*1024:
+        inside = False
+        for line in registry.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("["):
+                # Wine encodes registry path separators as escaped backslashes.
+                normal = line.casefold().replace("\\\\", "\\")
+                inside = "microsoft\\net framework setup\\ndp\\" in normal
+                if inside and any(tag in normal for tag in ("\\v4\\full", "\\v4\\client", "\\v3.5")):
+                    evidence.append(line[:160])
+            elif inside and line.startswith(('\"Release\"=', '\"Install\"=', '\"Version\"=')):
+                evidence.append(line[:160])
+    lines.append("Windows .NET Framework registry evidence: " +
+                 ("; ".join(evidence[:12]) if evidence else "NOT FOUND / INCONCLUSIVE"))
+    for name, dirname in (("Windows Desktop .NET runtime","Microsoft.WindowsDesktop.App"),
+                          (".NET shared runtime","Microsoft.NETCore.App")):
+        roots = [prefix / "drive_c/Program Files/dotnet/shared" / dirname,
+                 prefix / "drive_c/Program Files (x86)/dotnet/shared" / dirname]
+        found = sorted({d.name for root in roots if root.is_dir() and not root.is_symlink()
+                        for d in root.iterdir() if d.is_dir() and not d.is_symlink()})
+        lines.append(name + ": " + (", ".join(found[:8]) if found else "not detected (inconclusive)"))
+    state = xdg_dir("XDG_STATE_HOME", ".local/state") / "gameweld"
+    if state.is_dir():
+        logs = sorted((p for p in state.glob(f"steam-bridge-{appid}-*.log")
+                       if p.is_file() and not p.is_symlink() and p.stat().st_size < 8*1024*1024),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+        if logs:
+            lines.append("Recent Bridge log: " + str(logs[0]))
+            tail = logs[0].read_text(encoding="utf-8",errors="replace").splitlines()[-250:]
+            snippets = [row.strip()[:250] for row in tail
+                        if any(word in row.casefold() for word in
+                               ("framework", ".net", "coreclr", "mscoree", "0x800", "err:", "failed"))]
+            lines.append("Relevant log lines: " +
+                         (" | ".join(snippets[-5:]) if snippets else "none detected"))
+        else:
+            lines.append("Recent Bridge log: none found for this AppID")
+    lines += ["Diagnosis: a WeMod .NET error may indicate a missing/incompatible Windows runtime "
+              "or problematic prefix; this inspection cannot prove which.",
+              "Do NOT install host Linux .NET or delete the game's compatdata as a first step."]
+    return "\n".join(lines)
+
+
 def game_appid() -> str:
     compat = os.environ.get("STEAM_COMPAT_DATA_PATH", "")
     if compat and Path(compat).name.isdecimal():
@@ -672,9 +736,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -689,6 +753,11 @@ def main() -> int:
                 raise ValueError("UI state requires --appid")
             action, reason = primary_ui_state(args.appid)
             print(action + "\t" + reason.replace("\t", " ").replace("\n", " "))
+            return 0
+        if args.action == "netfx-status":
+            if not args.appid or not args.game_dir:
+                raise ValueError("Windows .NET diagnosis requires --appid and --game-dir")
+            print(dotnet_prefix_status(args.appid, args.game_dir))
             return 0
         if args.action == "status":
             print("GameWeld Bridge experimental compatibility tool (read-only)")
