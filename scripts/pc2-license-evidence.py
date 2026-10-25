@@ -39,12 +39,16 @@ def main():
     source = json.loads(args.inventory.read_text())
     packages = {}
     missing = []
+    host_runtime = []
     for record in source.get("records", []):
         for dep in record.get("dependencies", []):
             if not dep.get("resolved"):
                 missing.append(dep.get("raw", "unresolved"))
                 continue
             name = dep.get("soname", "")
+            if name.startswith(("ld-linux-", "ld-musl-")):
+                host_runtime.append(name)
+                continue
             path = Path(dep.get("host_path", ""))
             pkg = owner(path)
             if not pkg:
@@ -76,6 +80,7 @@ def main():
         "redistribution_approved": False,
         "licenses_verified": False,
         "packages": sorted(packages.values(), key=lambda x: x["package"]),
+        "host_provided_dynamic_loaders": sorted(set(host_runtime)),
         "gaps": sorted(set(missing)),
         "notes": [
             "A package copyright file does not establish compatibility of all subcomponents.",
