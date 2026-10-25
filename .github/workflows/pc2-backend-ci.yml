@@ -273,6 +273,8 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_pc2_steam_path_bounds.py' -v
       - name: Test runtime closure classification (offline fixtures)
         run: python3 -m unittest discover -s scripts -p 'test_pc2_runtime_closure.py' -v
+      - name: Verify functional AppImage packaging fails closed
+        run: bash scripts/test_pc2_private_functional_packaging.sh
       - name: Build private source AppDir
         run: bash scripts/pc2-stage-private-appdir.sh
       - name: Headless GTK GUI startup smoke test (no Steam/game)
