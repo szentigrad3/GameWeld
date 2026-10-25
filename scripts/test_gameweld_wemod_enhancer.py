@@ -578,6 +578,17 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
                    DISPLAY=":0", GAMEWELD_TEST_CAPTURE=str(capture))
         with patch.dict(os.environ, env):
             bridge.verify_legacy_baseline(baseline)
+            with patch.object(bridge, "launch_wand_in_live_game") as launch:
+                with patch.object(sys, "argv", [
+                    "gameweld-wemod-enhancer.py", "live-launch", "--confirm",
+                    "--legacy-baseline", "--software-render",
+                    "--install-dir", str(baseline), "--game-provider", "steam",
+                    "--appid", "2353250", "--game-dir", str(game_dir)
+                ]):
+                    self.assertEqual(bridge.main(), 0)
+                launch.assert_called_once_with(
+                    baseline.resolve(), self.helper, "2353250", str(game_dir),
+                    software_render=True, legacy_baseline=True)
             bridge.launch_wand_in_live_game(
                 baseline, self.helper, "2353250", str(game_dir), proc,
                 software_render=True, legacy_baseline=True)
