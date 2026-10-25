@@ -103,6 +103,31 @@ If Steam selects Proton Experimental instead of GameWeld Bridge, the game may
 start without WeMod. Confirm the Bridge selection under Steam Properties →
 Compatibility. GameWeld does not force or silently rewrite that choice.
 
+## Updating the already-registered Bridge (opt-in)
+
+Registering the compatibility tool copies its launcher into
+~/.local/share/gameweld/tools/steam-compat-bridge-v1/launcher.py.
+Pulling newer GameWeld source does **not** automatically update that copy.
+
+**Check selected game** now reports whether the installed launcher is
+UP TO DATE or whether an UPDATE AVAILABLE. This comparison is read-only.
+Under **Steam Bridge Maintenance (advanced)**, use **Update installed launcher**
+to make a confirmed, backup-safe update. Close running Steam games first;
+restart Steam afterward. The update does not change Steam Compatibility
+selections, per-game configuration, Proton, existing game prefixes or WeMod.
+
+Equivalent CLI:
+
+~~~bash
+python3 scripts/gameweld-steam-compat-bridge.py status --appid 2353250
+python3 scripts/gameweld-steam-compat-bridge.py upgrade --confirm
+~~~
+
+Only the private launcher.py is replaced atomically; the previous bytes
+are saved as launcher.py.backup-<SHA256 prefix>. Unexpected backup contents,
+unsafe symlinks or mismatched Bridge tool manifests cause an explicit failure.
+This is **not** an automatic update or a public RC feature.
+
 ## Recovery and limitations
 
 If the game does not start, change its Steam Compatibility selection back to **Proton Experimental**. Do not delete compatdata or run wineserver -k against the game.
