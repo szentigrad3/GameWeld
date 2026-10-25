@@ -478,6 +478,44 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertIn("fake Wine stderr: renderer unavailable", log.read_text())
         self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
 
+    def test_in_process_gpu_experiment_and_wemod_only_dll_trace(self):
+        from unittest.mock import patch
+        proc, prefix, proton = self.make_live_proton_fixture()
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        capture = self.root / "inprocess-gpu-args.txt"
+        wine = proton.parent / "files" / "bin" / "wine"
+        wine.write_text(
+            '#!/bin/sh\n'
+            'printf "winedebug=%s\\n" "$WINEDEBUG" > "$GAMEWELD_TEST_CAPTURE"\n'
+            'printf "arg=%s\\n" "$@" >> "$GAMEWELD_TEST_CAPTURE"\n',
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            self.cmd("patch", "--install-dir", str(self.client),
+                     "--confirm").returncode, 0
+        )
+        with patch.dict(os.environ, {
+            "XDG_STATE_HOME": str(self.root / "private-state"),
+            "GAMEWELD_TEST_CAPTURE": str(capture),
+            "DISPLAY": ":0",
+        }):
+            with self.assertRaisesRegex(ValueError, "requires --software-render"):
+                bridge.launch_wand_in_live_game(
+                    self.client, self.helper, "2353250", str(game_dir), proc,
+                    in_process_gpu=True)
+            bridge.launch_wand_in_live_game(
+                self.client, self.helper, "2353250", str(game_dir), proc,
+                software_render=True, in_process_gpu=True, trace_dll_load=True)
+        argv = capture.read_text().splitlines()
+        self.assertEqual(argv[0], "winedebug=-all,+loaddll")
+        self.assertIn("arg=--in-process-gpu", argv)
+        self.assertIn("arg=--disable-gpu", argv)
+        self.assertNotIn("arg=runinprefix", argv)
+        log = (self.root / "private-state/gameweld/wand-live-2353250.log").read_text()
+        self.assertIn("In-process GPU experiment: True", log)
+        self.assertIn("WeMod-only DLL load trace: True", log)
+
     def test_software_render_only_allowed_for_confirmed_live_launch(self):
         status = self.cmd("status", "--software-render", "--appid", "2353250")
         self.assertNotEqual(status.returncode, 0)
@@ -489,6 +527,15 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
                           "--game-dir", str(game_dir), "--install-dir", str(self.client))
         self.assertNotEqual(denied.returncode, 0)
         self.assertIn("requires explicit --confirm", denied.stdout)
+
+    def test_gpu_in_process_cli_requires_software_and_live_launch(self):
+        response = self.cmd("status", "--in-process-gpu")
+        self.assertNotEqual(response.returncode, 0)
+        self.assertIn("confirmed live Wand launch", response.stdout)
+        response = self.cmd("live-launch", "--in-process-gpu",
+                            "--appid", "2353250", "--confirm")
+        self.assertNotEqual(response.returncode, 0)
+        self.assertIn("requires --software-render", response.stdout)
 
     def test_live_launch_cli_fails_closed_without_confirmation_or_process(self):
         game = self.root / "Astrometica"
