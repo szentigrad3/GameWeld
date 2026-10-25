@@ -4364,6 +4364,12 @@ static char pc2_bridge_ready_state[24]="blocked";
 static char pc2_bridge_ready_reason[2048]={0};
 static unsigned pc2_bridge_readiness_generation=0;
 
+static int pc2_bridge_has_stale_launcher(const char *state,const char *reason){
+    /* Only this exact, source-verified failure routes to launcher-only repair.
+     * Other repair conditions must not silently alter the Steam Bridge. */
+    return state && reason && !strcmp(state,"repair") &&
+        strstr(reason,"Installed Steam Bridge launcher is outdated or unverified:")!=NULL;
+}
 static void pc2_bridge_apply_primary(const char *state,const char *reason){
     const char *title="Set Up WeMod";
     int actionable=1;
@@ -4371,6 +4377,7 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     else if(!strcmp(state,"setup"))title="Set Up WeMod";
     else if(!strcmp(state,"enable"))title="Enable WeMod";
     else if(!strcmp(state,"steam"))title="Finish Steam Setup";
+    else if(pc2_bridge_has_stale_launcher(state,reason))title="Update Steam Bridge";
     else if(!strcmp(state,"repair"))title="Repair WeMod";
     else{title="Checking WeMod…";actionable=0;}
     GtkWidget *buttons[]={G.pc2_deckcheatz_overview_play,G.pc2_deckcheatz_library_play};
@@ -4643,6 +4650,8 @@ static void on_pc2_bridge_primary(GtkButton*b,void*d){
     if(!strcmp(state,"play"))pc2_steam_bridge_action("play");
     else if(!strcmp(state,"setup"))pc2_steam_bridge_action("setup");
     else if(!strcmp(state,"enable"))pc2_steam_bridge_action("trainer-on");
+    else if(pc2_bridge_has_stale_launcher(state,pc2_bridge_ready_reason))
+        pc2_steam_bridge_action("upgrade"); /* Existing confirmation; no prefix changes. */
     else if(!strcmp(state,"steam")||!strcmp(state,"repair")){
         GtkWidget *dialog=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,"%s",
