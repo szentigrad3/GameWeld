@@ -549,6 +549,54 @@ class WeModEnhancerIntegrationTests(unittest.TestCase):
         self.assertIn(b"software rendering requested", other.read_bytes())
         self.assertNotIn(b"\x00", other.read_bytes())
 
+    def test_isolated_official_legacy_baseline_without_enhancer(self):
+        from unittest.mock import patch
+        import json
+        proc, prefix, proton = self.make_live_proton_fixture()
+        baseline = self.data / "gameweld/wemod-compat/11.6.0"
+        (baseline / "resources").mkdir(parents=True)
+        (baseline / "WeMod.exe").write_bytes(b"MZ-BASELINE")
+        (baseline / "resources/app.asar").write_bytes(b"BASELINE-ASAR")
+        data = {
+            "tool": "gameweld-isolated-wemod-baseline",
+            "version": "11.6.0",
+            "package_sha256": "5b94ae5592e698b13cbc06fae4c096fe2438cbd362daac3f842e13190bf836ba",
+            "exe_sha256": hashlib.sha256((baseline / "WeMod.exe").read_bytes()).hexdigest(),
+            "asar_sha256": hashlib.sha256((baseline / "resources/app.asar").read_bytes()).hexdigest(),
+        }
+        (baseline / ".gameweld-baseline.json").write_text(json.dumps(data))
+        capture = self.root / "baseline-env.txt"
+        wine = proton.parent / "files" / "bin" / "wine"
+        wine.write_text(
+            '#!/bin/sh\\n'
+            'printf "dll=%s\\n" "$WINEDLLOVERRIDES" > "$GAMEWELD_TEST_CAPTURE"\\n',
+            encoding="utf-8"
+        )
+        game_dir = self.root / "Astrometica"
+        game_dir.mkdir()
+        env = dict(self.environment, XDG_STATE_HOME=str(self.root / "state"),
+                   DISPLAY=":0", GAMEWELD_TEST_CAPTURE=str(capture))
+        with patch.dict(os.environ, env):
+            bridge.verify_legacy_baseline(baseline)
+            bridge.launch_wand_in_live_game(
+                baseline, self.helper, "2353250", str(game_dir), proc,
+                software_render=True, legacy_baseline=True)
+            self.assertEqual(capture.read_text().strip(), "dll=")
+            # Patching even one DLL removes the client from the clean baseline.
+            (baseline / "version.dll").write_bytes(b"MZ-PATCHED")
+            with self.assertRaisesRegex(ValueError, "contains version.dll"):
+                bridge.verify_legacy_baseline(baseline)
+            (baseline / "version.dll").unlink()
+            (baseline / "resources/app.asar").write_bytes(b"MODIFIED")
+            with self.assertRaisesRegex(ValueError, "file hash mismatch"):
+                bridge.verify_legacy_baseline(baseline)
+
+    def test_legacy_baseline_cli_must_use_explicit_directory(self):
+        response = self.cmd("live-launch", "--confirm", "--legacy-baseline",
+                            "--game-provider", "steam", "--appid", "2353250")
+        self.assertNotEqual(response.returncode, 0)
+        self.assertIn("requires an explicit --install-dir", response.stdout)
+
     def test_software_render_only_allowed_for_confirmed_live_launch(self):
         status = self.cmd("status", "--software-render", "--appid", "2353250")
         self.assertNotEqual(status.returncode, 0)
