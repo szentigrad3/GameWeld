@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
@@ -300,6 +301,39 @@ def sha256_file(path: Path, max_bytes: int = 400 * 1024 * 1024) -> str | None:
     return digest.hexdigest()
 
 
+def verify_legacy_baseline(folder: Path) -> None:
+    """Only allow the deliberately isolated, hash-pinned official 11.6.0.
+
+    Never bypass Enhancer validation for an arbitrary Windows executable.
+    This is a renderer-only comparison and never patches or installs .NET.
+    """
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg and not Path(xdg).is_absolute():
+        raise ValueError("XDG_DATA_HOME must be absolute")
+    base = Path(xdg) if xdg else Path.home() / ".local/share"
+    expected = base / "gameweld/wemod-compat/11.6.0"
+    if folder.resolve() != expected.resolve():
+        raise ValueError("Legacy baseline is limited to GameWeld's isolated 11.6.0 directory")
+    marker = folder / ".gameweld-baseline.json"
+    if not marker.is_file() or marker.is_symlink():
+        raise ValueError("Missing verified compatibility-build manifest; use gameweld-wemod-compat.py")
+    try:
+        metadata = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("Legacy baseline manifest is unreadable") from exc
+    if (metadata.get("tool") != "gameweld-isolated-wemod-baseline"
+            or metadata.get("version") != "11.6.0"
+            or metadata.get("package_sha256") != "5b94ae5592e698b13cbc06fae4c096fe2438cbd362daac3f842e13190bf836ba"):
+        raise ValueError("Legacy baseline manifest does not match pinned official package")
+    for relpath, key in (("WeMod.exe", "exe_sha256"),
+                         ("resources/app.asar", "asar_sha256")):
+        target = folder / relpath
+        if target.is_symlink() or sha256_file(target) != metadata.get(key):
+            raise ValueError(f"Legacy baseline file hash mismatch: {relpath}")
+    if (folder / "version.dll").exists():
+        raise ValueError("Legacy baseline is patched or contains version.dll; refusing comparison")
+
+
 def verify_patch_files(folder: Path, helper: Path) -> tuple[bool, list[str]]:
     """Evidence that a specific existing Wand client has the Enhancer's files.
 
@@ -565,7 +599,8 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
                              proc_root: Path = Path("/proc"),
                              *, software_render: bool = False,
                              in_process_gpu: bool = False,
-                             trace_dll_load: bool = False) -> None:
+                             trace_dll_load: bool = False,
+                             legacy_baseline: bool = False) -> None:
     """Opt-in external client launch using the running game's exact Proton.
 
     Never runs a random Wine binary against an active Steam Proton prefix.
@@ -576,11 +611,16 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         raise ValueError("--in-process-gpu requires --software-render")
     if not game_dir or not Path(game_dir).is_dir():
         raise ValueError("The selected Steam game installation directory is not verified")
-    patched, report = verify_patch_files(folder, helper)
-    for line in report:
-        print(line, flush=True)
-    if not patched:
-        raise ValueError("Live launch blocked: the chosen Wand app-version patch is not verified")
+    if legacy_baseline:
+        verify_legacy_baseline(folder)
+        print("Verified official WeMod 11.6.0 BASELINE: unpatched, renderer-only comparison", flush=True)
+        print("No Enhancer proxy is used and no .NET installer is run.", flush=True)
+    else:
+        patched, report = verify_patch_files(folder, helper)
+        for line in report:
+            print(line, flush=True)
+        if not patched:
+            raise ValueError("Live launch blocked: the chosen Wand app-version patch is not verified")
     executable = next((folder / name for name in
                       ("Wand.exe", "WeMod.exe", "wand.exe", "wemod.exe")
                       if (folder / name).is_file() and not (folder / name).is_symlink()), None)
@@ -675,7 +715,8 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
     # forcing the patched version.dll native-first. The game stays untouched.
     overrides = [part for part in environment.get("WINEDLLOVERRIDES", "").split(";")
                  if part.strip() and part.split("=", 1)[0].strip().lower() != "version"]
-    environment["WINEDLLOVERRIDES"] = ";".join(overrides + ["version=n,b"])
+    environment["WINEDLLOVERRIDES"] = (";".join(overrides) if legacy_baseline
+                                        else ";".join(overrides + ["version=n,b"]))
     if trace_dll_load:
         # Diagnostic only: trace DLL selection for THIS WeMod child, never
         # enable Wine tracing on the live game or modify the shared prefix.
@@ -702,6 +743,8 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
         launch_mode += " (in-process GPU experiment)"
     if trace_dll_load:
         launch_mode += " (DLL load trace)"
+    if legacy_baseline:
+        launch_mode += " (official unpatched 11.6.0 baseline)"
     # Capture only the explicitly confirmed client session. Do not change
     # Steam's launch options, Wine registry, caches, or existing game prefixes.
     state_home = os.environ.get("XDG_STATE_HOME")
@@ -724,6 +767,7 @@ def launch_wand_in_live_game(folder: Path, helper: Path,
                 ("GameWeld PC2 Wand live handoff: App ID " + appid + "\n"
                  + "Mode: direct X11 wineserver join" + (" + software rendering requested" if software_render else "") + "\n"
                  + "Client executable: " + str(executable) + "\n"
+                 + "Legacy unpatched client baseline: " + str(legacy_baseline) + "\n"
                  + "In-process GPU experiment: " + str(in_process_gpu) + "\n"
                  + "WeMod-only DLL load trace: " + str(trace_dll_load) + "\n"
                  + "Renderer and login status: NOT VERIFIED\n"
@@ -763,6 +807,8 @@ def main() -> int:
                         help="EXPERIMENTAL: keep Chromium GPU work in WeMod's main process (requires --software-render)")
     parser.add_argument("--trace-dll-load", action="store_true",
                         help="Trace Wine DLL loading for this confirmed WeMod launch only")
+    parser.add_argument("--legacy-baseline", action="store_true",
+                        help="EXPERIMENTAL: compare the separately staged, verified official unpatched WeMod 11.6.0")
     parser.add_argument("--game-provider", choices=("steam", "heroic", "lutris", "other"))
     parser.add_argument("--appid", default="")
     parser.add_argument("--game-name", default="")
@@ -777,6 +823,10 @@ def main() -> int:
         raise ValueError("GPU and DLL trace options require a confirmed live Wand launch")
     if args.in_process_gpu and not args.software_render:
         raise ValueError("--in-process-gpu requires --software-render")
+    if args.legacy_baseline and args.action != "live-launch":
+        raise ValueError("--legacy-baseline only supports confirmed live-launch")
+    if args.legacy_baseline and not args.install_dir:
+        raise ValueError("--legacy-baseline requires an explicit --install-dir")
     candidates = available_clients(args.install_dir) if args.action != "install" else []
     folder = candidates[0] if len(candidates) == 1 else None
     if args.action == "status":
@@ -832,7 +882,8 @@ def main() -> int:
                                  args.appid, args.game_dir,
                                  **({**({"software_render": True} if args.software_render else {}),
                                      **({"in_process_gpu": True} if args.in_process_gpu else {}),
-                                     **({"trace_dll_load": True} if args.trace_dll_load else {})}))
+                                     **({"trace_dll_load": True} if args.trace_dll_load else {}),
+                                     **({"legacy_baseline": True} if args.legacy_baseline else {})}))
         return 0
     # Restore never downloads additional components without confirmation.
     helper = installed_helper_dir() if args.action == "restore" else (
