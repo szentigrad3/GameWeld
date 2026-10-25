@@ -223,6 +223,8 @@ extern void g_object_unref(void *);
 #define GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER 2
 #define GTK_DIALOG_MODAL 1
 #define GTK_MESSAGE_QUESTION 2
+#define GTK_MESSAGE_INFO 0
+#define GTK_BUTTONS_OK 1
 #define GTK_BUTTONS_YES_NO 4
 #define GTK_RESPONSE_YES -8
 #define GTK_RESPONSE_CANCEL -6
@@ -613,6 +615,7 @@ static void on_pc2_bridge_upgrade(GtkButton*,void*);
 static void on_pc2_bridge_play(GtkButton*,void*);
 static void on_pc2_bridge_primary(GtkButton*,void*);
 static void pc2_bridge_readiness_for_game(Game*);
+static void pc2_bridge_readiness_invalidate(void);
 static void on_pc2_bridge_setup(GtkButton*,void*);
 static void on_pc2_bridge_enable(GtkButton*,void*);
 static void on_pc2_bridge_disable(GtkButton*,void*);
@@ -2170,6 +2173,7 @@ static void refresh_ui(void) {
         if(G.pc2_deckcheatz_library_play)
             gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,FALSE);
         if(!allowed){
+            pc2_bridge_readiness_invalidate();
             if(G.pc2_deckcheatz_overview_status)
                 set_label(G.pc2_deckcheatz_overview_status,
                     "Steam Bridge supports installed Steam Windows games.");
@@ -4412,7 +4416,10 @@ static void *pc2_bridge_readiness_worker(void *data){
 }
 static void pc2_bridge_readiness_for_game(Game *g){
     if(!pc2_discovery_only()||!g||!g->appid[0])return;
-    if(!strcmp(g->appid,pc2_bridge_ready_appid))return;
+    if(!strcmp(g->appid,pc2_bridge_ready_appid)){
+        pc2_bridge_apply_primary(pc2_bridge_ready_state,pc2_bridge_ready_reason);
+        return;
+    }
     snprintf(pc2_bridge_ready_appid,sizeof pc2_bridge_ready_appid,"%s",g->appid);
     snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"checking");
     pc2_bridge_readiness_generation++;
