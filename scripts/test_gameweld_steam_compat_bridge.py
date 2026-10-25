@@ -130,8 +130,9 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertEqual(launch.call_args.kwargs["env"]["GAMEWELD_BRIDGE_INNER"], "1")
 
     def test_unconfigured_title_fails_closed(self):
-        with patch.dict(os.environ, dict(self.env,
-                 STEAM_COMPAT_DATA_PATH=str(self.steam / "steamapps/compatdata/2353250")):
+        with patch.dict(os.environ, dict(
+                self.env,
+                STEAM_COMPAT_DATA_PATH=str(self.steam / "steamapps/compatdata/2353250"))):
             with self.assertRaisesRegex(ValueError, "unconfigured"):
                 bridge.steam_invocation(["waitforexitandrun", "ASTROMETICA.exe"])
 
