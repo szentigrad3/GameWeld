@@ -1,0 +1,47 @@
+name: PC2 Ubuntu Baseline (private validation)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/pc2-*.sh'
+      - 'scripts/gameweld-*.py'
+      - 'scripts/test_gameweld_deckcheatz_*.py'
+      - 'crates/wand-ui/appimage-gtk3/**'
+      - 'cmd/gameweld-backend/**'
+      - '.github/workflows/pc2-ubuntu-baseline.yml'
+permissions:
+  contents: read
+jobs:
+  private-source-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/gameweld-backend/go.mod
+          cache: false
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgtk-3-dev pkg-config python3
+      - name: Check staging and audit script syntax
+        run: |
+          bash -n scripts/pc2-stage-private-appdir.sh
+          bash -n scripts/pc2-audit-private-appdir.sh
+          bash -n scripts/pc2-build-private-appimage.sh
+      - name: Build private source AppDir
+        run: bash scripts/pc2-stage-private-appdir.sh
+      - name: Audit AppDir against Ubuntu baseline
+        run: bash scripts/pc2-audit-private-appdir.sh
+      - name: Record host dependency and ELF metadata
+        run: |
+          file build/pc2-source/private-AppDir/usr/bin/gameweld
+          file build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+          readelf -W -V build/pc2-source/private-AppDir/usr/bin/gameweld | grep -E 'GLIBC_|GLIBCXX_' || true
+          sha256sum build/pc2-source/private-AppDir/usr/bin/gameweld build/pc2-source/private-AppDir/usr/bin/wand-native-backend
+      - name: Publication remains blocked
+        run: |
+          echo 'Ubuntu baseline build check only.'
+          echo 'No AppImage is published, uploaded or claimed portable.'
+          echo 'Real GTK launches, WeMod tests, dependency bundling and licensing remain separate gates.'
