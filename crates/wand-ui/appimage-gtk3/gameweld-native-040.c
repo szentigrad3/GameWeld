@@ -2059,7 +2059,7 @@ static int pc2_recent_index_of(const char *key){
 }
 static void pc2_recent_select(GtkButton *button,void *userdata){
     (void)button;
-    int index=GPOINTER_TO_INT(userdata)-1;
+    int index=(int)(intptr_t)userdata-1;
     if(index<0||index>=G.game_count)return;
     if(G.selected==index){
         pc2_recent_record(index);
@@ -2121,7 +2121,7 @@ static void pc2_recent_render(void){
         pack(content,hint,0);
         gtk_container_add(tile,content);
         g_signal_connect_data(tile,"clicked",(GCallback)pc2_recent_select,
-                              GINT_TO_POINTER(idx+1),NULL,0);
+                              (void *)(intptr_t)(idx+1),NULL,0);
         pack(pc2_recent_tiles,tile,0);
     }
     gtk_widget_show_all(pc2_recent_tiles);
