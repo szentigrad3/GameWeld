@@ -359,20 +359,20 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             prefix.mkdir(parents=True)
             registry = prefix / "system.reg"
             registry.write_text(
-                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\\n'
-                '"Install"=dword:00000001\\n'
+                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\n'
+                '"Install"=dword:00000001\n'
             )
             state_dir = self.home / ".local/state/gameweld"
             state_dir.mkdir(parents=True)
             (state_dir / "steam-bridge-3008130-111-222.log").write_text(
-                "GameWeld Steam bridge: unverified WeMod runtime\\n"
-                "WeMod GPU fallback: enabled\\n"
+                "GameWeld Steam bridge: unverified WeMod runtime\n"
+                "WeMod GPU fallback: enabled\n"
             )
             # A different title's GPU failures must never appear in the
             # selected-game report.
             (state_dir / "steam-bridge-2353250-333-444.log").write_text(
-                "WeMod GPU fallback: disabled\\n"
-                "GPU process has crashed 1603 time(s)\\n"
+                "WeMod GPU fallback: disabled\n"
+                "GPU process has crashed 1603 time(s)\n"
             )
             before_registry = registry.read_bytes()
             before_config = bridge.config_path().read_bytes()
