@@ -32,6 +32,8 @@ jobs:
           bash -n scripts/pc2-build-private-appimage.sh
       - name: Test reviewed-library staging fail-closed safeguards
         run: python3 -m unittest discover -s scripts -p 'test_pc2_stage_reviewed_libraries.py' -v
+      - name: Test bounded Steam configuration paths
+        run: python3 -m unittest discover -s scripts -p 'test_pc2_steam_path_bounds.py' -v
       - name: Build private source AppDir
         run: bash scripts/pc2-stage-private-appdir.sh
       - name: Audit AppDir against Ubuntu baseline
