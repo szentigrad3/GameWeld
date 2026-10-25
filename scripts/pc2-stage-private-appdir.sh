@@ -10,7 +10,19 @@ pkg-config --exists gtk+-3.0 || { echo "Missing GTK3 development headers" >&2; e
 if [[ -e "$OUT" ]]; then echo "Refusing to overwrite existing AppDir: $OUT" >&2; exit 2; fi
 mkdir -p "$OUT/usr/bin" "$OUT/usr/libexec"
 (cd cmd/gameweld-backend && go test ./... && go build -trimpath -o "$OUT/usr/bin/wand-native-backend" .)
-gcc -O2 -pipe -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
+MODE="${GAMEWELD_PC2_BUILD_MODE:-discovery}"
+case "$MODE" in
+  discovery) CFLAGS=(-DGAMEWELD_PC2_DISCOVERY_ONLY=1) ;;
+  functional)
+    [[ "${GAMEWELD_PC2_ENABLE_FUNCTIONAL_TEST:-}" == "I_UNDERSTAND_PRIVATE_TEST_ONLY" ]] || {
+      echo "Functional mode requires GAMEWELD_PC2_ENABLE_FUNCTIONAL_TEST=I_UNDERSTAND_PRIVATE_TEST_ONLY" >&2
+      exit 2
+    }
+    CFLAGS=()
+    ;;
+  *) echo "Invalid GAMEWELD_PC2_BUILD_MODE: $MODE" >&2; exit 2 ;;
+esac
+gcc -O2 -pipe -pthread "${CFLAGS[@]}" \
   crates/wand-ui/appimage-gtk3/gameweld-native-040.c \
   -o "$OUT/usr/bin/gameweld" $(pkg-config --cflags --libs gtk+-3.0)
 for helper in scripts/gameweld-*.py scripts/gameweld-*.sh scripts/gameforge-*.sh scripts/wand-*.sh; do
@@ -32,6 +44,7 @@ exec "$APPDIR/usr/bin/gameweld" "$@"
 EOF
 chmod 755 "$OUT/AppRun" "$OUT/usr/bin/gameweld" "$OUT/usr/bin/wand-native-backend"
 printf '%s\n' 'PRIVATE SOURCE-BUILT APPDIR ONLY (NOT AN APPIMAGE / NOT APPROVED FOR DISTRIBUTION)' > "$OUT/NOT-FOR-DISTRIBUTION.txt"
+printf 'Build mode: %s\n' "$MODE" >> "$OUT/NOT-FOR-DISTRIBUTION.txt"
 printf 'Git revision: %s\n' "$(git rev-parse HEAD)" >> "$OUT/NOT-FOR-DISTRIBUTION.txt"
 sha256sum "$OUT/usr/bin/gameweld" "$OUT/usr/bin/wand-native-backend"
 echo "Created: $OUT"
