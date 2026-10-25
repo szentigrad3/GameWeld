@@ -705,6 +705,85 @@ def steam_compat_selection(appid: str, *,
     return f"OTHER TOOL SELECTED (saved Steam mapping: {selected})"
 
 
+def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
+    """Bounded, read-only, game-scoped readiness summary for the GUI.
+
+    File/registry presence and historical logs never count as a successful
+    runtime launch. No Wine, Proton, MSI or Steam processes are started.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Select an installed Steam Windows game")
+    state, reason = primary_ui_state(appid)
+    entry = load_config().get(appid)
+    lines = [
+        f"GAMEWELD — WEMOD READINESS • Steam AppID {appid}",
+        f"Next action: {state.upper()} — {reason}",
+    ]
+    if not isinstance(entry, dict):
+        lines += [
+            "WeMod auto-start: not configured",
+            "WeMod GPU fallback: not configured",
+        ]
+    else:
+        lines.append("WeMod auto-start: " +
+                     ("ENABLED" if entry.get("trainer_enabled") else "DISABLED"))
+        lines.append("WeMod GPU fallback: " +
+                     ("ENABLED (--disable-gpu on WeMod only)"
+                      if entry.get("wemod_disable_gpu") is True else "DISABLED"))
+        lines.append("Installed Steam Bridge: " + bridge_launcher_sync())
+
+    if game_dir is not None:
+        try:
+            game = game_dir.expanduser().resolve(strict=True)
+            steamapps = game.parent.parent
+            if (game.parent.name != "common" or steamapps.name != "steamapps" or
+                    not (steamapps / ("appmanifest_" + appid + ".acf")).is_file()):
+                lines.append(".NET registry: INCONCLUSIVE (selected game manifest mismatch)")
+            else:
+                registry = steamapps / "compatdata" / appid / "pfx/system.reg"
+                if (registry.is_file() and not registry.is_symlink() and
+                        registry.stat().st_size <= 32 * 1024 * 1024):
+                    content = registry.read_text(encoding="utf-8", errors="replace")
+                    if "NET Framework Setup" in content:
+                        lines.append(".NET registry: registration entries found; "
+                                     "runtime functionality NOT verified")
+                    else:
+                        lines.append(".NET registry: setup entries not found; "
+                                     "do not install .NET based on this check alone")
+                else:
+                    lines.append(".NET registry: INCONCLUSIVE (prefix or registry unavailable)")
+        except (OSError, ValueError):
+            lines.append(".NET registry: INCONCLUSIVE (cannot inspect selected game)")
+
+    state_dir = xdg_dir("XDG_STATE_HOME", ".local/state") / "gameweld"
+    try:
+        logs = sorted(
+            (p for p in state_dir.glob(f"steam-bridge-{appid}-*.log")
+             if p.is_file() and not p.is_symlink() and p.stat().st_size < 2 * 1024 * 1024),
+            key=lambda p: p.stat().st_mtime, reverse=True,
+        ) if state_dir.is_dir() else []
+        if logs:
+            history = logs[0].read_text(encoding="utf-8", errors="replace")
+            fallback = next(
+                (line.split(":", 1)[1].strip().upper()
+                 for line in history.splitlines()
+                 if line.startswith("WeMod GPU fallback:")),
+                "NOT RECORDED",
+            )
+            lines.append(f"Previous Bridge handoff log: found; GPU fallback: {fallback} "
+                         "(historical, not the next launch)")
+        else:
+            lines.append("Previous Bridge handoff log: none found for this game")
+    except OSError:
+        lines.append("Previous Bridge handoff log: unavailable")
+
+    lines += [
+        "Live game/WeMod connection: NOT VERIFIED (no game was launched)",
+        "Safety: READ-ONLY; no .NET installer, prefix modification, or Steam setting change.",
+    ]
+    return "\n".join(lines)
+
+
 def format_status(appid: str | None = None, *,
                   game_dir: Path | None = None,
                   steam_root: Path | None = None) -> str:
@@ -754,9 +833,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "preflight", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "preflight", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -771,6 +850,11 @@ def main() -> int:
                 raise ValueError("UI state requires --appid")
             action, reason = primary_ui_state(args.appid)
             print(action + "\t" + reason.replace("\t", " ").replace("\n", " "))
+            return 0
+        if args.action == "preflight":
+            if not args.appid:
+                raise ValueError("Preflight requires --appid")
+            print(preflight_report(args.appid, game_dir=args.game_dir))
             return 0
         if args.action == "netfx-status":
             if not args.appid or not args.game_dir:
