@@ -23,7 +23,7 @@ grep -Fq 'direct active Proton wineserver join + Wand-only X11' \
     "$ROOT/scripts/gameweld-wemod-enhancer.py"
 # This older approach remained in Settings as a diagnostic after its
 # real-world white-window failure; it is intentionally no longer the default.
-grep -Fq 'Launch Wand in Running Steam Game (opt-in)' \
+! grep -Fq 'GtkWidget*live_launch=button(' \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
 {
   echo 'GameWeld PC2 Test 18 — recovered Wand Native Wine/X11 integration'
@@ -33,7 +33,7 @@ grep -Fq 'Launch Wand in Running Steam Game (opt-in)' \
   echo 'Exact game-selected Proton Wine and wineserver paths: PASS (fixtures)'
   echo 'Original game Steam/Proton configuration changed: false'
   echo 'App-specific log and explicit consent: PRESENT'
-  echo 'Legacy live X11 attempt is retained for diagnostics, not default: PASS'
+  echo 'Legacy live X11 CLI retained for diagnostics; no GUI launch shortcut: PASS'
   echo 'Actual Wand UI rendered or trainer attached: NOT VERIFIED'
   echo 'Real game/Wand launched by this test: false'
 } >"$REPORT"
