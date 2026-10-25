@@ -179,6 +179,11 @@ jobs:
           grep -Fq 'Launch Patched Wand (Smoke Test)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
           grep -Fq 'EXISTING WAND / WEMOD CLIENT INSTALLATIONS' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
           ! grep -Fq 'Wand / WeMod Patcher (experimental)' crates/wand-ui/appimage-gtk3/gameweld-native-040.c
+      - name: Experimental Steam compatibility bridge (offline, no Steam settings changes)
+        run: |
+          python3 -m py_compile scripts/gameweld-steam-compat-bridge.py
+          python3 -m unittest discover -s scripts -p 'test_gameweld_steam_compat_bridge.py' -v
+          python3 scripts/gameweld-steam-compat-bridge.py status
       - name: Verify pinned upstream WeMod Enhancer Linux package
         run: |
           TMP_XDG="$(mktemp -d)"
