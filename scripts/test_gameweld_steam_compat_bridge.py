@@ -318,6 +318,47 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertEqual(bridge.config_path().read_bytes(), original)
             self.assertFalse((self.steam / "config/config.vdf").exists())
 
+    def test_wemod_gpu_fallback_is_explicit_per_game_and_reversible(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            original = bridge.load_config()
+            self.assertFalse(original["2353250"].get("wemod_disable_gpu", False))
+            self.assertTrue(bridge.set_trainer_gpu_fallback("3008130", True))
+            result = bridge.load_config()
+            self.assertEqual(result["3008130"]["wemod_disable_gpu"], True)
+            self.assertFalse(result["2353250"].get("wemod_disable_gpu", False))
+            self.assertTrue(result["3008130"]["trainer_enabled"])
+            self.assertIn("ENABLED (WeMod.exe --disable-gpu)",
+                          bridge.format_status("3008130"))
+            self.assertFalse(bridge.set_trainer_gpu_fallback("3008130", False))
+            self.assertFalse(bridge.load_config()["3008130"]["wemod_disable_gpu"])
+            self.assertNotIn("wemod_disable_gpu", bridge.load_config()["2353250"])
+            with self.assertRaisesRegex(ValueError,"no configured Steam Bridge"):
+                bridge.set_trainer_gpu_fallback("999888", True)
+
+    def test_only_wemod_gets_gpu_fallback_argument(self):
+        # No game or trainer executes: subprocess.Popen is replaced by a fixture.
+        import subprocess
+        with patch.dict(os.environ, self.env):
+            (self.client / "resources/app.asar.backup").write_bytes(b"backup")
+            (self.client / "version.dll").write_bytes(b"dll")
+            entry={"proton":str(self.proton), "client":str(self.client),
+                   "trainer_enabled":True, "wemod_disable_gpu":True}
+            with patch.object(bridge.subprocess, "Popen",
+                              return_value=unittest.mock.Mock(pid=1234)) as popen:
+                bridge.start_trainer(entry, "3008130", self.proton)
+                command=popen.call_args.args[0]
+                self.assertEqual(command,
+                    [str(self.proton),"runinprefix",str(self.client/"WeMod.exe"),
+                     "--disable-gpu"])
+            entry["wemod_disable_gpu"]=False
+            with patch.object(bridge.subprocess, "Popen",
+                              return_value=unittest.mock.Mock(pid=1234)) as popen:
+                bridge.start_trainer(entry, "2353250", self.proton)
+                self.assertEqual(popen.call_args.args[0],
+                    [str(self.proton),"runinprefix",str(self.client/"WeMod.exe")])
+
     def test_bridge_play_uses_steam_and_never_starts_a_second_proton(self):
         from unittest.mock import Mock
         with patch.dict(os.environ, self.env):
