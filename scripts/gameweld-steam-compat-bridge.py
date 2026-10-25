@@ -250,6 +250,59 @@ def setup_game(appid: str, game_dir: Path, *,
     return target
 
 
+def play_configured_game(appid: str, *, launch=None,
+                         associated_processes=None) -> int:
+    """Request Steam Play only for an enabled, registered Bridge game.
+
+    Launch uses Steam's own compatibility-tool selection, not a second Proton
+    wrapper. Unknown Steam selections are disclosed, never asserted valid.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid selected Steam AppID")
+    entry = load_config().get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("This title has no GameWeld Bridge configuration")
+    if not entry.get("trainer_enabled"):
+        raise ValueError("WeMod auto-start is DISABLED for this title; enable it first")
+    proton = validate_proton(Path(entry["proton"]))
+    validate_client(Path(entry["client"]))
+    roots = [proton.parents[3], Path.home() / ".steam/root",
+             Path.home() / ".local/share/Steam"]
+    registered = []
+    for root in roots:
+        target = root / "compatibilitytools.d" / NAME
+        if target.is_symlink() and target.resolve() == private_tool_dir().resolve():
+            if str(root.resolve()) not in [str(x.resolve()) for x in registered]:
+                registered.append(root)
+    if not registered:
+        raise ValueError(
+            "GameWeld Bridge is not registered in the selected Steam installation; "
+            "run Bridge setup before requesting Steam Play"
+        )
+    if launch is None or associated_processes is None:
+        source = Path(__file__).with_name("gameweld-steam-handoff.py")
+        if not source.is_file():
+            raise ValueError("GameWeld's Steam handoff helper is not installed")
+        spec = importlib.util.spec_from_file_location("gw_bridge_play_handoff", source)
+        if spec is None or spec.loader is None:
+            raise ValueError("Cannot load the Steam handoff helper")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        launch = module.run_launch if launch is None else launch
+        associated_processes = (module.associated_process_count
+                                if associated_processes is None else associated_processes)
+    if associated_processes(appid):
+        raise ValueError(
+            "Steam reports an existing same-AppID game session. "
+            "Do not start a duplicate game/trainer; use the running one."
+        )
+    print("GameWeld Bridge: Steam game launch REQUESTED (not yet verified)")
+    print("Steam uses the game's current Compatibility selection; "
+          "GameWeld does not change it or modify launch options.")
+    print("WeMod will auto-start only if Steam actually selects GameWeld Bridge.")
+    return int(launch(appid))
+
+
 def set_trainer_enabled(appid: str, enabled: bool) -> bool:
     """Update an existing verified per-game bridge config; never select Steam's tool."""
     if not valid_appid(appid):
@@ -393,9 +446,9 @@ def format_status(appid: str | None = None) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "setup", "trainer-on", "trainer-off"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "register", "configure", "setup", "trainer-on", "trainer-off", "play"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "register", "configure", "setup", "trainer-on", "trainer-off"))
+        parser.add_argument("action", choices=("status", "register", "configure", "setup", "trainer-on", "trainer-off", "play"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -417,6 +470,10 @@ def main() -> int:
             target = register(args.steam_root.expanduser().resolve(strict=True))
             print(f"Registered: {target}")
             print("Restart Steam, then explicitly select GameWeld Bridge (Experimental) per game.")
+        elif args.action == "play":
+            if not args.appid:
+                raise ValueError("Play requires --appid")
+            return play_configured_game(args.appid)
         elif args.action == "setup":
             if not all((args.appid, args.game_dir)):
                 raise ValueError("Setup requires --appid and --game-dir")
