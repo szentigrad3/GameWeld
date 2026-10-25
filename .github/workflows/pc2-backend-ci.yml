@@ -273,6 +273,18 @@ jobs:
         run: python3 -m unittest discover -s scripts -p 'test_pc2_steam_path_bounds.py' -v
       - name: Test runtime closure classification (offline fixtures)
         run: python3 -m unittest discover -s scripts -p 'test_pc2_runtime_closure.py' -v
+      - name: Verify one-command functional tester script
+        run: |
+          bash -n scripts/pc2-functional-rc-aio.sh
+          GAMEWELD_RC_TEST_DIR="$PWD/build/pc2-source/functional-rc-validation" bash scripts/pc2-functional-rc-aio.sh
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("build/pc2-source/functional-rc-validation/summary.json").read_text())
+          assert d["appdir_audit"]=="passed" and d["headless_gui_smoke"]=="passed"
+          assert not d["portable"] and not d["redistribution_approved"]
+          print("PASS: single-command private tester workflow, no publication")
+          PY
       - name: Verify functional AppImage packaging fails closed
         run: bash scripts/test_pc2_private_functional_packaging.sh
       - name: Build private source AppDir
