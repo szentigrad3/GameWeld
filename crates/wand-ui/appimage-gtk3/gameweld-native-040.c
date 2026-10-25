@@ -5435,6 +5435,10 @@ static void on_pc2_wemod_choose(GtkButton*b,void*d){
     }
     gtk_widget_destroy(dialog);
 }
+static void on_settings_open_wemod(GtkButton *button, void *notebook){
+    (void)button;
+    gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook),1);
+}
 static GtkWidget *build_settings(void){
     GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);
     GtkWidget*p=box(GTK_ORIENTATION_VERTICAL,14);margins(p,22);gtk_container_add(outer,p);
@@ -5458,6 +5462,9 @@ static GtkWidget *build_settings(void){
             "Other provider launchers remain separate options.",
             NULL);
         pack(quick,first,0);
+        GtkWidget*open_wemod=button("Open WeMod & DeckCheatz setup","primary-action");
+        g_signal_connect_data(open_wemod,"clicked",(GCallback)on_settings_open_wemod,tabs,NULL,0);
+        pack(quick,open_wemod,0);
         pack(quick,card("Tested game: Astrometica",
             "GameWeld Steam Bridge + Proton Experimental + Steam Linux Runtime 4 "
             "successfully launched Astrometica and WeMod together; the trainer worked in-game "
@@ -5474,9 +5481,14 @@ static GtkWidget *build_settings(void){
         pack(quick,window_reset,0);
         deckpage=box(GTK_ORIENTATION_VERTICAL,12);
         GtkWidget*advancedpage=box(GTK_ORIENTATION_VERTICAL,12);
-        pack(advancedpage,cols,1);
+        pack(advancedpage,card("Optional integrations and maintenance",
+            "Use WeMod & DeckCheatz for the recommended Steam setup. Expand the tools below only for Wand, WeMod Enhancer patching, local trainers or Cheat Engine.",NULL),0);
+        GtkWidget*advanced_expander=gtk_expander_new("Wand, WeMod Enhancer, Cheat Engine and local trainers (advanced)");
+        gtk_expander_set_expanded(GTK_EXPANDER(advanced_expander),FALSE);
+        gtk_container_add(GTK_CONTAINER(advanced_expander),cols);
+        pack(advancedpage,advanced_expander,0);
         gtk_notebook_append_page((GtkNotebook*)tabs,quick,label("Quick Start",NULL));
-        gtk_notebook_append_page((GtkNotebook*)tabs,deckpage,label("DeckCheatz / WeMod",NULL));
+        gtk_notebook_append_page((GtkNotebook*)tabs,deckpage,label("WeMod & DeckCheatz",NULL));
         gtk_notebook_append_page((GtkNotebook*)tabs,advancedpage,label("Advanced Providers",NULL));
         gtk_notebook_set_current_page((GtkNotebook*)tabs,0);
         pack(p,tabs,1);
@@ -5487,6 +5499,12 @@ static GtkWidget *build_settings(void){
         pack(dc,label("DeckCheatz 1.x — Managed Updates","card-title"),0);
         GtkWidget*note=label("Check for upstream 1.x fixes or explicitly update a GameWeld-managed checkout. No background updates. The previous version is retained for rollback and manually installed checkouts are left untouched.","muted");
         gtk_label_set_line_wrap((GtkLabel*)note,TRUE);pack(dc,note,0);
+        GtkWidget*install_actions=box(GTK_ORIENTATION_HORIZONTAL,8);
+        GtkWidget*detect=button("Detect installed DeckCheatz","action");
+        GtkWidget*install=button("Install DeckCheatz (managed)","primary-action");
+        g_signal_connect_data(detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);
+        g_signal_connect_data(install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);
+        pack(install_actions,detect,1);pack(install_actions,install,1);pack(dc,install_actions,0);
         GtkWidget*bar=box(GTK_ORIENTATION_HORIZONTAL,8);
         GtkWidget*check=button("Check DeckCheatz updates","action");
         GtkWidget*update=button("Update DeckCheatz (opt-in)","action");
@@ -5554,7 +5572,7 @@ static GtkWidget *build_settings(void){
         pack(bridge_maintenance_box,bridge_upgrade,0);
         gtk_container_add(bridge_maintenance,bridge_maintenance_box);
         pack(bridge_card,bridge_maintenance,0);
-        pack(right,bridge_card,0);
+        pack(deckpage,bridge_card,0);
 
         /* Patch/restore is specialist maintenance, not another game-launch
          * method. It remains available but starts collapsed to avoid
