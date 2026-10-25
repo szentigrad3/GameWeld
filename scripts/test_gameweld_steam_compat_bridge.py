@@ -343,6 +343,33 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 self.assertEqual(bridge.primary_ui_state("2353250")[0], "play")
             self.assertEqual(bridge.config_path().read_bytes(), before)
 
+    def test_primary_gui_offers_confirmed_launcher_only_repair(self):
+        # Static integration guard: GTK itself runs in the separate native CI
+        # build, while the logic lives in the source-only Steam Bridge helper.
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn("pc2_bridge_has_stale_launcher", ui)
+        self.assertIn(
+            'strstr(reason,"Installed Steam Bridge launcher is outdated or unverified:")',
+            ui
+        )
+        self.assertIn('title="Update Steam Bridge"', ui)
+        self.assertIn(
+            'else if(pc2_bridge_has_stale_launcher(state,pc2_bridge_ready_reason))',
+            ui
+        )
+        self.assertIn('pc2_steam_bridge_action("upgrade");', ui)
+        self.assertIn(
+            'else if(!strcmp(state,"steam")||!strcmp(state,"repair"))',
+            ui
+        )
+        self.assertIn(
+            'if(global_upgrade)', ui
+        )
+        self.assertIn(
+            'GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui
+        )
+
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
         with patch.dict(os.environ, self.env):
             bridge.register(self.steam, source=SCRIPT)
