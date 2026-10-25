@@ -85,9 +85,46 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             report = bridge.format_status("2353250")
             self.assertIn("GameWeld Bridge AppID: 2353250", report)
             self.assertIn("Trainer auto-start: ENABLED", report)
-            self.assertIn("Actual Steam compatibility-tool selection: NOT VERIFIED", report)
+            self.assertIn("Steam Compatibility selection: UNVERIFIED", report)
+            self.assertIn("Enhancer patch prerequisites: MISSING or unverified", report)
             self.assertEqual(bridge.config_path().read_bytes(), prior)
             self.assertIn("NOT CONFIGURED", bridge.format_status("2353251"))
+
+    def test_saved_steam_selection_status_is_read_only_and_exact_appid_scoped(self):
+        local = self.steam / "userdata/100/config/localconfig.vdf"
+        local.parent.mkdir(parents=True, exist_ok=True)
+        with patch.dict(os.environ, self.env):
+            self.assertIn(
+                "UNVERIFIED",
+                bridge.steam_compat_selection("2353250", steam_roots=[self.steam]))
+            local.write_text(
+                '"UserLocalConfigStore" {\n'
+                '  "Software" { "Valve" { "Steam" {\n'
+                '    "CompatToolMapping" {\n'
+                '      "2353250" { "name" "gameweld-bridge-experimental" "config" "" "priority" "250" }\n'
+                '      "2353251" { "name" "Proton Experimental" "config" "" "priority" "250" }\n'
+                '    }\n'
+                '  } } }\n'
+                '}\n', encoding="utf-8")
+            original = local.read_bytes()
+            self.assertIn(
+                "GAMEWELD BRIDGE SELECTED",
+                bridge.steam_compat_selection("2353250", steam_roots=[self.steam]))
+            self.assertIn(
+                "OTHER TOOL SELECTED",
+                bridge.steam_compat_selection("2353251", steam_roots=[self.steam]))
+            self.assertEqual(local.read_bytes(), original)
+            with self.assertRaises(ValueError):
+                bridge.steam_compat_selection("2353250;rm", steam_roots=[self.steam])
+
+    def test_status_reports_patch_file_presence_without_claiming_runtime_load(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            (self.client / "version.dll").write_bytes(b"test")
+            (self.client / "resources/app.asar.backup").write_bytes(b"original")
+            report = bridge.format_status("2353250")
+            self.assertIn("PRESENT (files only; DLL runtime loading not verified)", report)
+            self.assertIn("Steam Compatibility selection:", report)
 
     def test_confirmed_existing_game_trainer_toggle_preserves_paths(self):
         with patch.dict(os.environ, self.env):
