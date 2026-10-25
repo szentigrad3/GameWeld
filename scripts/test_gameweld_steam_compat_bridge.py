@@ -140,6 +140,40 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not yet configured"):
                 bridge.set_trainer_enabled("2353251", True)
 
+    def test_read_only_first_time_readiness_uses_prefix_proton_evidence(self):
+        game = self.steam / "steamapps/common/ASTROMETICA"
+        game.mkdir()
+        (self.steam / "steamapps/appmanifest_2353250.acf").write_text("manifest")
+        compat = self.steam / "steamapps/compatdata/2353250"
+        (compat / "pfx").mkdir(parents=True)
+        (self.proton.parent / "files").mkdir()
+        (compat / "config_info").write_text(
+            str(self.proton.parent / "files") + "\n", encoding="utf-8")
+        managed = self.data / "gameweld/deckcheatz/wemod_data/wemod_bin"
+        (managed / "resources").mkdir(parents=True)
+        (managed / "WeMod.exe").write_bytes(b"MZ")
+        (managed / "resources/app.asar").write_bytes(b"ASAR")
+        with patch.dict(os.environ, self.env):
+            report = bridge.format_status(
+                "2353250", game_dir=game, steam_root=self.steam)
+            self.assertIn("First-time setup readiness: READY (read-only)", report)
+            self.assertIn("Exact Proton candidate: " + str(self.proton), report)
+            self.assertIn("Existing managed WeMod client: " + str(managed), report)
+            self.assertIn("WeMod auto-start DISABLED", report)
+            self.assertFalse(bridge.config_path().exists())
+            self.assertFalse((self.steam / "compatibilitytools.d").exists())
+
+    def test_first_time_readiness_blocker_does_not_change_game(self):
+        game = self.steam / "steamapps/common/ASTROMETICA"
+        game.mkdir()
+        (self.steam / "steamapps/appmanifest_2353250.acf").write_text("manifest")
+        with patch.dict(os.environ, self.env):
+            report = bridge.format_status(
+                "2353250", game_dir=game, steam_root=self.steam)
+            self.assertIn("First-time setup readiness: BLOCKED", report)
+            self.assertIn("No exact Proton mapping or prefix runtime hint", report)
+            self.assertFalse(bridge.config_path().exists())
+
     def test_setup_registers_new_game_only_without_changing_steam_config(self):
         game = self.steam / "steamapps/common/ASTROMETICA"
         game.mkdir()
