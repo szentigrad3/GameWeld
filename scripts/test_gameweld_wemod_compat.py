@@ -93,6 +93,43 @@ class WeModCompatTests(unittest.TestCase):
             self.assertEqual(manifest["asar_sha256"],
                              hashlib.sha256((output / "resources/app.asar").read_bytes()).hexdigest())
 
+    def test_accepts_only_hash_matching_local_package(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            package = base / "official.nupkg"
+            fixture_package(package)
+            digest = hashlib.sha256(package.read_bytes()).hexdigest()
+            dest = base / "stage" / "11.6.0"
+            # Inject only the expected hash in the fixture, not the program.
+            with patch.object(compat, "SHA256", digest):
+                compat.stage(dest, package_path=package)
+            self.assertTrue(compat.installed(dest))
+            import json
+            data = json.loads((dest / ".gameweld-baseline.json").read_text())
+            self.assertEqual(data["package_sha256"], digest)
+            self.assertEqual(package.read_bytes()[:2], b"PK")
+
+    def test_local_package_bad_hash_never_staged(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            package = base / "official.nupkg"
+            fixture_package(package)
+            destination = base / "stage" / "11.6.0"
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                compat.stage(destination, package_path=package)
+            self.assertFalse(destination.exists())
+
+    def test_403_message_preserves_previous_install(self):
+        from urllib.error import HTTPError
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            destination = base / "stage" / "11.6.0"
+            with patch.object(compat, "download", side_effect=HTTPError(
+                    compat.PACKAGE_URL, 403, "Forbidden", {}, None)):
+                with self.assertRaisesRegex(ValueError, "HTTP 403.*--package"):
+                    compat.stage(destination)
+            self.assertFalse(destination.exists())
+
     def test_existing_install_is_not_replaced(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "client"
