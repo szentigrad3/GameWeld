@@ -48,6 +48,11 @@ jobs:
           python3 scripts/pc2-review-dependencies.py \
             --inventory build/pc2-source/ubuntu-dependency-inventory.json \
             --report build/pc2-source/ubuntu-dependency-review.json
+      - name: Report static runtime dependency gaps (private, non-blocking)
+        run: |
+          python3 scripts/pc2-audit-runtime-closure.py \
+            --appdir build/pc2-source/private-AppDir \
+            --report build/pc2-source/ubuntu-runtime-closure.json
       - name: Record host dependency and ELF metadata
         run: |
           file build/pc2-source/private-AppDir/usr/bin/gameweld
