@@ -5261,7 +5261,20 @@ static GtkWidget *build_settings(void){
         pack(right,advanced_wemod,0);
         wand_detect_start();
     }
-    GtkWidget*scard=box(GTK_ORIENTATION_VERTICAL,8);style(scard,"card");pack(scard,label("Steam Direct Launch Cleanup","card-title"),0);GtkWidget*sd=label("Older pre-GameWeld builds could leave the legacy wand-steam-wrap hook in a game's Steam Launch Options. Steam can still invoke that obsolete hook and leave a terminal attached to the game. This cleanup removes only LaunchOptions entries that still reference wand-steam-wrap and creates a timestamped localconfig.vdf backup first.","muted");gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(scard,sd,0);GtkWidget*sbtn=button("Remove Legacy Steam Hooks","action");g_signal_connect_data(sbtn,"clicked",(GCallback)on_clean_legacy_hooks,NULL,NULL,0);pack(scard,sbtn,0);G.steam_cleanup_status=label("After cleanup, restart Steam once before testing direct Play.","good");gtk_label_set_line_wrap((GtkLabel*)G.steam_cleanup_status,TRUE);pack(scard,G.steam_cleanup_status,0);pack(right,scard,0);pack(right,card("Safety","Use native profiles, local trainers and Cheat Engine tables for single-player/offline games. Do not use them in anti-cheat protected or competitive multiplayer modes. No provider bypasses anti-cheat systems.",NULL),0);return outer;}
+    GtkWidget*legacy_clean=gtk_expander_new("Legacy Steam Hook Cleanup (advanced)");
+    gtk_expander_set_expanded(legacy_clean,FALSE);
+    GtkWidget*scard=box(GTK_ORIENTATION_VERTICAL,8);style(scard,"card");
+    margins(scard,8);
+    GtkWidget*sd=label("Only for older GameWeld installs that left wand-steam-wrap inside Steam Launch Options. Creates a backup before removing that obsolete launch hook; normal Steam Bridge setups do not require this.","muted");
+    gtk_label_set_line_wrap((GtkLabel*)sd,TRUE);pack(scard,sd,0);
+    GtkWidget*sbtn=button("Remove Legacy Steam Hooks","action");
+    g_signal_connect_data(sbtn,"clicked",(GCallback)on_clean_legacy_hooks,NULL,NULL,0);
+    pack(scard,sbtn,0);
+    G.steam_cleanup_status=label("After cleanup, restart Steam once.","muted");
+    gtk_label_set_line_wrap((GtkLabel*)G.steam_cleanup_status,TRUE);
+    pack(scard,G.steam_cleanup_status,0);
+    gtk_container_add(legacy_clean,scard);
+    pack(right,legacy_clean,0);pack(right,card("Safety","Use native profiles, local trainers and Cheat Engine tables for single-player/offline games. Do not use them in anti-cheat protected or competitive multiplayer modes. No provider bypasses anti-cheat systems.",NULL),0);return outer;}
 static GtkWidget *build_about(void){
     if(pc2_discovery_only()){
         GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);
