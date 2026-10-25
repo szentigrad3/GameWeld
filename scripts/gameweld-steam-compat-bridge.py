@@ -356,6 +356,16 @@ def play_configured_game(appid: str, *, launch=None,
             "GameWeld Bridge is not registered in the selected Steam installation; "
             "run Bridge setup before requesting Steam Play"
         )
+    # The repository script can be newer than the copy Steam actually runs.
+    # A saved GPU fallback is not effective until that registered copy is synced.
+    launcher_state = bridge_launcher_sync()
+    if launcher_state != "UP TO DATE":
+        raise ValueError(
+            "Installed Steam Bridge launcher is outdated or unverified: "
+            + launcher_state
+            + ". Update only the registered Bridge launcher before Play; "
+              "Steam settings and the game's Proton prefix do not need changing."
+        )
     if launch is None or associated_processes is None:
         source = Path(__file__).with_name("gameweld-steam-handoff.py")
         if not source.is_file():
@@ -415,6 +425,14 @@ def primary_ui_state(appid: str) -> tuple[str, str]:
     if not ((client / "version.dll").is_file()
             and (client / "resources/app.asar.backup").is_file()):
         return "repair", "WeMod Enhancer patch prerequisites are missing; check Advanced Providers."
+    launcher_state = bridge_launcher_sync()
+    if launcher_state != "UP TO DATE":
+        return "repair", (
+            "Installed Steam Bridge launcher is outdated or unverified: "
+            + launcher_state
+            + ". Update the registered Bridge launcher in Advanced Providers; "
+              "the game prefix and Steam settings do not need changing."
+        )
     return "play", "Steam Bridge and WeMod are configured. Launch still requires confirmation."
 
 
