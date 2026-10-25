@@ -78,6 +78,31 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             bridge.configure("2353250", self.proton, self.client)
             self.assertEqual(config_file.read_bytes(), b"existing launch options: preserve exactly")
 
+    def test_status_reports_saved_configuration_without_changes(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            prior = bridge.config_path().read_bytes()
+            report = bridge.format_status("2353250")
+            self.assertIn("GameWeld Bridge AppID: 2353250", report)
+            self.assertIn("Trainer auto-start: ENABLED", report)
+            self.assertIn("Actual Steam compatibility-tool selection: NOT VERIFIED", report)
+            self.assertEqual(bridge.config_path().read_bytes(), prior)
+            self.assertIn("NOT CONFIGURED", bridge.format_status("2353251"))
+
+    def test_confirmed_existing_game_trainer_toggle_preserves_paths(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("2353250", self.proton, self.client, enabled=True, delay=21)
+            self.assertFalse(bridge.set_trainer_enabled("2353250", False))
+            entry = bridge.load_config()["2353250"]
+            self.assertFalse(entry["trainer_enabled"])
+            self.assertEqual(entry["delay_seconds"], 21)
+            self.assertEqual(entry["client"], str(self.client.resolve()))
+            self.assertEqual(entry["proton"], str(self.proton.resolve()))
+            self.assertTrue(bridge.set_trainer_enabled("2353250", True))
+            self.assertIn("Trainer auto-start: ENABLED", bridge.format_status("2353250"))
+            with self.assertRaisesRegex(ValueError, "not yet configured"):
+                bridge.set_trainer_enabled("2353251", True)
+
     def test_runtime_comes_from_exact_configured_proton(self):
         with patch.dict(os.environ, self.env):
             runtime = (self.steam /
