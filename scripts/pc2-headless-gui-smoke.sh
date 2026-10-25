@@ -11,8 +11,10 @@ TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 mkdir -p "$TMP/home" "$TMP/config" "$TMP/data" "$TMP/cache"
 LOG="$TMP/gui.log"
+DURATION="${GAMEWELD_GUI_SMOKE_SECONDS:-8}"
+[[ "$DURATION" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: invalid smoke duration" >&2; exit 2; }
 set +e
-timeout 8s xvfb-run -a env \
+timeout "${DURATION}s" xvfb-run -a env \
   HOME="$TMP/home" \
   XDG_CONFIG_HOME="$TMP/config" \
   XDG_DATA_HOME="$TMP/data" \
@@ -23,7 +25,7 @@ timeout 8s xvfb-run -a env \
 status=$?
 set -e
 if [[ "$status" -eq 124 ]]; then
-  echo "PASS: private GTK GUI remained running for 8 seconds under Xvfb."
+  echo "PASS: private GTK GUI remained running for ${DURATION} seconds under Xvfb."
   echo "LIMITATION: no interactive GUI, Steam, WeMod, clean distro, or bundled-library verification."
   exit 0
 fi
