@@ -42,8 +42,29 @@ The already-patched WeMod installation must exist. This does not patch WeMod, in
 
 Per-session logs: ~/.local/state/gameweld/steam-bridge-<appid>-*.log
 
+## GameWeld PC2 GUI controls
+
+In the PC2 development GUI, select an installed Steam title and open the
+WeMod Enhancer settings area. The **Steam Bridge — Verified Runtime Path**
+panel now offers:
+
+- **Check selected game** (read-only; displays saved Bridge Proton/client paths)
+- **Enable WeMod next launch** (confirmed, per-game)
+- **Disable WeMod next launch** (confirmed, per-game)
+
+These actions only manage an **already configured** title. They do not
+install/register the compatibility tool, select it in Steam, or restart a
+running game. A first-time Steam Bridge registration still uses the command
+line and Steam Compatibility selection described above.
+
+Launch the current source GUI with:
+
+~~~bash
+bash scripts/run-pc2-source-frontend.sh
+~~~
+
 ## Recovery and limitations
 
 If the game does not start, change its Steam Compatibility selection back to **Proton Experimental**. Do not delete compatdata or run wineserver -k against the game.
 
-The prototype is a CLI helper, **not integrated into the GTK GUI yet**. It requires a one-time compatibility-tool selection in Steam, and it has not completed live Steam Runtime 4 or gameplay validation. Avoid multiplayer and anti-cheat games.
+The prototype has basic per-game GUI status and trainer toggle controls, but first-time setup and Steam tool selection are not GUI-integrated yet. It requires a one-time compatibility-tool selection in Steam, and it has not completed live Steam Runtime 4 or gameplay validation. Avoid multiplayer and anti-cheat games.
