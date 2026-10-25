@@ -305,6 +305,44 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 self.assertIn("requires confirmation", message)
                 self.assertTrue(bridge.load_config()["2353250"]["trainer_enabled"])
 
+    def test_stale_installed_launcher_blocks_ui_play_and_steam_handoff(self):
+        from unittest.mock import Mock
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            (self.client / "version.dll").write_bytes(b"fixture")
+            (self.client / "resources/app.asar.backup").write_bytes(b"fixture")
+            launcher = bridge.private_tool_dir() / "launcher.py"
+            # Simulate Steam still using the previous copy after a Git update.
+            launcher.write_bytes(launcher.read_bytes() + b"\\n# older installed launcher\\n")
+            before = bridge.config_path().read_bytes()
+            steam = self.steam / "config/config.vdf"
+            play = Mock(return_value=0)
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ):
+                state, message = bridge.primary_ui_state("2353250")
+                self.assertEqual(state, "repair")
+                self.assertIn("outdated", message)
+                self.assertIn("Advanced Providers", message)
+                with self.assertRaisesRegex(ValueError, "outdated"):
+                    bridge.play_configured_game(
+                        "2353250", launch=play,
+                        associated_processes=lambda _: 0
+                    )
+            play.assert_not_called()
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+            self.assertFalse(steam.exists())
+            # After an explicit launcher-only update, normal readiness returns.
+            bridge.upgrade_bridge(source=SCRIPT)
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ):
+                self.assertEqual(bridge.primary_ui_state("2353250")[0], "play")
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
         with patch.dict(os.environ, self.env):
             bridge.register(self.steam, source=SCRIPT)
