@@ -63,6 +63,30 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('if(job->generation==pc2_bridge_readiness_generation', text)
         self.assertIn('const char *state="blocked"', text)
 
+    def test_saved_wemod_default_uses_steam_bridge_not_disabled_pc1_backend(self):
+        launch = function_body(
+            "static void on_launch_with_wemod(GtkButton*b,void*d){",
+            "static void on_launch_with_aurora(GtkButton*b,void*d){",
+        )
+        one_click = function_body(
+            "static void on_play_default(GtkButton*b,void*d){",
+            "static void on_steam_launch_preview(GtkButton*b,void*d){",
+        )
+        bridge = function_body(
+            "static void pc2_launch_with_steam_bridge(Game *game){",
+            "static void on_pc2_bridge_setup(GtkButton*b,void*d){",
+        )
+        self.assertIn('pc2_launch_with_steam_bridge(g);return;', launch)
+        self.assertNotIn('start_job(JOB_WEMOD', launch)
+        self.assertIn('if(!strcmp(mode,"wemod")){on_launch_with_wemod(NULL,NULL);return;}', one_click)
+        self.assertIn('if(!strcmp(pc2_bridge_ready_state,"play"))', bridge)
+        self.assertIn('on_pc2_bridge_primary(NULL,NULL);', bridge)
+        self.assertIn('pc2_bridge_readiness_for_game(game);', bridge)
+        self.assertNotIn('/api/set-game', launch)
+        self.assertIn('if(!pc2_discovery_only()&&pc2_provider_controls_allowed())', text)
+        self.assertIn('pc2_bridge_readiness_for_game(g);', text)
+        self.assertIn('pc2_provider_controls_allowed()', bridge)
+
     def test_primary_action_dispatch_blocks_unready_launch(self):
         apply = function_body(
             "static void pc2_bridge_apply_primary(const char *state,const char *reason){",
