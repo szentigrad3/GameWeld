@@ -79,6 +79,25 @@ Launch the current source GUI with:
 bash scripts/run-pc2-source-frontend.sh
 ~~~
 
+## Overview: Recent Games
+
+GameWeld PC2's Overview has a compact, horizontally scrollable cover strip
+beneath the featured game. It puts up to six **recently selected** game
+identities first; remaining slots are filled from the installed Library and
+identified as such. The strip does **not** claim Steam playtime or recent
+launch history.
+
+Clicking a tile **only selects that title** and updates the featured game.
+The existing **Play with WeMod** action still separately requests and
+confirms a Steam Bridge launch; a tile never invokes Proton, installs a
+trainer, or modifies Steam settings.
+
+The selected-game history is saved locally in
+`~/.config/gameweld/pc2-recent-games.txt` (or the equivalent
+`XDG_CONFIG_HOME` path), limited to six game identifiers. No account
+details or game runtime logs are stored there. Removing that file clears
+just the Overview's recent-selection order.
+
 ## Main Play with WeMod buttons
 
 Overview → **Play with WeMod** and Library → **Play with WeMod** now use
