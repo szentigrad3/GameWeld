@@ -17,7 +17,9 @@ gcc -fsyntax-only -Werror=implicit-function-declaration -pthread \
     -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
     $(pkg-config --cflags gtk+-3.0) \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
-grep -Fq 'Launch Wand in Running Steam Game (opt-in)' \
+! grep -Fq 'GtkWidget*live_launch=button(' \
+    "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
+grep -Fq 'Steam Bridge — Game + WeMod' \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
 grep -Fq 'live-launch' "$ROOT/scripts/gameweld-wemod-enhancer.py"
 {
@@ -31,11 +33,11 @@ grep -Fq 'live-launch' "$ROOT/scripts/gameweld-wemod-enhancer.py"
   echo 'Patch/Restore never auto-select among multiple clients: PASS'
   echo 'Rejects ambiguous live prefixes: PASS'
   echo 'Launches fake Proton with exact prefix and version DLL override: PASS'
-  echo 'Explicit GUI and CLI confirmation gate: PRESENT'
+  echo 'CLI diagnostic confirmation preserved; failed legacy GUI launch removed: PASS'
   echo 'Patch/restore of real Wand client: NOT ATTEMPTED'
   echo 'Real game or Wand launched: false'
   echo 'Real in-game trainer attachment: NOT TESTED'
-  echo 'Field check: Open real Astrometica through Steam, select its patched Wand client in GameWeld, then use Launch Wand in Running Steam Game (opt-in).'
+  echo 'Field check: Launch Astrometica with GameWeld Bridge selected in Steam and check WeMod in-game.'
 } >"$REPORT"
 cat "$REPORT"
 printf 'Report: %s\n' "$REPORT"
