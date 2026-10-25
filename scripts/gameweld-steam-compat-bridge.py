@@ -434,6 +434,24 @@ def set_trainer_enabled(appid: str, enabled: bool) -> bool:
     return enabled
 
 
+def set_trainer_gpu_fallback(appid: str, enabled: bool) -> bool:
+    """Opt-in Electron rendering workaround for just this WeMod launch.
+
+    Does not change the game's graphics, Steam options or other AppIDs.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid Steam AppID for WeMod display workaround")
+    config = load_config()
+    entry = config.get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("This game has no configured Steam Bridge")
+    validate_proton(Path(entry["proton"]))
+    validate_client(Path(entry["client"]))
+    entry["wemod_disable_gpu"] = bool(enabled)
+    write_config(config)
+    return enabled
+
+
 def game_appid() -> str:
     compat = os.environ.get("STEAM_COMPAT_DATA_PATH", "")
     if compat and Path(compat).name.isdecimal():
@@ -480,9 +498,11 @@ def start_trainer(entry: dict, appid: str, proton: Path) -> subprocess.Popen | N
     env["WINEDLLOVERRIDES"] = ";".join(filter(None, (env["WINEDLLOVERRIDES"], "version=n,b")))
     with log.open("xb") as stream:
         stream.write(b"GameWeld Steam bridge: unverified WeMod runtime\n")
+        stream.write(("WeMod GPU fallback: " + ("enabled" if entry.get("wemod_disable_gpu") is True else "disabled") + "\n").encode())
         stream.flush()
         child = subprocess.Popen(
-            [str(proton), "runinprefix", str(client / "WeMod.exe")],
+            [str(proton), "runinprefix", str(client / "WeMod.exe")]
+            + (["--disable-gpu"] if entry.get("wemod_disable_gpu") is True else []),
             cwd=client, env=env, stdin=subprocess.DEVNULL,
             stdout=stream, stderr=subprocess.STDOUT,
         )
@@ -634,6 +654,8 @@ def format_status(appid: str | None = None, *,
                 "\nConfigured WeMod: " + str(entry.get("client", "")) +
                 "\nTrainer auto-start: " +
                 ("ENABLED" if entry.get("trainer_enabled") else "DISABLED") +
+                "\nWeMod GPU fallback: " +
+                ("ENABLED (WeMod.exe --disable-gpu)" if entry.get("wemod_disable_gpu") is True else "DISABLED (default)") +
                 "\nSteam Compatibility selection: " +
                 steam_compat_selection(appid, configured_proton=Path(entry.get("proton", ""))) +
                 "\nInstalled Steam Bridge launcher: " + bridge_launcher_sync() +
@@ -650,9 +672,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -710,6 +732,13 @@ def main() -> int:
             print(f"GameWeld Bridge trainer for AppID {args.appid}: " +
                   ("ENABLED" if enabled else "DISABLED"))
             print("Takes effect on the next Steam game launch; no Steam settings or running processes changed.")
+        elif args.action in {"trainer-gpu-off", "trainer-gpu-on"}:
+            if not args.appid:
+                raise ValueError("WeMod display workaround requires --appid")
+            disable_gpu = set_trainer_gpu_fallback(args.appid, args.action == "trainer-gpu-off")
+            print(f"WeMod Electron GPU rendering for AppID {args.appid}: " +
+                  ("DISABLED (--disable-gpu)" if disable_gpu else "NORMAL (default)"))
+            print("Only WeMod's next launch is affected. Game graphics, Proton selection, Steam options and other games unchanged.")
         else:
             if not all((args.appid, args.proton, args.client)):
                 raise ValueError("Configure requires --appid, --proton and --client")
