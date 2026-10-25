@@ -5437,7 +5437,7 @@ static void on_pc2_wemod_choose(GtkButton*b,void*d){
 }
 static void on_settings_open_wemod(GtkButton *button, void *notebook){
     (void)button;
-    gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook),1);
+    gtk_notebook_set_current_page((GtkNotebook*)notebook,1);
 }
 static GtkWidget *build_settings(void){
     GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);
@@ -5484,8 +5484,8 @@ static GtkWidget *build_settings(void){
         pack(advancedpage,card("Optional integrations and maintenance",
             "Use WeMod & DeckCheatz for the recommended Steam setup. Expand the tools below only for Wand, WeMod Enhancer patching, local trainers or Cheat Engine.",NULL),0);
         GtkWidget*advanced_expander=gtk_expander_new("Wand, WeMod Enhancer, Cheat Engine and local trainers (advanced)");
-        gtk_expander_set_expanded(GTK_EXPANDER(advanced_expander),FALSE);
-        gtk_container_add(GTK_CONTAINER(advanced_expander),cols);
+        gtk_expander_set_expanded(advanced_expander,FALSE);
+        gtk_container_add(advanced_expander,cols);
         pack(advancedpage,advanced_expander,0);
         gtk_notebook_append_page((GtkNotebook*)tabs,quick,label("Quick Start",NULL));
         gtk_notebook_append_page((GtkNotebook*)tabs,deckpage,label("WeMod & DeckCheatz",NULL));
