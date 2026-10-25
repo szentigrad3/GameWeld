@@ -89,6 +89,17 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('!strcmp(G.games[G.selected].appid,job->appid)', done)
         self.assertIn('const char *state="blocked"', done)
 
+    def test_source_runner_wires_current_gui_and_bridge_helper(self):
+        runner = (SOURCE.parents[3] / "scripts/run-pc2-source-frontend.sh").read_text(encoding="utf-8")
+        self.assertIn('gameweld-native-040.c', runner)
+        self.assertIn('-DGAMEWELD_PC2_DISCOVERY_ONLY=1', runner)
+        self.assertIn('export APPDIR="$APPDIR_DEV"', runner)
+        self.assertIn('gameweld-*.py', runner)
+        self.assertIn('ln -sfn -- "$helper" "$LIBEXEC/${helper##*/}"', runner)
+        self.assertIn('exec "$OUT/gameweld" "$@"', runner)
+        self.assertIn('gameweld-steam-compat-bridge.py', text)
+        self.assertIn('"ui-state","--appid",job->appid', text)
+
     def test_overview_is_game_first_without_visible_pc2_diagnostics(self):
         overview = function_body("static GtkWidget *build_home(void){",
                                  "/* PC2 Library width adapts")
