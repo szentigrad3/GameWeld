@@ -10,6 +10,8 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 
 BRIDGE = Path(__file__).with_name("gameweld-wemod-enhancer.py")
@@ -34,7 +36,33 @@ def read_namespace(pid: str, proc: Path = Path("/proc")) -> str:
         return "unavailable"
 
 
-def audit(session: dict, proc: Path = Path("/proc")) -> str:
+def game_launcher_service_owned(appid: str) -> bool | None:
+    """Probe D-Bus NameHasOwner only; never activate or configure a service."""
+    if not appid.isascii() or not appid.isdecimal():
+        raise ValueError("Steam AppID must contain digits only")
+    binary = shutil.which("gdbus")
+    if not binary:
+        return None
+    try:
+        process = subprocess.run([
+            binary, "call", "--session", "--dest", "org.freedesktop.DBus",
+            "--object-path", "/org/freedesktop/DBus",
+            "--method", "org.freedesktop.DBus.NameHasOwner",
+            "com.steampowered.App" + appid,
+        ], check=False, capture_output=True, text=True, timeout=4)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if process.returncode != 0:
+        return None
+    result = process.stdout.strip().lower()
+    if result == "(true,)":
+        return True
+    if result == "(false,)":
+        return False
+    return None
+
+
+def audit(session: dict, proc: Path = Path("/proc"), *, appid: str | None = None) -> str:
     proton = Path(session["proton"])
     manifest = proton.parent / "toolmanifest.vdf"
     appid = None
@@ -46,6 +74,10 @@ def audit(session: dict, proc: Path = Path("/proc")) -> str:
                if runtime_name else None)
     game_ns = read_namespace(str(session["game_pid"]), proc)
     host_ns = read_namespace("self", proc)
+    launcher_client = (steamroot / "steamapps/common" / runtime_name /
+                       "pressure-vessel/bin/steam-runtime-launch-client"
+                       if runtime_name else None)
+    available_service = game_launcher_service_owned(appid) if appid else None
     lines = [
         "=== GAMEWELD STEAM RUNTIME CONTEXT (READ ONLY) ===",
         f"Game PID: {session['game_pid']}",
@@ -59,6 +91,11 @@ def audit(session: dict, proc: Path = Path("/proc")) -> str:
         f"Game mount namespace: {game_ns}",
         f"GameWeld audit mount namespace: {host_ns}",
         f"Mount namespaces differ: {game_ns != host_ns if game_ns != 'unavailable' and host_ns != 'unavailable' else 'unknown'}",
+        f"Steam runtime launch-client: {launcher_client if launcher_client else 'not found'}",
+        f"Steam runtime launch-client exists: {bool(launcher_client and launcher_client.is_file())}",
+        f"Existing game launcher service: " +
+            (("AVAILABLE" if available_service else "NOT ACTIVE") if available_service is not None else "UNVERIFIED"),
+        "The game launcher service is opt-in; an inactive service cannot be joined from GameWeld.",
         "Current GameWeld direct-Wine mode does not independently enter the Steam Linux Runtime.",
         "Different namespaces alone do not prove the GPU error's cause.",
         "No Proton instance or game prefix was modified.",
@@ -82,7 +119,7 @@ def main() -> int:
     except (ValueError, OSError) as exc:
         print("Runtime audit blocked: " + str(exc), file=sys.stderr)
         return 1
-    print(audit(session))
+    print(audit(session, appid=args.appid))
     return 0
 
 
