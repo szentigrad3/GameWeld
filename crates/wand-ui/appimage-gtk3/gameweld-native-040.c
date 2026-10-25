@@ -2844,7 +2844,7 @@ static GtkWidget *build_home(void){
     GtkWidget*outer=gtk_scrolled_window_new(NULL,NULL);gtk_scrolled_window_set_policy((GtkScrolledWindow*)outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);style(outer,"page-shell");
     GtkWidget*page=box(GTK_ORIENTATION_VERTICAL,14);gtk_widget_set_name(page,"page");margins(page,20);gtk_container_add(outer,page);
 
-    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("OVERVIEW","page-kicker"),0);pack(ht,label("Your game, runtime and trainer in one place","workspace-title"),0);pack(ht,label(pc2_discovery_only()?"PC2 SOURCE TEST • Steam / Heroic / Lutris discovery. Legacy trainer controls remain disabled; game-only Steam launch requires explicit opt-in.":"GameWeld keeps launcher-native sessions intact and gives every game one Launch With surface for trainers and manager providers.","page-subtitle"),0);pack(head,ht,1);GtkWidget*online=label(pc2_discovery_only()?"●  Library discovery active":"●  Services ready","good");gtk_widget_set_name(online,"status-pill");pack(head,online,0);pack(page,head,0);
+    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("OVERVIEW","page-kicker"),0);pack(ht,label("Your game, runtime and trainer in one place","workspace-title"),0);pack(ht,label(pc2_discovery_only()?"Choose a game and play. Steam Bridge runs WeMod alongside supported Steam games in their Proton runtime.":"GameWeld keeps launcher-native sessions intact and gives every game one Launch With surface for trainers and manager providers.","page-subtitle"),0);pack(head,ht,1);GtkWidget*online=label(pc2_discovery_only()?"●  Library discovery active":"●  Services ready","good");gtk_widget_set_name(online,"status-pill");pack(head,online,0);pack(page,head,0);
 
     GtkWidget*spot=box(GTK_ORIENTATION_HORIZONTAL,16);gtk_widget_set_name(spot,"spotlight");
     GtkWidget*copy=box(GTK_ORIENTATION_VERTICAL,12);gtk_widget_set_name(copy,"spotlight-copy");gtk_widget_set_size_request(copy,390,-1);
@@ -2861,38 +2861,9 @@ static GtkWidget *build_home(void){
         pack(copy,G.pc2_deckcheatz_overview_status,0);
     }
     GtkWidget*plays=box(GTK_ORIENTATION_HORIZONTAL,8);gtk_widget_set_name(plays,"launch-panel");G.play_button=launch_button(1);g_signal_connect_data(G.play_button,"clicked",(GCallback)on_play_default,NULL,NULL,0);pack(plays,G.play_button,1);GtkWidget*normal=launch_button(0);G.overview_launch_game_only=normal;gtk_widget_set_size_request(normal,170,62);g_signal_connect_data(normal,"clicked",(GCallback)on_play_normal,NULL,NULL,0);pack(plays,normal,0);pack(copy,plays,0);if(pc2_discovery_only()){gtk_widget_set_no_show_all(plays,TRUE);gtk_widget_hide(plays);}
-    if(pc2_discovery_only()){
-        GtkWidget*advanced=gtk_expander_new("Advanced Steam / WeMod diagnostics");
-        GtkWidget*diagbox=box(GTK_ORIENTATION_VERTICAL,8);
-        gtk_container_add(advanced,diagbox);
-        pack(copy,advanced,0);
-        GtkWidget*safe=button("Launch Steam game only (opt-in)","action");
-        gtk_widget_set_sensitive(safe,pc2_steam_launch_allowed());
-        g_signal_connect_data(safe,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);
-        pack(diagbox,safe,0);
-        GtkWidget*observe=button("Check Steam session (read-only)","action");
-        g_signal_connect_data(observe,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);
-        pack(diagbox,observe,0);
-        GtkWidget*wand_check=button("Check Wand Patch (no game launch)","action");
-        g_signal_connect_data(wand_check,"clicked",(GCallback)on_pc2_wemod_verify_selected,NULL,NULL,0);
-        pack(diagbox,wand_check,0);
-        GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");
-        g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);
-        pack(diagbox,deckcheatz_detect,0);
-        GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");
-        g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);
-        pack(diagbox,deckcheatz_install,0);
-        GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");
-        g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);
-        pack(diagbox,deckcheatz_preview,0);
-        GtkWidget*notice=label(
-            "For the working Steam + WeMod same-runtime path, use the Steam Bridge "
-            "controls in Settings → Advanced Providers. Legacy host-Wine and "
-            "alternate Proton launch experiments are no longer offered here.",
-            "muted");
-        gtk_label_set_line_wrap((GtkLabel*)notice,TRUE);
-        pack(diagbox,notice,0);
-    }
+    /* PC2 Overview is a game-first landing page. Keep Steam/session, Wand
+     * and DeckCheatz diagnostics in Settings/Support instead of displaying
+     * the legacy experimental launch toolbox under Play with WeMod. */
     pack(spot,copy,0);
     GtkWidget*art=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(art,"hero-art");G.hero_image=gtk_image_new();gtk_widget_set_size_request(G.hero_image,520,300);pack(art,G.hero_image,1);pack(spot,art,1);pack(page,spot,0);
 
@@ -2914,6 +2885,14 @@ static GtkWidget *build_home(void){
     GtkWidget*activity=box(GTK_ORIENTATION_VERTICAL,8);style(activity,"panel");GtkWidget*ah=box(GTK_ORIENTATION_HORIZONTAL,8);GtkWidget*aht=box(GTK_ORIENTATION_VERTICAL,1);pack(aht,label("ACTIVITY","section-kicker"),0);pack(aht,label("Current session events","card-title"),0);pack(ah,aht,1);GtkWidget*clear=button("Clear","action");pack(ah,clear,0);pack(activity,ah,0);G.activity=gtk_text_view_new();gtk_text_view_set_editable((GtkTextView*)G.activity,FALSE);gtk_text_view_set_cursor_visible((GtkTextView*)G.activity,FALSE);gtk_text_view_set_monospace((GtkTextView*)G.activity,TRUE);gtk_widget_set_name(G.activity,"logframe");GtkWidget*asc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_size_request(asc,-1,220);gtk_container_add(asc,G.activity);pack(activity,asc,1);pack(lower,activity,1);
 
     GtkWidget*context=box(GTK_ORIENTATION_VERTICAL,9);style(context,"panel");gtk_widget_set_size_request(context,275,-1);pack(context,label("SESSION CONTEXT","section-kicker"),0);G.right_game=label("Game source: Not selected\nGame: —\nRuntime: —","muted");gtk_label_set_line_wrap((GtkLabel*)G.right_game,TRUE);pack(context,G.right_game,0);G.right_prefix=label("Prefix: —","good");gtk_label_set_line_wrap((GtkLabel*)G.right_prefix,TRUE);pack(context,G.right_prefix,0);pack(context,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);G.right_wand=label("Provider: —\nTrainer: —","muted");gtk_label_set_line_wrap((GtkLabel*)G.right_wand,TRUE);pack(context,G.right_wand,0);G.right_proton=label("Runtime: —\nStatus: —","good");gtk_label_set_line_wrap((GtkLabel*)G.right_proton,TRUE);pack(context,G.right_proton,0);pack(context,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(context,label("QUICK ACTIONS","section-kicker"),0);GtkWidget*h=quick_button("utilities-system-monitor-symbolic","Check trainer health");GtkWidget*rp=quick_button("applications-engineering-symbolic","Repair compatibility");GtkWidget*gf=quick_button("folder-open-symbolic","Open game folder");GtkWidget*sp=quick_button("external-link-symbolic","Open store page");G.quick_store=sp;g_signal_connect_data(h,"clicked",(GCallback)on_health,NULL,NULL,0);g_signal_connect_data(rp,"clicked",(GCallback)on_setup,NULL,NULL,0);g_signal_connect_data(gf,"clicked",(GCallback)on_game_folder,NULL,NULL,0);g_signal_connect_data(sp,"clicked",(GCallback)on_steam_page,NULL,NULL,0);pack(context,h,0);pack(context,rp,0);pack(context,gf,0);pack(context,sp,0);pack(lower,context,0);pack(page,lower,1);
+    if(pc2_discovery_only()){
+        /* Keep the old readiness/log/context widgets allocated for existing
+         * refresh and log callbacks, but remove all three diagnostic panels
+         * from the PC2 Overview. no-show-all prevents show_all from
+         * resurrecting the panel on subsequent navigation. */
+        gtk_widget_set_no_show_all(lower,TRUE);
+        gtk_widget_hide(lower);
+    }
     return outer;
 }
 
