@@ -22,6 +22,10 @@ class PackageOwnerTests(unittest.TestCase):
         with patch.object(module.subprocess,"run",side_effect=fake_run):
             self.assertEqual(module.owner("/lib/x86_64-linux-gnu/libgtk-3.so.0"),"libgtk-3-0:amd64")
         self.assertIn("/usr/lib/x86_64-linux-gnu/libgtk-3.so.0",queried)
+    def test_linux_loader_is_explicit_host_runtime(self):
+        self.assertIn('name.startswith(("ld-linux-", "ld-musl-"))', script.read_text())
+        self.assertIn('"host_provided_dynamic_loaders"', script.read_text())
+
     def test_unknown_owner_remains_unverified(self):
         with patch.object(module.subprocess,"run",return_value=SimpleNamespace(returncode=1,stdout="")):
             self.assertIsNone(module.owner("/lib/example/libunknown.so.0"))
