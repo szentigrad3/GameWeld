@@ -32,6 +32,22 @@ class WeModLogAuditTests(unittest.TestCase):
             self.assertIn("version.dll builtin loads: 0", report)
             self.assertIn("history may be incomplete", report)
 
+    def test_details_classifies_gpu_codes_and_non_gpu_startup_errors(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "wand-live-2353250-1.log"
+            path.write_text(
+                "GameWeld live\n"
+                "[x:ERROR:gpu_process_host.cc] GPU process launch failed: error_code=43\n"
+                "[x:ERROR:gpu_process_host.cc] GPU process launch failed: error_code=43\n"
+                "[x:ERROR:gpu_process_host.cc] GPU process launch failed: error_code=39\n"
+                "err:mscoree:load_mono runtime missing\n"
+            )
+            output = audit.audit(path, details=True)
+            self.assertIn("GPU failure codes: 39=1, 43=2", output)
+            self.assertIn("err:mscoree:load_mono runtime missing", output)
+            self.assertIn("First log lines (up to 18)", output)
+            self.assertNotIn("GPU failure codes:", audit.audit(path))
+
     def test_newest_log_selects_per_launch_filename(self):
         with tempfile.TemporaryDirectory() as root:
             state = Path(root)
