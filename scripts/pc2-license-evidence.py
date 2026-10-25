@@ -12,13 +12,23 @@ import subprocess
 import sys
 
 def owner(path):
-    result = subprocess.run(["dpkg-query", "-S", str(path)], capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-    for line in result.stdout.splitlines():
-        # package names may contain architecture qualifiers, e.g. libgtk-3-0:amd64
-        if ": " in line:
-            return line.split(": ", 1)[0].split(",")[0]
+    candidate = Path(path)
+    paths = [candidate]
+    if str(candidate).startswith("/lib/"):
+        paths.append(Path("/usr" + str(candidate)))
+    paths.append(candidate.resolve())
+    seen = set()
+    for probe in paths:
+        key = str(probe)
+        if key in seen:
+            continue
+        seen.add(key)
+        result = subprocess.run(["dpkg-query", "-S", key], capture_output=True, text=True)
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            if ": " in line:
+                return line.split(": ", 1)[0].split(",")[0]
     return None
 
 def main():
