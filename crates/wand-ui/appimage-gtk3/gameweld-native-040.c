@@ -601,6 +601,7 @@ static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
 static void on_pc2_deckcheatz_update(GtkButton*,void*);
 static void on_pc2_deckcheatz_adopt(GtkButton*,void*);
 static void on_pc2_bridge_status(GtkButton*,void*);
+static void on_pc2_bridge_upgrade(GtkButton*,void*);
 static void on_pc2_bridge_play(GtkButton*,void*);
 static void on_pc2_bridge_setup(GtkButton*,void*);
 static void on_pc2_bridge_enable(GtkButton*,void*);
@@ -639,7 +640,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Steam Bridge: Check selected game") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4200,7 +4201,7 @@ static void *pc2_steam_bridge_worker(void *data){
         close(pipefd[0]);dup2(pipefd[1],STDOUT_FILENO);dup2(pipefd[1],STDERR_FILENO);close(pipefd[1]);
         const char *argv[16];int n=0;
         argv[n++]="python3";argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
-        argv[n++]="--appid";argv[n++]=j->appid;
+        if(j->appid[0]){argv[n++]="--appid";argv[n++]=j->appid;}
         if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")){
             if(j->game_dir[0]){
                 argv[n++]="--game-dir";argv[n++]=j->game_dir;
@@ -4226,18 +4227,32 @@ static void *pc2_steam_bridge_worker(void *data){
 }
 static void pc2_steam_bridge_action(const char *action){
     if(!pc2_discovery_only()||pc2_steam_bridge_busy)return;
-    if(G.selected<0||G.selected>=G.game_count){
-        if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,"Select an installed Steam game in Library first.");
-        return;
-    }
-    Game *g=&G.games[G.selected];
-    if(!game_is_steam(g)||game_is_steam_shortcut(g)||!g->appid[0]){
-        if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,"Steam Bridge currently supports installed Steam Windows titles only.");
-        return;
+    int global_upgrade=!strcmp(action,"upgrade");
+    Game *g=NULL;
+    if(!global_upgrade){
+        if(G.selected<0||G.selected>=G.game_count){
+            if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
+                "Select an installed Steam game in Library first.");
+            return;
+        }
+        g=&G.games[G.selected];
+        if(!game_is_steam(g)||game_is_steam_shortcut(g)||!g->appid[0]){
+            if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
+                "Steam Bridge currently supports installed Steam Windows titles only.");
+            return;
+        }
     }
     if(strcmp(action,"status")){
         char question[1024];
-        if(!strcmp(action,"play")){
+        if(global_upgrade){
+            snprintf(question,sizeof question,
+                "Update the installed GameWeld Steam Bridge launcher?\n\n"
+                "This copies the current GameWeld launcher to the private Steam "
+                "compatibility tool directory and keeps an SHA-256-named backup "
+                "of the previous version. It will not modify Steam Compatibility "
+                "selections, game prefixes, WeMod or your per-game settings.\n\n"
+                "Close running games first and restart Steam after updating. Continue?");
+        }else if(!strcmp(action,"play")){
             snprintf(question,sizeof question,
                 "Launch %s through Steam with WeMod?\n\n"
                 "Steam must already have GameWeld Bridge selected as this "
@@ -4274,10 +4289,14 @@ static void pc2_steam_bridge_action(const char *action){
     }
     PC2SteamBridgeJob*j=calloc(1,sizeof *j);if(!j)return;
     snprintf(j->action,sizeof j->action,"%s",action);
-    snprintf(j->appid,sizeof j->appid,"%s",g->appid);
-    snprintf(j->game,sizeof j->game,"%s",g->name);
-    snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
-    snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
+    if(!global_upgrade){
+        snprintf(j->appid,sizeof j->appid,"%s",g->appid);
+        snprintf(j->game,sizeof j->game,"%s",g->name);
+        snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
+        snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
+    }else{
+        snprintf(j->game,sizeof j->game,"Installed GameWeld Bridge");
+    }
     pc2_steam_bridge_busy=1;
     if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
         !strcmp(action,"play")?"Asking Steam to launch the selected game with its saved Compatibility setting…":
@@ -4289,6 +4308,7 @@ static void pc2_steam_bridge_action(const char *action){
         set_label(pc2_steam_bridge_status,"Failed to start Steam Bridge helper thread.");}
 }
 static void on_pc2_bridge_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("status");}
+static void on_pc2_bridge_upgrade(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("upgrade");}
 static void on_pc2_bridge_play(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("play");}
 static void on_pc2_bridge_setup(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("setup");}
 static void on_pc2_bridge_enable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-on");}
@@ -5207,6 +5227,23 @@ static GtkWidget *build_settings(void){
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
         pack(bridge_card,pc2_steam_bridge_status,0);
+        GtkWidget*bridge_maintenance=gtk_expander_new("Steam Bridge Maintenance (advanced)");
+        gtk_expander_set_expanded(bridge_maintenance,FALSE);
+        GtkWidget*bridge_maintenance_box=box(GTK_ORIENTATION_VERTICAL,7);
+        margins(bridge_maintenance_box,7);
+        GtkWidget*bridge_upgrade_info=label(
+            "If status reports UPDATE AVAILABLE, this installs the current GameWeld "
+            "Bridge launcher with a backup. Close running games and restart Steam "
+            "afterward. Existing per-game settings and the WeMod installation are preserved.",
+            "muted");
+        gtk_label_set_line_wrap((GtkLabel*)bridge_upgrade_info,TRUE);
+        pack(bridge_maintenance_box,bridge_upgrade_info,0);
+        GtkWidget*bridge_upgrade=button("Steam Bridge: Update installed launcher","action");
+        g_signal_connect_data(bridge_upgrade,"clicked",
+            (GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);
+        pack(bridge_maintenance_box,bridge_upgrade,0);
+        gtk_container_add(bridge_maintenance,bridge_maintenance_box);
+        pack(bridge_card,bridge_maintenance,0);
         pack(right,bridge_card,0);
 
         /* Patch/restore is specialist maintenance, not another game-launch
