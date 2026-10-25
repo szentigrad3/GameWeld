@@ -38,9 +38,9 @@ gcc -fsyntax-only -Werror=implicit-function-declaration -pthread \
     -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
     $(pkg-config --cflags gtk+-3.0) \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
-grep -Fq 'Check GameWeld Managed Wand (read-only)' \
+! grep -Fq 'GtkWidget*native_play=button(' \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
-grep -Fq 'Play Game + Wand (managed Proton, opt-in)' \
+grep -Fq 'Steam Bridge — Game + WeMod' \
     "$ROOT/crates/wand-ui/appimage-gtk3/gameweld-native-040.c"
 grep -Fq 'waitforexitandrun' "$ROOT/scripts/gameweld-managed-wand.py"
 {
@@ -57,7 +57,7 @@ grep -Fq 'waitforexitandrun' "$ROOT/scripts/gameweld-managed-wand.py"
   echo 'DeckCheatz direct launch requires two explicit opt-ins and installed game/proton paths: PASS (fixture)'
   echo 'Original one-Proton-session batch architecture: PASS (fixture)'
   echo 'Managed game process exclusivity guard: PASS (fixture)'
-  echo 'Explicit opt-in and GTK source compilation: PASS'
+  echo 'Legacy managed CLI remains opt-in; GTK source compiles without removed GUI launch: PASS'
   echo 'No unverified compatibility binary downloads or overwrites: PASS'
   echo 'Real game / Wand / Proton started by AIO: false'
   echo 'Real installed GE Proton Wand SHA256 availability: NOT TESTED'
