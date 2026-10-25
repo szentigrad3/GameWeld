@@ -74,6 +74,25 @@ class WeModCompatTests(unittest.TestCase):
                     compat.download(archive, expected_sha="0" * 64)
             self.assertTrue(archive.exists())  # caller stages inside disposable temp dir
 
+    def test_stage_creates_verified_manifest_without_network(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            archive = base / "fixture.nupkg"
+            fixture_package(archive)
+            output = base / "staged" / "11.6.0"
+            with patch.object(compat, "download",
+                              side_effect=lambda target: __import__("shutil").copyfile(archive, target)):
+                compat.stage(output)
+            self.assertTrue(compat.installed(output))
+            import json
+            manifest = json.loads((output / ".gameweld-baseline.json").read_text())
+            self.assertEqual(manifest["version"], "11.6.0")
+            self.assertEqual(manifest["package_sha256"], compat.SHA256)
+            self.assertEqual(manifest["exe_sha256"],
+                             hashlib.sha256((output / "WeMod.exe").read_bytes()).hexdigest())
+            self.assertEqual(manifest["asar_sha256"],
+                             hashlib.sha256((output / "resources/app.asar").read_bytes()).hexdigest())
+
     def test_existing_install_is_not_replaced(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "client"
