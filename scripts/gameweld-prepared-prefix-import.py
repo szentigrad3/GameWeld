@@ -292,7 +292,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--appid", required=True)
     parser.add_argument("--install-dir", type=Path, required=True)
-    parser.add_argument("--stage-dir", type=Path, required=True)
+    parser.add_argument("--stage-dir", type=Path)
+    parser.add_argument("--single-staged", action="store_true")
     parser.add_argument("--cache-root", type=Path, default=Path(
         os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
     ) / "gameweld/prepared-wemod")
@@ -305,7 +306,20 @@ def main(argv=None) -> int:
     try:
         if args.approve_isolated_copy and not args.prepare_isolated_copy:
             raise ImportBlocked("Approval is only valid for isolated-copy preparation")
-        report, paths = preview(args.appid, args.install_dir, args.stage_dir,
+        selected = args.stage_dir
+        if args.single_staged:
+            if selected is not None:
+                raise ImportBlocked("Select a path or use automatic single-stage selection")
+            stages = args.cache_root / "staging"
+            if stages.is_symlink() or not stages.is_dir():
+                raise ImportBlocked("No staged prepared prefix is available")
+            found = [p for p in stages.iterdir() if p.is_dir() and not p.is_symlink()]
+            if len(found) != 1:
+                raise ImportBlocked("Exactly one staged prefix is required")
+            selected = found[0]
+        if selected is None:
+            raise ImportBlocked("A staged prefix must be selected")
+        report, paths = preview(args.appid, args.install_dir, selected,
                                 cache_root=args.cache_root, state_root=args.state_root)
         if args.prepare_isolated_copy:
             report = prepare_candidate(report, paths, state_root=args.state_root,
