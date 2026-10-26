@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Synthetic Steam live WeMod no-options client handoff tests. Never launch Proton."""
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+SOURCE = Path(__file__).with_name("gameweld-wemod-live-attach.py")
+SPEC = importlib.util.spec_from_file_location("gameweld_wemod_live_attach", SOURCE)
+assert SPEC and SPEC.loader
+helper = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(helper)
+
+
+class LiveAttachTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="gameweld-live-attach-")
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.id = "2353250"
+        self.steam_root = self.base / "Steam"
+        self.steamapps = self.steam_root / "steamapps"
+        self.game = self.steamapps / "common" / "Example Astrometica"
+        self.compat = self.steamapps / "compatdata" / self.id
+        self.game.mkdir(parents=True)
+        (self.steamapps / f"appmanifest_{self.id}.acf").write_text("fake manifest")
+        (self.compat / "pfx").mkdir(parents=True)
+        (self.compat / "pfx/system.reg").write_bytes(b"PRESERVE ORIGINAL PREFIX")
+        self.client = self.base / "client"
+        (self.client / "resources").mkdir(parents=True)
+        (self.client / "WeMod.exe").write_bytes(b"fake wemod executable")
+        (self.client / "resources/app.asar").write_bytes(b"fake app")
+        self.proton_dir = self.base / "GE-Proton"
+        self.proton_dir.mkdir()
+        self.proton = self.proton_dir / "proton"
+        self.proton.write_text("#!/bin/sh\nexit 98\n")
+        self.proton.chmod(0o700)
+        (self.proton_dir / "toolmanifest.vdf").write_text("fixture")
+        self.proc = self.base / "proc"
+        self.proc.mkdir()
+        self.pid = self.proc / "1000"
+        self.pid.mkdir()
+        self.make_proc()
+        self.saved = (self.compat / "pfx/system.reg").read_bytes()
+        self.root_state = self.base / "state/gameweld/wemod-live"
+
+    def make_proc(self, *, root=None, paths=None, appid=None, client=False):
+        entries = {
+            "STEAM_COMPAT_DATA_PATH": str(self.compat),
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(root or self.steam_root),
+            "STEAM_COMPAT_TOOL_PATHS": str(paths or self.proton_dir),
+            "SteamAppId": str(appid or self.id),
+            "SECRET_TOKEN": "DO_NOT_LEAK",
+            "WEMOD_USER": "HIDDEN",
+        }
+        (self.pid / "environ").write_bytes(
+            b"\x00".join((k + "=" + v).encode() for k, v in entries.items()) + b"\x00"
+        )
+        (self.pid / "cmdline").write_bytes(b"WeMod.exe\x00" if client else b"Astrometica.exe\x00")
+        (self.pid / "comm").write_bytes(b"WeMod.exe\n" if client else b"Astrometica.exe\n")
+
+    def plan(self):
+        return helper.plan(self.id, self.game, self.client, proc_root=self.proc,
+                           uid=os.getuid())
+
+    def unchanged(self):
+        self.assertEqual((self.compat / "pfx/system.reg").read_bytes(), self.saved)
+        self.assertEqual(list(self.game.iterdir()), [])
+
+    def test_default_preview_only_identifies_exact_live_context(self):
+        report, private = self.plan()
+        self.assertEqual(report["matching_prefix_processes"], 1)
+        self.assertTrue(report["unique_proton_context"])
+        self.assertTrue(report["managed_client_present"])
+        self.assertTrue(report["can_attempt_with_explicit_consent"])
+        self.assertEqual(report["mode"], "live_client_handoff_preview")
+        self.assertFalse(report["steam_launch_options_changed"])
+        self.assertFalse(report["new_game_launched"])
+        self.assertFalse(report["trainer_attachment_verified"])
+        self.assertEqual(private["context"]["proton"], self.proton)
+        self.assertNotIn("DO_NOT_LEAK", str(report))
+        self.assertNotIn(str(self.client), json.dumps(report))
+        self.assertFalse(self.root_state.exists())
+        self.unchanged()
+
+    def test_explicit_approved_handoff_spawns_only_wemod_not_game(self):
+        report, private = self.plan()
+        called = []
+        class Child:
+            pid = 43210
+        def capture(argv, **kwargs):
+            called.append((argv, kwargs))
+            return Child()
+        with patch.object(helper.subprocess, "Popen", capture):
+            result = helper.launch(report, private, approved=True, state_root=self.root_state)
+        self.assertEqual(result["pid"], 43210)
+        self.assertEqual(len(called), 1)
+        args, options = called[0]
+        self.assertEqual(args, [str(self.proton), "runinprefix",
+                                 str(self.client / "WeMod.exe")])
+        self.assertNotIn("waitforexitandrun", args)
+        self.assertEqual(options["env"]["WINEDLLOVERRIDES"], "version=n,b")
+        self.assertEqual(options["env"]["SteamAppId"], self.id)
+        self.assertEqual(options["env"]["STEAM_COMPAT_DATA_PATH"], str(self.compat))
+        self.assertEqual(options["env"]["WEMOD_LOG"], result["log"])
+        self.assertNotIn("SECRET_TOKEN", str(options["env"]))
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(result))
+        self.assertFalse(result["trainer_attachment_verified"])
+        self.assertFalse(result["steam_launch_options_changed"])
+        self.assertEqual(os.stat(result["log"]).st_mode & 0o777, 0o600)
+        self.unchanged()
+
+    def test_missing_approval_never_spawns(self):
+        report, private = self.plan()
+        with patch.object(helper.subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(helper.AttachBlocked, "approval"):
+                helper.launch(report, private, approved=False, state_root=self.root_state)
+            popen.assert_not_called()
+        self.assertFalse(self.root_state.exists())
+        self.unchanged()
+
+    def test_duplicate_wemod_process_blocks_second_instance(self):
+        self.make_proc(client=True)
+        report, private = self.plan()
+        self.assertTrue(report["wemod_already_visible"])
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        with self.assertRaisesRegex(helper.AttachBlocked, "clean live-session"):
+            helper.launch(report, private, approved=True)
+        self.unchanged()
+
+    def test_wrong_appid_or_prefix_blocks_session(self):
+        self.make_proc(appid="999999")
+        report, _ = self.plan()
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.assertEqual(report["matching_prefix_processes"], 0)
+        self.unchanged()
+
+    def test_ambiguous_proton_tool_path_blocks(self):
+        second = self.base / "Second-Proton"
+        second.mkdir()
+        (second / "proton").write_text("#!/bin/sh\nexit 98\n")
+        (second / "proton").chmod(0o700)
+        (second / "toolmanifest.vdf").write_text("fixture")
+        self.make_proc(paths=f"{self.proton_dir}:{second}")
+        report, _ = self.plan()
+        self.assertFalse(report["unique_proton_context"])
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.unchanged()
+
+    def test_missing_client_blocks_and_does_not_touch_prefix(self):
+        (self.client / "resources/app.asar").unlink()
+        report, _ = self.plan()
+        self.assertFalse(report["managed_client_present"])
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.unchanged()
+
+    def test_missing_game_manifest_blocks(self):
+        (self.steamapps / f"appmanifest_{self.id}.acf").unlink()
+        with self.assertRaisesRegex(helper.AttachBlocked, "manifest"):
+            self.plan()
+        self.unchanged()
+
+    def test_unreadable_process_environment_fails_closed(self):
+        original = helper.read_env
+        def deny(proc):
+            if proc.name == "1000":
+                raise PermissionError("simulated privacy restriction")
+            return original(proc)
+        with patch.object(helper, "read_env", side_effect=deny):
+            report, _ = self.plan()
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.assertEqual(report["matching_prefix_processes"], 0)
+        self.unchanged()
+
+    def test_tool_must_be_from_live_process_evidence(self):
+        self.make_proc(paths="/nonexistent/GE-Proton")
+        report, _ = self.plan()
+        self.assertFalse(report["unique_proton_context"])
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.unchanged()
+
+    def test_no_risky_steam_config_files_created(self):
+        report, _ = self.plan()
+        self.assertFalse(report["steam_launch_options_changed"])
+        self.assertFalse((self.steam_root / "userdata").exists())
+        self.assertFalse((self.steam_root / "config").exists())
+        self.unchanged()
+
+
+if __name__ == "__main__":
+    unittest.main()
