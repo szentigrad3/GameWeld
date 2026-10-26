@@ -101,6 +101,48 @@ class PreparedPrefixStageTests(unittest.TestCase):
         return (f"https://github.com/DeckCheatz/BuiltPrefixes-dev/"
                 f"releases/download/{tag}/{asset}")
 
+    def test_actual_cache_download_then_selected_release_staging(self):
+        """Run the real download-cache and stage selection APIs end-to-end."""
+        import json
+        import os
+        import importlib.util
+        cache_script = SOURCE.with_name("gameweld-prepared-prefix-cache.py")
+        spec = importlib.util.spec_from_file_location(
+            "gameweld_real_cache_e2e", cache_script)
+        self.assertIsNotNone(spec)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        self.archive.unlink()  # Start with a completely empty managed cache.
+        body = io.BytesIO()
+        with zipfile.ZipFile(body, "w", zipfile.ZIP_STORED) as zipout:
+            zipout.writestr("pfx/user.reg", os.urandom(1_200_000))
+            zipout.writestr("pfx/.wemod_installer", b"")
+        archive_bytes = body.getvalue()
+        url = self.selected_url()
+
+        class Response(io.BytesIO):
+            def geturl(self):
+                return url
+
+        with patch.object(module.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 20 * 1024 ** 3})()):
+            result = module.acquire_to_cache(
+                url, declared_size=len(archive_bytes), cache_root=self.cache,
+                approved=True,
+                opener=lambda request, timeout: Response(archive_bytes)
+            )
+        self.assertEqual(result["archive_structural_check"], "PASS")
+        chosen = stage.select_cached_release(self.cache, url)
+        self.assertEqual(chosen, Path(result["cache_path"]))
+        record = chosen.with_suffix(".source.json")
+        self.assertEqual(json.loads(record.read_text())["release_tag"], "PfxVer10.1")
+        staged = self.call(archive=chosen)
+        self.assertEqual(staged["source_release"], "PfxVer10.1")
+        self.assertEqual(staged["source_asset"], "GE-Proton10.1.zip")
+        self.assertFalse(staged["installed_to_game"])
+        self.untouched()
+
     def test_selected_release_chooses_matching_zip_among_multiple_cached(self):
         self.add_source_record(self.archive)
         other = self.make_zip([("pfx/unrelated.bin", b"UNRELATED")])
