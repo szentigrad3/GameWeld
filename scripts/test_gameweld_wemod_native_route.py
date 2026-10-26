@@ -211,8 +211,10 @@ class NativeRouteTests(unittest.TestCase):
         summary = route.gui_summary(report)
         self.assertIn("Process visible in selected prefix", summary)
         self.assertIn("Trainer: NOT VERIFIED", summary)
+        self.assertIn("observed in-game activation", summary)
+        self.assertIn("verify one feature in-game", summary)
         self.assertIn("Install: BLOCKED", summary)
-        self.assertLessEqual(len(summary.splitlines()), 7)
+        self.assertLessEqual(len(summary.splitlines()), 8)
 
     def test_no_active_process_does_not_claim_trainer_absent(self):
         prefix = self.root / "heroic/prefix"
@@ -225,6 +227,8 @@ class NativeRouteTests(unittest.TestCase):
         summary = route.gui_summary(report)
         self.assertIn("WeMod process: Not verified", summary)
         self.assertIn("Trainer: NOT VERIFIED", summary)
+        self.assertNotIn("verify one feature in-game", summary)
+        self.assertIn("Check whether WeMod is running", summary)
 
     def test_live_game_unknown_wemod_explains_unreadable_matching_names(self):
         install = self.root / "steamapps/common/Test Game"
