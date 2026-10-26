@@ -99,6 +99,34 @@ def files_and_bytes(directory: Path) -> tuple[int, int]:
     return n, total
 
 
+
+def fingerprint(directory: Path) -> str:
+    """Bounded content digest for detecting changes to a game prefix.
+
+    Includes regular file bytes and preserved symbolic-link target strings.
+    This is evidence for a future opt-in swap, not an atomic live snapshot.
+    """
+    hash_value = hashlib.sha256()
+    paths = sorted(p for p in directory.rglob("*") if p.is_file() or p.is_symlink())
+    if len(paths) > 200_000:
+        raise ImportBlocked("Too many prefix entries to fingerprint safely")
+    total = 0
+    for path in paths:
+        relative = path.relative_to(directory).as_posix()
+        hash_value.update(relative.encode("utf-8", "surrogateescape") + b"\x00")
+        if path.is_symlink():
+            hash_value.update(b"L" + os.readlink(path).encode("utf-8", "surrogateescape"))
+        else:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                raise ImportBlocked("Special file in prefix fingerprint")
+            total += info.st_size
+            if total > COPY_LIMIT:
+                raise ImportBlocked("Game prefix exceeds fingerprint size bound")
+            hash_value.update(b"F" + bytes.fromhex(sha256(path)))
+    return hash_value.hexdigest()
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -240,7 +268,8 @@ def prepare_candidate(report: dict, paths: dict, *, state_root: Path,
     # Refuse a racing archive/prefix and ensure a complete independent copy.
     manifest_preflight(payload, paths["manifest"])
     _, game_bytes = files_and_bytes(source)
-    if shutil.disk_usage(source).free < game_bytes + 2 * RESERVE:
+    original_digest = fingerprint(source)
+    if shutil.disk_usage(source).free < game_bytes + report["template_bytes"] + 2 * RESERVE:
         raise ImportBlocked("Insufficient free disk for isolated candidate")
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
     if root.is_symlink():
@@ -265,6 +294,8 @@ def prepare_candidate(report: dict, paths: dict, *, state_root: Path,
             shutil.copyfile(payload / relative, dest, follow_symlinks=False)
             if sha256(dest) != entry["sha256"]:
                 raise ImportBlocked("Merged isolated candidate failed file verification")
+        if fingerprint(source) != original_digest:
+            raise ImportBlocked("Game prefix changed while creating test candidate")
         if target.exists() or target.is_symlink():
             raise ImportBlocked("Isolated candidate already exists; refusing overwrite")
         result = {
@@ -275,6 +306,7 @@ def prepare_candidate(report: dict, paths: dict, *, state_root: Path,
             "live_install_supported": False,
             "trainer_attached": False,
             "game_original_preserved": True,
+            "original_game_snapshot_sha256": original_digest,
             "note": "No game prefix has been installed or replaced",
         }
         with (temp / "candidate.json").open("x", encoding="utf-8") as file:
