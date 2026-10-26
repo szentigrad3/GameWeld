@@ -273,6 +273,29 @@ trusted provider-specific process close/lock check before any game writes.
 
 Synthetic offline fixtures and refusal tests are wired into CI.
 
+## Native game-connection check now includes process activity
+
+The existing **Check game WeMod connection** GUI action invokes
+`gameweld-wemod-native-route.py` and now incorporates the read-only
+`gameweld-prefix-runtime-preflight.py` result. It displays an
+`ACTIVE` warning, `UNKNOWN` uncertainty, or a
+`NO MATCH FOUND` advisory while keeping
+`Install permission: BLOCKED` and trainer attachment unverified.
+
+For Steam the process check prefers the exact AppID-specific compatdata/pfx
+location from the chosen install library, rather than an unrelated prefix hint.
+For Heroic and Lutris it checks the selected game's configured prefix. If
+the helper is unavailable, process inspection fails, or the prefix is missing,
+the check fails closed as `UNKNOWN`.
+
+Development AppDir helper scripts are symlinks back to the checkout; native
+route resolves its own source directory before loading the peer inspector.
+This works with the existing source runner and does not require Steam Bridge.
+Synthetic process/GUI-summary regression tests run in CI.
+
+This is **read-only status integration**, NOT an installer, lock, trusted
+trainer compatibility check, or permission to change a live prefix.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
