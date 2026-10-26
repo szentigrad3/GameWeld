@@ -249,7 +249,7 @@ class NativeRouteTests(unittest.TestCase):
         self.assertEqual(result["process_activity"]["matching_process_count"], 1)
         self.assertEqual(result["process_activity"]["wemod_process_name_unreadable"], 1)
         summary = route.gui_summary(result)
-        self.assertIn("ACTIVE — matching game session detected", summary)
+        self.assertIn("ACTIVE — a process uses this prefix", summary)
         self.assertIn("1/1 process names unreadable", summary)
         self.assertIn("Trainer: NOT VERIFIED", summary)
         self.assertIn("Install: BLOCKED", summary)
