@@ -220,6 +220,34 @@ def stage_cached_archive(
             shutil.rmtree(work)
 
 
+
+def select_single_cached_zip(cache_root: Path) -> Path:
+    """Distinguish a missing download from multiple cached releases.
+
+    Only names are considered here; stage_cached_archive performs the strict
+    symlink, content hash and ZIP structure checks before extraction.
+    """
+    downloads = cache_root / "downloads"
+    if not downloads.is_dir() or downloads.is_symlink():
+        raise StageRefused(
+            "No prepared ZIP downloaded yet. Step 1: choose a release and click "
+            "'Download selected prepared setup (cache only)'."
+        )
+    archives = list(downloads.glob("*.zip"))
+    if not archives:
+        raise StageRefused(
+            "No prepared ZIP downloaded yet. Step 1: choose a release and click "
+            "'Download selected prepared setup (cache only)'."
+        )
+    if len(archives) > 1:
+        raise StageRefused(
+            "Multiple prepared ZIPs are cached; automatic staging cannot choose safely. "
+            "Select one explicitly with --archive, or move unused ZIPs out of "
+            "GameWeld's cache after reviewing them."
+        )
+    return archives[0]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path)
@@ -240,13 +268,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.single_cached and args.archive is not None:
             raise StageRefused("Specify one source: --archive or --single-cached")
         if args.single_cached:
-            downloads = args.cache_root / "downloads"
-            if not downloads.is_dir() or downloads.is_symlink():
-                raise StageRefused("No managed prepared ZIP has been downloaded")
-            archives = list(downloads.glob("*.zip"))
-            if len(archives) != 1:
-                raise StageRefused("Exactly one cached ZIP is required for automatic staging")
-            archive_file = archives[0]
+            archive_file = select_single_cached_zip(args.cache_root)
         else:
             if args.archive is None:
                 raise StageRefused("Select an archive or use --single-cached")
