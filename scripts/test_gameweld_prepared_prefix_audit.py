@@ -37,7 +37,7 @@ class PreparedPrefixArchiveTests(unittest.TestCase):
         before = self.archive.read_bytes()
         out = audit.archive_report(self.archive)
         self.assertIn("Archive structural checks: PASS", out)
-        self.assertIn("shared GameWeld-managed setup for Steam, Heroic and Lutris", out)
+        self.assertIn("reusable prefix template cache for Steam, Heroic and Lutris", out)
         self.assertIn("Publisher integrity verification: NOT AVAILABLE", out)
         self.assertIn("Installation status: NOT AUTHORIZED", out)
         self.assertEqual(self.archive.read_bytes(), before)
