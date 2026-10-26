@@ -68,7 +68,7 @@ def safe_cache_root(root: Path) -> Path:
 
 
 def _load_zip_audit():
-    script = Path(__file__).with_name("gameweld-prepared-prefix-audit.py")
+    script = Path(__file__).resolve().with_name("gameweld-prepared-prefix-audit.py")
     if script.is_symlink() or not script.is_file():
         raise CacheRefused("Shared ZIP safety inspector is missing")
     spec = importlib.util.spec_from_file_location("prepared_archive_audit", script)
