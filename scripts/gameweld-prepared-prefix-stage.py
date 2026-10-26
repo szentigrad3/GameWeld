@@ -221,6 +221,69 @@ def stage_cached_archive(
 
 
 
+
+def select_cached_release(cache_root: Path, release_url: str) -> Path:
+    """Select only the archive matching the explicitly chosen release asset.
+
+    Download metadata is advisory. stage_cached_archive rehashes the bytes
+    against the content-addressed filename and audits every ZIP member.
+    """
+    import importlib.util
+    script = Path(__file__).resolve().with_name(
+        "gameweld-prepared-prefix-cache.py")
+    if script.is_symlink() or not script.is_file():
+        raise StageRefused("GameWeld prepared cache validator is unavailable")
+    spec = importlib.util.spec_from_file_location(
+        "gameweld_prepared_cache_selection", script)
+    if spec is None or spec.loader is None:
+        raise StageRefused("Cannot load GameWeld release validator")
+    cache_validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cache_validator)
+    try:
+        tag, asset = cache_validator.validate_release_url(release_url)
+    except (ValueError, OSError) as exc:
+        raise StageRefused("Invalid selected DeckCheatz release") from exc
+    downloads = cache_root / "downloads"
+    if downloads.is_symlink() or not downloads.is_dir():
+        raise StageRefused(
+            "Selected prepared release has not been downloaded. "
+            "Use Step 1 — Download selected prepared setup first.")
+    records = list(downloads.glob("*.source.json"))
+    if len(records) > 256:
+        raise StageRefused("Too many cached release records to select safely")
+    matches = []
+    for record in records:
+        if record.is_symlink() or not record.is_file() or record.stat().st_size > 4096:
+            raise StageRefused("Unsafe cached release metadata; inspect cache manually")
+        try:
+            info = json.loads(record.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise StageRefused("Unreadable cached release metadata") from exc
+        if not isinstance(info, dict):
+            raise StageRefused("Invalid cached release metadata")
+        digest = record.name.removesuffix(".source.json")
+        if (len(digest) != 64 or
+                any(char not in "0123456789abcdef" for char in digest) or
+                info.get("sha256") != digest or
+                info.get("source") != "DeckCheatz/BuiltPrefixes-dev"):
+            raise StageRefused("Cached release record has inconsistent provenance")
+        if info.get("release_tag") == tag and info.get("asset_name") == asset:
+            archive = downloads / (digest + ".zip")
+            if (archive.is_symlink() or not archive.is_file() or
+                    archive.stat().st_size != info.get("bytes")):
+                raise StageRefused("Selected ZIP is missing or changed; re-download")
+            matches.append(archive)
+    if not matches:
+        raise StageRefused(
+            "Selected prepared release is not downloaded. "
+            "Use Step 1 — Download selected prepared setup, then stage it.")
+    if len(matches) != 1:
+        raise StageRefused(
+            "Multiple cached copies of the selected release are present; "
+            "refusing to choose one automatically")
+    return matches[0]
+
+
 def select_single_cached_zip(cache_root: Path) -> Path:
     """Distinguish a missing download from multiple cached releases.
 
@@ -253,6 +316,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--single-cached", action="store_true",
                         help="Use only if exactly one managed downloaded ZIP exists")
+    parser.add_argument("--release-asset-url",
+                        help="Select exact downloaded DeckCheatz release from GUI")
     parser.add_argument("--cache-root", type=Path,
                         default=Path(os.environ.get("XDG_CACHE_HOME") or
                                      str(Path.home() / ".cache")) /
@@ -265,13 +330,16 @@ def main(argv: list[str] | None = None) -> int:
     def on_progress(stage: str, current: int, total: int) -> None:
         print(f"PROGRESS\t{stage}\t{current}\t{total}", flush=True)
     try:
-        if args.single_cached and args.archive is not None:
-            raise StageRefused("Specify one source: --archive or --single-cached")
-        if args.single_cached:
+        if sum((args.archive is not None, args.single_cached,
+                args.release_asset_url is not None)) != 1:
+            raise StageRefused(
+                "Select exactly one archive source, cached ZIP, or release")
+        if args.release_asset_url is not None:
+            archive_file = select_cached_release(
+                args.cache_root, args.release_asset_url)
+        elif args.single_cached:
             archive_file = select_single_cached_zip(args.cache_root)
         else:
-            if args.archive is None:
-                raise StageRefused("Select an archive or use --single-cached")
             archive_file = args.archive
         result = stage_cached_archive(
             archive_file, cache_root=args.cache_root,
