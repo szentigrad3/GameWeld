@@ -300,6 +300,7 @@ def main(argv=None) -> int:
     parser.add_argument("--state-root", type=Path, default=Path(
         os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state")
     ) / "gameweld/prefix-imports")
+    parser.add_argument("--format", choices=("json", "summary"), default="json")
     parser.add_argument("--prepare-isolated-copy", action="store_true")
     parser.add_argument("--approve-isolated-copy", action="store_true")
     args = parser.parse_args(argv)
@@ -326,7 +327,16 @@ def main(argv=None) -> int:
                                        approved=args.approve_isolated_copy)
     except (ImportBlocked, OSError, ValueError, UnicodeError) as exc:
         parser.exit(2, "GameWeld prepared prefix import BLOCKED — " + str(exc) + "\n")
-    print(json.dumps(report, indent=2, sort_keys=True))
+    if args.format == "summary" and not args.prepare_isolated_copy:
+        print("PREPARED .NET PREFIX — Compatibility preview")
+        print(f"Steam AppID: {report['appid']}")
+        print(f"GE-Proton version: {report['ge_proton_major']}.{report['ge_proton_minor']} MATCHED")
+        print(f"Template files: {report['template_files']}; overlapping files: {report['overlapping_files']}")
+        print(f"Registry collisions: {report['registry_conflicts']} (would change only in isolated test copy)")
+        print("Game saves and existing prefix: UNCHANGED")
+        print("Next: prepare isolated candidate; live prefix installation NOT READY")
+    else:
+        print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
 
