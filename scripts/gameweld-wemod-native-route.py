@@ -42,6 +42,8 @@ def runtime_activity(provider: str, game_id: str, prefix: Path | None,
         "game_runtime_idle_verified": False,
         "wemod_process_candidates": 0,
         "wemod_process_state": "UNVERIFIED",
+        "wemod_process_name_inspected": 0,
+        "wemod_process_name_unreadable": 0,
         "trainer_attached": False,
     }
     if prefix is None or not prefix.is_dir() or prefix.is_symlink():
@@ -75,6 +77,8 @@ def runtime_activity(provider: str, game_id: str, prefix: Path | None,
             "game_runtime_idle_verified": False,
             "wemod_process_candidates": report.get("wemod_process_candidates", 0),
             "wemod_process_state": report.get("wemod_process_state", "UNVERIFIED"),
+            "wemod_process_name_inspected": report.get("wemod_process_name_inspected", 0),
+            "wemod_process_name_unreadable": report.get("wemod_process_name_unreadable", 0),
             "trainer_attached": False,
         }
     except (OSError, ValueError, KeyError, ImportError, AttributeError):
@@ -236,16 +240,29 @@ def gui_summary(report: dict) -> str:
         )
     state = report.get("process_activity", {}).get("state", "UNKNOWN")
     activity = {
-        "ACTIVE": "ACTIVE — close this game before any future setup",
+        "ACTIVE": "ACTIVE — matching game session detected",
         "UNKNOWN": "UNKNOWN — game closure not verified",
         "IDLE_CANDIDATE": "NO MATCH FOUND — game closure still unverified",
     }.get(state, "UNKNOWN — process inspection unavailable")
-    wemod_state = report.get("process_activity", {}).get("wemod_process_state", "UNVERIFIED")
+    process = report.get("process_activity", {})
+    wemod_state = process.get("wemod_process_state", "UNVERIFIED")
+    matched = process.get("matching_process_count", 0)
+    names_unreadable = process.get("wemod_process_name_unreadable", 0)
+    other_unreadable = process.get("unreadable_same_user_processes", 0)
+    if wemod_state == "UNVERIFIED" and matched:
+        if names_unreadable:
+            uncertain = f"Unverified — {names_unreadable}/{matched} process names unreadable"
+        elif other_unreadable:
+            uncertain = "Unverified — some system processes could not be inspected"
+        else:
+            uncertain = "Unverified — candidate evidence incomplete"
+    else:
+        uncertain = "Not verified — insufficient process evidence"
     wemod = {
         "CANDIDATE_VISIBLE": "Process visible in selected prefix — attachment NOT VERIFIED",
         "NOT_SEEN": "Not seen in selected prefix — not proof of absence",
-        "UNVERIFIED": "Not verified",
-    }.get(wemod_state, "Not verified")
+        "UNVERIFIED": uncertain,
+    }.get(wemod_state, uncertain)
     return "\n".join([
         f"WeMod connection • {title} ({report['game_id']})",
         fields,
