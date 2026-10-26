@@ -667,7 +667,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Legacy: Play using existing Steam Bridge") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4387,26 +4387,23 @@ static int pc2_bridge_has_stale_launcher(const char *state,const char *reason){
         strstr(reason,"UPDATE AVAILABLE (")!=NULL;
 }
 static void pc2_bridge_apply_primary(const char *state,const char *reason){
-    const char *title="Set Up WeMod";
-    int actionable=1;
-    if(!strcmp(state,"play"))title="Play with WeMod";
-    else if(!strcmp(state,"setup"))title="Set Up WeMod";
-    else if(!strcmp(state,"enable"))title="Enable WeMod";
-    else if(!strcmp(state,"steam"))title="Finish Steam Setup";
-    else if(!strcmp(state,"runtime"))title="Find prepared WeMod setup";
-    else if(pc2_bridge_has_stale_launcher(state,reason))title="Update Steam Bridge";
-    else if(!strcmp(state,"repair"))title="Repair WeMod";
-    else{title="Checking WeMod…";actionable=0;}
+    /* The primary PC2 WeMod flow is provider-native, not Steam Bridge.
+     * Legacy Bridge status must never cause the main Play button to claim
+     * a trainer is ready or demand a change to Steam compatibility. */
+    (void)state;(void)reason;
     GtkWidget *buttons[]={G.pc2_deckcheatz_overview_play,G.pc2_deckcheatz_library_play};
     for(int i=0;i<2;i++)if(buttons[i]){
-        gtk_button_set_label((GtkButton*)buttons[i],title);
-        gtk_widget_set_sensitive(buttons[i],actionable);
+        gtk_button_set_label((GtkButton*)buttons[i],"Check WeMod setup");
+        gtk_widget_set_sensitive(buttons[i],TRUE);
     }
     if(G.pc2_deckcheatz_overview_status)
-        set_label(G.pc2_deckcheatz_overview_status,reason);
+        set_label(G.pc2_deckcheatz_overview_status,
+            "Native game setup requires verification; Steam Bridge is optional (legacy).");
     if(G.pc2_deckcheatz_library_status)
-        set_label(G.pc2_deckcheatz_library_status,reason);
+        set_label(G.pc2_deckcheatz_library_status,
+            "Check native WeMod setup first; no game will be launched by this check.");
 }
+
 static gboolean pc2_bridge_readiness_done(gpointer data){
     PC2BridgeReadiness *job=data;
     if(job->generation==pc2_bridge_readiness_generation &&
@@ -4737,63 +4734,23 @@ static void on_pc2_bridge_upgrade(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_
 static void on_pc2_bridge_play(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("play");}
 static void on_pc2_bridge_primary(GtkButton*b,void*d){
     (void)b;(void)d;
-    if(G.selected<0||G.selected>=G.game_count)return;
-    Game *game=&G.games[G.selected];
-    if(strcmp(game->appid,pc2_bridge_ready_appid))return;
-    const char *state=pc2_bridge_ready_state;
-    if(!strcmp(state,"play"))pc2_steam_bridge_action("play");
-    else if(!strcmp(state,"setup"))pc2_steam_bridge_action("setup");
-    else if(!strcmp(state,"enable"))pc2_steam_bridge_action("trainer-on");
-    else if(!strcmp(state,"runtime"))pc2_steam_bridge_action("prefix-catalog");
-    else if(pc2_bridge_has_stale_launcher(state,pc2_bridge_ready_reason))
-        pc2_steam_bridge_action("upgrade"); /* Existing confirmation; no prefix changes. */
-    else if(!strcmp(state,"steam")||!strcmp(state,"repair")){
-        GtkWidget *dialog=gtk_message_dialog_new((GtkWindow*)G.window,
-            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,"%s",
-            pc2_bridge_ready_reason[0]?pc2_bridge_ready_reason:
-                "Finish Steam Bridge setup under Settings > Advanced Providers.");
-        gtk_dialog_run((GtkDialog*)dialog);
-        gtk_widget_destroy(dialog);
-    }
+    /* No Steam-Bridge registration or setup action on the default path. */
+    pc2_steam_bridge_action("native-route");
 }
-/* All Steam WeMod entry points, including a saved one-click default,
- * must use the verified Steam Bridge. Never call PC1 /api/set-game in PC2. */
+
+/* Transitional function name retained for older overview callbacks.
+ * Its behavior is now a read-only provider-native check, NOT a Steam launch.
+ * A working legacy Bridge can still be used from Advanced maintenance. */
 static void pc2_launch_with_steam_bridge(Game *game){
-    if(!pc2_provider_controls_allowed()){
-        log_line("Steam Bridge launch unavailable in this build; legacy WeMod backend is intentionally disabled.");
+    if(!game||!game_is_steam(game)||game_is_steam_shortcut(game)){
+        log_line("Native WeMod setup: select an installed Steam Windows title.");
         return;
     }
-    if(!game||!game_is_steam(game)||game_is_steam_shortcut(game)||!game->appid[0]){
-        log_line("Steam Bridge: select an installed Steam Windows game first.");
-        return;
-    }
-    if(strcmp(pc2_bridge_ready_appid,game->appid)||!pc2_bridge_ready_state[0]){
-        log_line("Steam Bridge: checking %s (%s) before launch. Click Play with WeMod again when readiness completes.",
-            game->name,game->appid);
-        pc2_bridge_readiness_for_game(game);
-        return;
-    }
-    if(!strcmp(pc2_bridge_ready_state,"checking")){
-        log_line("Steam Bridge: still checking readiness for %s. No launch attempted.",game->name);
-        return;
-    }
-    if(!strcmp(pc2_bridge_ready_state,"play")){
-        log_line("Steam Bridge: requesting Steam Play with WeMod for %s. Confirmation required.",game->name);
-        on_pc2_bridge_primary(NULL,NULL);
-        return;
-    }
-    if(!strcmp(pc2_bridge_ready_state,"setup")||
-       !strcmp(pc2_bridge_ready_state,"enable")||
-       !strcmp(pc2_bridge_ready_state,"steam")||
-       !strcmp(pc2_bridge_ready_state,"repair")){
-        log_line("Steam Bridge: %s is not ready to play with WeMod: %s",
-            game->name,pc2_bridge_ready_reason);
-        on_pc2_bridge_primary(NULL,NULL);
-        return;
-    }
-    log_line("Steam Bridge: refusing launch for %s; readiness state: %s. %s",
-        game->name,pc2_bridge_ready_state,pc2_bridge_ready_reason);
+    log_line("Native WeMod setup: checking %s without requiring Steam Bridge. "
+             "No game or trainer launch was attempted.",game->name);
+    pc2_steam_bridge_action("native-route");
 }
+
 static void on_pc2_bridge_setup(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("setup");}
 static void on_pc2_bridge_enable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-on");}
 static void on_pc2_bridge_disable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-off");}
@@ -5726,6 +5683,23 @@ static GtkWidget *build_settings(void){
         gtk_label_set_line_wrap((GtkLabel*)pc2_shared_wemod_status,TRUE);
         pack(shared_card,pc2_shared_wemod_status,0);
         pack(deckpage,shared_card,0);
+        GtkWidget*native_card=box(GTK_ORIENTATION_VERTICAL,9);style(native_card,"card");
+        pack(native_card,label("Game connection — No Steam Bridge required","card-title"),0);
+        GtkWidget*native_note=label(
+            "Select any supported Steam, Heroic or Lutris game. GameWeld checks "
+            "its original launcher and runtime context. A prepared WeMod setup "
+            "must still be verified with that game before Play is enabled.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)native_note,TRUE);
+        pack(native_card,native_note,0);
+        GtkWidget*native_check=button("Check game WeMod connection","action");
+        g_signal_connect_data(native_check,"clicked",
+            (GCallback)on_pc2_native_route,NULL,NULL,0);
+        pack(native_card,native_check,0);
+        pc2_native_route_status=label(
+            "No game connection checked. No Steam changes or game launches.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)pc2_native_route_status,TRUE);
+        pack(native_card,pc2_native_route_status,0);
+        pack(deckpage,native_card,0);
         GtkWidget*bridge_card=box(GTK_ORIENTATION_VERTICAL,9);style(bridge_card,"card");
         pack(bridge_card,label("Steam Bridge — Game + WeMod","card-title"),0);
         GtkWidget*bridge_note=label(
@@ -5806,7 +5780,16 @@ static GtkWidget *build_settings(void){
         pack(bridge_maintenance_box,bridge_upgrade,0);
         gtk_container_add(bridge_maintenance,bridge_maintenance_box);
         pack(bridge_card,bridge_maintenance,0);
-        pack(deckpage,bridge_card,0);
+        GtkWidget*legacy_bridge=gtk_expander_new(
+            "Legacy Steam Bridge — optional compatibility fallback");
+        gtk_expander_set_expanded(legacy_bridge,FALSE);
+        GtkWidget*legacy_bridge_play=button(
+            "Legacy: Play using existing Steam Bridge","action");
+        g_signal_connect_data(legacy_bridge_play,"clicked",
+            (GCallback)on_pc2_bridge_play,NULL,NULL,0);
+        pack(bridge_card,legacy_bridge_play,0);
+        gtk_container_add(legacy_bridge,bridge_card);
+        pack(deckpage,legacy_bridge,0);
 
         /* Patch/restore is specialist maintenance, not another game-launch
          * method. It remains available but starts collapsed to avoid
