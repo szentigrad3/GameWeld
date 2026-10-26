@@ -100,6 +100,71 @@ class NativeRouteTests(unittest.TestCase):
                 ]), 0)
             self.assertFalse(json.loads(stdout.getvalue())["game_runtime_attached"])
 
+    def test_steam_gui_report_surfaces_active_proton_session_without_leaking_tokens(self):
+        install = self.root / "steamapps/common/Test Game"
+        install.mkdir(parents=True)
+        (self.root / "steamapps/appmanifest_123456.acf").write_text("fixture")
+        prefix = self.root / "steamapps/compatdata/123456/pfx"
+        prefix.mkdir(parents=True)
+        proc = self.root / "proc"
+        pid = proc / "54321"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(
+            (f"STEAM_COMPAT_DATA_PATH={prefix.parent}\0"
+             "SteamAppId=123456\0WEMOD_ACCOUNT_TOKEN=NEVER_EXPOSE").encode()
+        )
+        result = route.native_route_report(
+            "steam", "123456", install_dir=str(install), proc_root=proc
+        )
+        self.assertEqual(result["process_activity"]["state"], "ACTIVE")
+        self.assertFalse(result["process_activity"]["installer_authorized"])
+        self.assertFalse(result["process_activity"]["game_runtime_idle_verified"])
+        self.assertIn("NOT READY", result["state"])
+        rendered = route.human_readable_report(result)
+        self.assertIn("Game activity: ACTIVE", rendered)
+        self.assertIn("Install permission: BLOCKED", rendered)
+        self.assertNotIn("NEVER_EXPOSE", json.dumps(result))
+        self.assertNotIn("NEVER_EXPOSE", rendered)
+
+    def test_heroic_gui_reports_no_match_but_never_authorizes_install(self):
+        prefix = self.root / "heroic/prefix"
+        prefix.mkdir(parents=True)
+        proc = self.root / "proc"
+        proc.mkdir()
+        result = route.native_route_report(
+            "heroic", "gog-abc", prefix=str(prefix), proc_root=proc
+        )
+        self.assertEqual(result["process_activity"]["state"], "IDLE_CANDIDATE")
+        self.assertFalse(result["process_activity"]["installer_authorized"])
+        rendered = route.human_readable_report(result)
+        self.assertIn("game closure is still unverified", rendered)
+        self.assertIn("Trainer attachment to this game: NOT VERIFIED", rendered)
+
+    def test_missing_prefix_fails_closed_without_attempting_runtime_scan(self):
+        with patch.object(route, "runtime_activity", wraps=route.runtime_activity) as scanner:
+            result = route.native_route_report("lutris", "game-abc")
+            self.assertEqual(result["process_activity"]["state"], "UNKNOWN")
+            self.assertFalse(result["process_activity"]["installer_authorized"])
+            scanner.assert_called_once()
+        self.assertIn("Game activity: UNKNOWN", route.human_readable_report(result))
+
+    def test_steam_uses_discovered_matching_appid_prefix_not_arbitrary_hint(self):
+        install = self.root / "steamapps/common/Test Game"
+        install.mkdir(parents=True)
+        (self.root / "steamapps/appmanifest_123456.acf").write_text("fixture")
+        discovered = self.root / "steamapps/compatdata/123456/pfx"
+        discovered.mkdir(parents=True)
+        misleading = self.root / "other/pfx"
+        misleading.mkdir(parents=True)
+        with patch.object(route, "runtime_activity", return_value={
+            "state": "UNKNOWN", "installer_authorized": False
+        }) as scanner:
+            route.native_route_report(
+                "steam", "123456", install_dir=str(install),
+                prefix=str(misleading)
+            )
+            self.assertEqual(scanner.call_args.args[2], discovered)
+
     def test_unknown_game_and_provider_fail_closed(self):
         for provider, game_id in [
             ("steam", "invalid"), ("steam", "0"), ("heroic", "../../foo"),
