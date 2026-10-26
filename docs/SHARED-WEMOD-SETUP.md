@@ -153,6 +153,40 @@ python3 scripts/gameweld-prepared-prefix-stage.py \
 
 No game's prefix should ever be used as `--cache-root`.
 
+## Independent, opt-in game-prefix backup foundation (development)
+
+`scripts/gameweld-prefix-backup.py` provides a default **read-only inventory preview** for one
+explicit Steam, Heroic, or Lutris game prefix, with the chosen provider/game ID.
+It counts regular files, directory entries, symlinks and estimated space.
+No game configuration or content is read by the preview beyond names and metadata.
+
+An explicit `--approve-backup --acknowledge-game-closed` additionally saves a
+standalone prefix TAR + SHA-256 file manifest under the user's private
+`$XDG_STATE_HOME/gameweld/prefix-backups` directory. The archive preserves
+link *entries* without following them outside the prefix, refuses special
+files, checks available disk space, verifies changed-file metadata during
+copy, and removes partial temporary backups on failure. Archive and manifest
+are kept separately from the disposable prepared-prefix cache. A successful
+backup never changes or replaces game data.
+
+**Limitations:** a user acknowledgement does not verify that a game or
+Wine/Proton process has actually stopped. A file-level copy is not an
+atomic snapshot; consistency checks detect common concurrent changes but
+cannot guarantee consistent live data. The backup tool does **not** contain
+a restore or transactional apply implementation; it must not make the
+GUI's **Install** or **Play with WeMod** controls available. Existing account
+content is private and not uploaded, but names and metadata may appear in
+the local backup manifest.
+
+The only current safe development test is the synthetic-prefix unit suite:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_gameweld_prefix_backup.py' -v
+```
+
+Do not use backups of real game profiles to claim rollback support until
+restore verification and a provider-specific idle/lock check are complete.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
