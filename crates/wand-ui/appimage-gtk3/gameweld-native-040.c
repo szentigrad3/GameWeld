@@ -4727,6 +4727,12 @@ static const char *pc2_native_route_helper(void){
 static gboolean pc2_steam_bridge_done(gpointer data){
     PC2SteamBridgeJob*j=data;
     pc2_steam_bridge_busy=0;
+    if(!strcmp(j->action,"prefix-cache")){
+        if(pc2_shared_wemod_cancel)
+            gtk_widget_set_sensitive(pc2_shared_wemod_cancel,FALSE);
+        if(pc2_shared_wemod_choices)
+            pc2_prepared_choice_update((GtkComboBox*)pc2_shared_wemod_choices,NULL);
+    }
     const char *msg=j->output[0]?j->output:(j->ok?"Complete.":"Steam Bridge operation failed.");
     if(!strcmp(j->action,"prefix-catalog")){
         if(j->ok)pc2_prepared_catalog_display(msg);
@@ -4735,8 +4741,11 @@ static gboolean pc2_steam_bridge_done(gpointer data){
             if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,msg);
         }
     }else if(!strcmp(j->action,"prefix-cache")){
+        if(pc2_cache_cancel_requested)msg="Cache download cancelled. "
+            "Any incomplete temporary file should have been discarded. "
+            "No game prefix was changed.";
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
-            j->ok ?
+            (j->ok && !pc2_cache_cancel_requested) ?
             "Prepared WeMod ZIP downloaded and ZIP-checked into a separate "
             "GameWeld cache. NOT installed. Publisher identity, game compatibility "
             "and trainer attachment are unverified; no game prefix changed." : msg);
@@ -4800,6 +4809,7 @@ static void *pc2_steam_bridge_worker(void *data){
             argv[n++]="--release-asset-url";argv[n++]=j->source_url;
             argv[n++]="--declared-size";argv[n++]=j->source_bytes;
             argv[n++]="--approve-cache-download";
+            argv[n++]="--progress";
         }else if(!strcmp(j->action,"native-route")){
             argv[n++]=pc2_native_route_helper();
             argv[n++]="--provider";argv[n++]=j->provider;
@@ -4828,9 +4838,15 @@ static void *pc2_steam_bridge_worker(void *data){
     if(pid<0){
         close(pipefd[0]);snprintf(j->output,sizeof j->output,"Failed to launch Steam Bridge helper.");
     }else{
-        j->ok=bounded_child_output(pid,pipefd[0],j->output,sizeof j->output,
-                                   !strcmp(j->action,"prefix-cache")?300:
-                                   !strcmp(j->action,"play")?35:12);
+        if(!strcmp(j->action,"prefix-cache")){
+            pc2_cache_child_pid=pid;
+            if(pc2_cache_cancel_requested)kill(pid,SIGINT);
+            j->ok=pc2_cache_collect_output(pid,pipefd[0],
+                                           j->output,sizeof j->output,900);
+            pc2_cache_child_pid=0;
+        }else
+            j->ok=bounded_child_output(pid,pipefd[0],j->output,sizeof j->output,
+                                       !strcmp(j->action,"play")?35:12);
         if(!j->ok&&!j->output[0])snprintf(j->output,sizeof j->output,"Steam Bridge helper failed or timed out.");
     }
     g_idle_add(pc2_steam_bridge_done,j);
@@ -4938,6 +4954,7 @@ static void pc2_steam_bridge_action(const char *action){
                  global_cache?"Shared prepared WeMod cache":"Installed GameWeld Bridge");
     }
     if(global_cache){
+        pc2_cache_cancel_requested=0;
         int selected=pc2_shared_wemod_choices?
             gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices):-1;
         if(pc2_discovery_only() || selected<0 ||
@@ -4955,6 +4972,10 @@ static void pc2_steam_bridge_action(const char *action){
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             "Checking prepared WeMod releases for a shared GameWeld setup…");
     }else if(global_cache){
+        if(pc2_shared_wemod_download)
+            gtk_widget_set_sensitive(pc2_shared_wemod_download,FALSE);
+        if(pc2_shared_wemod_cancel)
+            gtk_widget_set_sensitive(pc2_shared_wemod_cancel,TRUE);
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             "Downloading and checking the selected third-party ZIP into a "
             "separate cache only. No game prefix is being changed…");
