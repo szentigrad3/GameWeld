@@ -273,11 +273,117 @@ def create_backup(
             shutil.rmtree(temp)
 
 
+
+def verify_backup(backup_dir: Path, *, backup_root: Path) -> dict:
+    """Read-only TAR + manifest integrity verification; NEVER restore files."""
+    root = private_backup_root(backup_root)
+    saved = Path(backup_dir)
+    if (not saved.is_absolute() or saved.parent != root or
+            saved.is_symlink() or not saved.is_dir()):
+        raise BackupRefused("Select one existing GameWeld-managed private backup directory")
+    if stat.S_IMODE(saved.stat().st_mode) & 0o077:
+        raise BackupRefused("Backup directory is not private")
+    archive_path = saved / "prefix.tar"
+    manifest_path = saved / "manifest.json"
+    for path in (archive_path, manifest_path):
+        if path.is_symlink() or not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
+            raise BackupRefused("Backup archive or manifest is missing or symlinked")
+    if manifest_path.stat().st_size > 64 * 1024 * 1024:
+        raise BackupRefused("Backup manifest exceeds safe size")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise BackupRefused("Backup manifest is invalid") from exc
+    sha = hashlib.sha256()
+    with archive_path.open("rb") as stream:
+        for block in iter(lambda: stream.read(CHUNK), b""):
+            sha.update(block)
+    if (sha.hexdigest() != manifest.get("archive_sha256") or
+            archive_path.stat().st_size != manifest.get("archive_bytes")):
+        raise BackupRefused("Backup TAR does not match its saved checksum/size")
+    hashes = manifest.get("file_hashes")
+    if (not isinstance(hashes, list) or len(hashes) > MAX_FILES or
+            not isinstance(manifest.get("entries"), int) or
+            manifest["entries"] > MAX_FILES):
+        raise BackupRefused("Backup manifest file list is invalid")
+    expected = {}
+    for value in hashes:
+        if not isinstance(value, dict):
+            raise BackupRefused("Invalid manifest file entry")
+        relative, size, digest = value.get("path"), value.get("size"), value.get("sha256")
+        if (not isinstance(relative, str) or not relative or relative.startswith("/") or
+                any(part in ("", ".", "..") for part in relative.split("/")) or
+                relative in expected or not isinstance(size, int) or size < 0 or
+                not isinstance(digest, str) or
+                not re.fullmatch(r"[0-9a-f]{64}", digest)):
+            raise BackupRefused("Unsafe or conflicting backup file manifest entry")
+        expected[relative] = (size, digest)
+    seen = set()
+    verified_bytes = 0
+    symlinks = 0
+    files = 0
+    with tarfile.open(archive_path, "r") as snapshot:
+        members = snapshot.getmembers()
+        if len(members) != manifest["entries"]:
+            raise BackupRefused("Backup TAR member count differs from the manifest")
+        for member in members:
+            name = member.name
+            if not name.startswith("prefix/"):
+                raise BackupRefused("Backup TAR contains a non-prefix member")
+            relative = name[len("prefix/"):]
+            parts = relative.split("/")
+            if (not relative or relative.startswith("/") or
+                    any(part in ("", ".", "..") for part in parts) or
+                    relative in seen):
+                raise BackupRefused("Backup TAR has invalid or duplicate member paths")
+            seen.add(relative)
+            if member.isfile():
+                check = expected.get(relative)
+                if check is None or member.size != check[0]:
+                    raise BackupRefused("Backup file missing from manifest or wrong size")
+                extracted = snapshot.extractfile(member)
+                if extracted is None:
+                    raise BackupRefused("Cannot read backed-up file")
+                digest = hashlib.sha256()
+                length = 0
+                with extracted:
+                    for block in iter(lambda: extracted.read(CHUNK), b""):
+                        length += len(block)
+                        if length > member.size:
+                            raise BackupRefused("Backup member exceeds declared size")
+                        digest.update(block)
+                if length != check[0] or digest.hexdigest() != check[1]:
+                    raise BackupRefused("Backed-up file failed its SHA-256 check")
+                files += 1
+                verified_bytes += length
+            elif member.issym():
+                symlinks += 1
+            elif not member.isdir():
+                raise BackupRefused("Backup TAR contains unsupported member type")
+    if (files != len(expected) or files != manifest.get("regular_files") or
+            symlinks != manifest.get("symlinks") or
+            verified_bytes != manifest.get("total_file_bytes")):
+        raise BackupRefused("Backup manifest inventory differs from TAR contents")
+    return {
+        "backup_path": str(saved),
+        "status": "BACKUP READABLE AND CHECKSUMS VERIFIED — restoration unavailable",
+        "verified_files": files,
+        "verified_bytes": verified_bytes,
+        "symlinks_not_followed": symlinks,
+        "game_prefix_mutated": False,
+        "runtime_idle_verified": False,
+        "restoration_available": False,
+        "ready_to_install": False,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--provider", required=True, choices=PROVIDERS)
-    parser.add_argument("--game-id", required=True)
-    parser.add_argument("--prefix", required=True, type=Path)
+    parser.add_argument("--provider", choices=PROVIDERS)
+    parser.add_argument("--game-id")
+    parser.add_argument("--prefix", type=Path)
+    parser.add_argument("--verify-backup-dir", type=Path,
+                        help="Read-only archive and SHA-256 verification; no restore")
     default_state = Path(os.environ.get("XDG_STATE_HOME") or
                          str(Path.home() / ".local/state"))
     parser.add_argument("--backup-root", type=Path,
@@ -285,8 +391,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--approve-backup", action="store_true")
     parser.add_argument("--acknowledge-game-closed", action="store_true")
     args = parser.parse_args(argv)
+    if not args.verify_backup_dir and (
+            not args.provider or not args.game_id or args.prefix is None):
+        parser.error("--provider, --game-id, and --prefix are required for preview/backup")
     try:
-        if args.approve_backup:
+        if args.verify_backup_dir is not None:
+            if args.approve_backup or args.acknowledge_game_closed:
+                raise BackupRefused("Verification must not request backup creation")
+            result = verify_backup(args.verify_backup_dir, backup_root=args.backup_root)
+        elif args.approve_backup:
             result = create_backup(
                 args.provider, args.game_id, args.prefix,
                 backup_root=args.backup_root, approved=True,
