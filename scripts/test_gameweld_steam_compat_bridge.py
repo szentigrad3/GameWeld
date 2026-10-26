@@ -510,6 +510,9 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertIn("Actual live Proton executable/version: NOT VERIFIED", plan)
             self.assertIn("Workspace check: AVAILABLE FOR A FUTURE APPROVED TEST", plan)
             self.assertIn("NOT SELECTED OR VERIFIED", plan)
+            self.assertIn("Experiment gate: NOT READY — no GE-Proton10 candidate detected", plan)
+            self.assertIn("proton-ge-custom/releases/tag/GE-Proton10-34", plan)
+            self.assertIn("dotnet.microsoft.com/en-us/download/dotnet-framework/net48", plan)
             self.assertIn("No automatic promotion/copying", plan)
             self.assertFalse(cache.exists())
             self.assertEqual(existing.read_text(), "KEEP-ME")
@@ -579,6 +582,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                               side_effect=AssertionError("no candidate may launch")):
                 plan = bridge.netfx_isolation_plan("3008130", game)
             self.assertIn("GE-Proton10 possible runners found: 1", plan)
+            self.assertIn("Experiment gate: NOT READY — no offline .NET installer selected", plan)
             self.assertIn(str(executable), plan)
             self.assertIn("Wine engine version and .NET installation compatibility: UNVERIFIED", plan)
             self.assertIn("preserve the saved game Proton", plan)
@@ -664,6 +668,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertIn("Workspace check: BLOCKED", plan)
             self.assertIn("3.0 GiB available", plan)
             self.assertIn("(LOW SPACE)", plan)
+            self.assertIn("Experiment gate: BLOCKED", plan)
             self.assertFalse((self.home / ".cache").exists())
 
     def test_isolated_netfx_plan_optional_installer_hash_is_evidence_only(self):
