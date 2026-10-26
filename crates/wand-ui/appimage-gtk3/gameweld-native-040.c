@@ -681,7 +681,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4627,7 +4627,7 @@ static void pc2_prepared_choice_update(GtkComboBox *box, gpointer unused){
     if(!pc2_shared_wemod_download)return;
     int index=gtk_combo_box_get_active(box);
     gtk_widget_set_sensitive(pc2_shared_wemod_download,
-        !pc2_discovery_only() && pc2_provider_controls_allowed() &&
+        pc2_provider_controls_allowed() &&
         index>=0 && index<pc2_prepared_choice_count);
 }
 static void pc2_prepared_choices_clear(void){
@@ -4989,7 +4989,7 @@ static void pc2_steam_bridge_action(const char *action){
         pc2_cache_cancel_requested=0;
         int selected=pc2_shared_wemod_choices?
             gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices):-1;
-        if(pc2_discovery_only() || selected<0 ||
+        if(selected<0 ||
            selected>=pc2_prepared_choice_count){
             free(j);
             return;
@@ -5070,7 +5070,7 @@ static void on_pc2_bridge_netfx_plan(GtkButton*b,void*d){(void)b;(void)d;pc2_ste
 static void on_pc2_bridge_prefix_catalog(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("prefix-catalog");}
 static void on_pc2_prepared_cache_cancel(GtkButton*b,void*d){
     (void)b;(void)d;
-    if(pc2_discovery_only() || !pc2_steam_bridge_busy)return;
+    if(!pc2_steam_bridge_busy)return;
     pc2_cache_cancel_requested=1;
     pid_t child=pc2_cache_child_pid;
     if(child>0)kill(child,SIGINT);
@@ -5083,7 +5083,7 @@ static void on_pc2_prepared_cache_cancel(GtkButton*b,void*d){
 }
 static void on_pc2_prepared_prefix_cache(GtkButton*b,void*d){
     (void)b;(void)d;
-    if(pc2_discovery_only() || !pc2_provider_controls_allowed() ||
+    if(!pc2_provider_controls_allowed() ||
        pc2_steam_bridge_busy || !pc2_shared_wemod_choices)return;
     int index=gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices);
     if(index<0||index>=pc2_prepared_choice_count)return;
