@@ -186,6 +186,46 @@ class NativeRouteTests(unittest.TestCase):
         self.assertEqual(activity["state"], "IDLE_CANDIDATE")
         self.assertFalse(activity["installer_authorized"])
 
+
+    def test_game_summary_does_not_confuse_visible_wemod_with_attachment(self):
+        install = self.root / "steamapps/common/Test Game"
+        install.mkdir(parents=True)
+        (self.root / "steamapps/appmanifest_123456.acf").write_text("fixture")
+        prefix = self.root / "steamapps/compatdata/123456/pfx"
+        prefix.mkdir(parents=True)
+        proc = self.root / "proc"
+        pid = proc / "1500"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(
+            (f"STEAM_COMPAT_DATA_PATH={prefix.parent}\0SteamAppId=123456\0").encode()
+        )
+        (pid / "cmdline").write_bytes(
+            b"wine\x00C:\\Program Files\\WeMod\\WeMod.exe\x00"
+        )
+        report = route.native_route_report(
+            "steam", "123456", install_dir=str(install), proc_root=proc
+        )
+        self.assertEqual(report["process_activity"]["wemod_process_candidates"], 1)
+        self.assertFalse(report["process_activity"]["trainer_attached"])
+        self.assertFalse(report["game_runtime_attached"])
+        summary = route.gui_summary(report)
+        self.assertIn("Process visible in selected prefix", summary)
+        self.assertIn("Trainer: NOT VERIFIED", summary)
+        self.assertIn("Install: BLOCKED", summary)
+        self.assertLessEqual(len(summary.splitlines()), 7)
+
+    def test_no_active_process_does_not_claim_trainer_absent(self):
+        prefix = self.root / "heroic/prefix"
+        prefix.mkdir(parents=True)
+        proc = self.root / "proc"
+        proc.mkdir()
+        report = route.native_route_report(
+            "heroic", "gog-a", prefix=str(prefix), proc_root=proc
+        )
+        summary = route.gui_summary(report)
+        self.assertIn("WeMod process: Not verified", summary)
+        self.assertIn("Trainer: NOT VERIFIED", summary)
+
     def test_unknown_game_and_provider_fail_closed(self):
         for provider, game_id in [
             ("steam", "invalid"), ("steam", "0"), ("heroic", "../../foo"),
