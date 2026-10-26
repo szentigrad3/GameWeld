@@ -36,7 +36,7 @@ jobs:
           bash scripts/run-pc2-source-frontend.sh --check-layout
           mkdir -p build/pc2-source
           ( cd cmd/gameweld-backend && go build -trimpath -o ../../build/pc2-source/wand-native-backend . )
-          gcc -O0 -g -fno-omit-frame-pointer -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
+          gcc -O0 -g -fno-omit-frame-pointer -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 -DGAMEWELD_PC2_GTK_ACTION_SMOKE=1 \
             crates/wand-ui/appimage-gtk3/gameweld-native-040.c \
             -o build/pc2-source/gameweld \
             $(pkg-config --cflags --libs gtk+-3.0)
@@ -66,6 +66,10 @@ jobs:
           result=$?
           set -e
           cat gtk-startup.log
+          if ! grep -q "PC2_GTK_SMOKE_PREFIX_STAGE_DISPATCHED" gtk-startup.log; then
+            echo "FAIL: the regression action was not exercised by native GTK."
+            exit 1
+          fi
           if [[ "$result" == 124 ]]; then
             echo "PASS: Native GTK frontend remained alive through the smoke window."
             exit 0
