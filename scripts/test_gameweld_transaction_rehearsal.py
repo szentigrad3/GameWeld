@@ -171,5 +171,21 @@ class TransactionRehearsalTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), self.expected)
 
 
+    def test_symlink_added_after_scan_is_rejected_without_following(self):
+        previous = txn.shutil.copytree
+        secret = self.real_game_fixtures[0] / "system.reg"
+        def racing_source(source, target, *args, **kwargs):
+            (self.root / "prefix/drive_c/newlink").symlink_to(secret)
+            return previous(source, target, *args, **kwargs)
+        with patch.object(txn.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 2 * 1024 ** 3})()):
+            with patch.object(txn.shutil, "copytree", side_effect=racing_source):
+                with self.assertRaisesRegex(txn.TransactionRefused, "links and special"):
+                    txn.apply_rehearsal(self.root, approved=True)
+        self.assertEqual(self.snapshot(), self.expected)
+        self.assertFalse((self.root / "transactions" / "original").exists())
+
+
+
 if __name__ == "__main__":
     unittest.main()
