@@ -263,12 +263,79 @@ def rollback(
     }
 
 
+
+def recover_interrupted(
+    appid: str, install_dir: Path, txid: str, *,
+    state_root: Path, approved: bool, game_closed: bool,
+    accepted_risk: bool, proc_root: Path = Path("/proc")
+) -> dict:
+    """Recover a PREPARED transaction if killed between two directory renames."""
+    approval(approved, game_closed, accepted_risk)
+    if not ID.fullmatch(appid):
+        raise ActivationBlocked("Invalid Steam AppID")
+    root = validate_state(state_root)
+    record = read_journal(root, txid)
+    if record.get("appid") != appid or record.get("state") != "PREPARED":
+        raise ActivationBlocked("Only an interrupted PREPARED transaction can be recovered")
+    if (not install_dir.is_absolute() or not install_dir.is_dir() or
+            install_dir.parent.name != "common" or
+            install_dir.parent.parent.name != "steamapps"):
+        raise ActivationBlocked("Selected Steam game library is invalid")
+    steamapps = install_dir.parent.parent
+    if not (steamapps / f"appmanifest_{appid}.acf").is_file():
+        raise ActivationBlocked("Steam game manifest missing")
+    current = steamapps / "compatdata" / appid
+    backup = current.parent / f".gameweld-original-{appid}-{txid}"
+    staging = current.parent / f".gameweld-import-{appid}-{txid}"
+    if (record.get("compat_path") != str(current) or
+            record.get("backup_path") != str(backup) or
+            record.get("staging_path") != str(staging)):
+        raise ActivationBlocked("Journal paths differ from exact selected game")
+    importer = module("gameweld-prepared-prefix-import.py", "gw_import_recovery")
+    if backup.is_symlink() or current.is_symlink() or staging.is_symlink():
+        raise ActivationBlocked("Symlinked prefix recovery path is forbidden")
+    if backup.exists():
+        if not backup.is_dir() or importer.fingerprint(backup) != record["original_sha256"]:
+            raise ActivationBlocked("Preserved original prefix is missing or changed")
+        if current.exists():
+            if not current.is_dir():
+                raise ActivationBlocked("Invalid current prefix during recovery")
+            game_idle(appid, current, proc_root=proc_root)
+            moved = current.parent / f".gameweld-recovered-test-{appid}-{txid}"
+            if moved.exists() or moved.is_symlink():
+                raise ActivationBlocked("Recovered test candidate already exists")
+            os.rename(current, moved)
+        os.rename(backup, current)
+    elif not current.is_dir():
+        raise ActivationBlocked("Neither current game prefix nor original backup exists")
+    else:
+        # Swap never began. Confirm process inactivity before finishing recovery.
+        game_idle(appid, current, proc_root=proc_root)
+        if importer.fingerprint(current) != record["original_sha256"]:
+            raise ActivationBlocked("Game prefix changed during unfinished transaction")
+    if staging.exists():
+        # Private uncommitted candidate; preserve it for manual inspection.
+        preserved = staging.with_name(staging.name + ".aborted")
+        if preserved.exists() or preserved.is_symlink():
+            raise ActivationBlocked("Aborted candidate path already exists")
+        os.rename(staging, preserved)
+    record["state"] = "ROLLED_BACK"
+    update_journal(root, txid, record)
+    return {
+        "txid": txid, "state": "ROLLED_BACK",
+        "original_game_restored": True,
+        "failed_candidate_preserved": True,
+        "steam_options_changed": False,
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--appid", required=True)
     parser.add_argument("--install-dir", required=True, type=Path)
     parser.add_argument("--candidate-dir", type=Path)
     parser.add_argument("--rollback-id")
+    parser.add_argument("--recover-id")
     parser.add_argument("--state-root", type=Path, default=Path(
         os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state")
     ) / "gameweld/prefix-imports")
@@ -283,7 +350,13 @@ def main(argv=None) -> int:
         "accepted_risk": args.accept_experimental_risk
     }
     try:
-        if args.rollback_id:
+        if args.rollback_id and args.recover_id:
+            raise ActivationBlocked("Choose only one recovery operation")
+        if args.recover_id:
+            if args.candidate_dir is not None:
+                raise ActivationBlocked("Cannot combine install candidate and recovery")
+            output = recover_interrupted(args.appid, args.install_dir, args.recover_id, **kwargs)
+        elif args.rollback_id:
             if args.candidate_dir is not None:
                 raise ActivationBlocked("Cannot combine install candidate with rollback")
             output = rollback(args.appid, args.install_dir, args.rollback_id, **kwargs)
