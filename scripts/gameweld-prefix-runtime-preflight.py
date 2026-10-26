@@ -19,6 +19,7 @@ import stat
 STEAM_ID = re.compile(r"[1-9][0-9]{0,9}\Z")
 OTHER_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 MAX_ENV_BYTES = 1024 * 1024
+MAX_PROCESS_NAME_BYTES = 16 * 1024
 MAX_PIDS = 50000
 
 
@@ -56,6 +57,32 @@ def environment_vars(blob: bytes) -> dict[str, str]:
     return found
 
 
+def is_wemod_process(pid: Path) -> bool | None:
+    """Identify a candidate WeMod.exe *name*, not an attached trainer.
+
+    None means the process name could not be inspected. Never report a
+    raw process command line, path, token or account identifier.
+    """
+    try:
+        raw = (pid / "cmdline").read_bytes()
+        if len(raw) > MAX_PROCESS_NAME_BYTES:
+            return None
+        args = raw.split(b"\x00")
+        for arg in args:
+            if not arg:
+                continue
+            name = arg.strip(b"\"' ").replace(b"\\", b"/").split(b"/")[-1]
+            if name.lower() == b"wemod.exe":
+                return True
+        # Wine may put the Windows executable name in comm instead of argv.
+        comm = (pid / "comm").read_bytes()
+        if len(comm) > 256:
+            return None
+        return comm.strip().lower() == b"wemod.exe"
+    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+        return None
+
+
 def procfs_report(
     provider: str,
     game_id: str,
@@ -69,6 +96,8 @@ def procfs_report(
     base = str(prefix)
     steam_compat = str(prefix.parent) if prefix.name == "pfx" else ""
     matches: list[int] = []
+    wemod_candidates = 0
+    wemod_name_unknown = 0
     unreadable = 0
     scanned = 0
     if not proc_root.is_dir():
@@ -85,6 +114,9 @@ def procfs_report(
             "scanned_same_user_processes": 0,
             "provider": provider, "game_id": game_id,
             "game_runtime_idle_verified": False,
+            "wemod_process_candidates": 0,
+            "wemod_process_state": "UNVERIFIED",
+            "trainer_attached": False,
             "installer_authorized": False, "reason": "Process count above inspection limit"
         }
     for pid in processes:
@@ -114,13 +146,27 @@ def procfs_report(
         )
         if wine_match or steam_match:
             matches.append(int(pid.name))
+            process_name = is_wemod_process(pid)
+            if process_name is True:
+                wemod_candidates += 1
+            elif process_name is None:
+                wemod_name_unknown += 1
     # A positive match blocks immediately. A negative result is advisory only.
     state = "ACTIVE" if matches else "UNKNOWN" if unreadable else "IDLE_CANDIDATE"
+    wemod_state = (
+        "CANDIDATE_VISIBLE" if wemod_candidates else
+        "UNVERIFIED" if wemod_name_unknown or unreadable or not matches else
+        "NOT_SEEN"
+    )
     return {
         "provider": provider, "game_id": game_id,
         "state": state,
         "matching_processes": matches[:50],
         "matching_process_count": len(matches),
+        "wemod_process_candidates": wemod_candidates,
+        "wemod_process_state": wemod_state,
+        "wemod_process_name_unreadable": wemod_name_unknown,
+        "trainer_attached": False,
         "unreadable_same_user_processes": unreadable,
         "scanned_same_user_processes": scanned,
         "game_runtime_idle_verified": False,
