@@ -7,6 +7,8 @@ cd "$ROOT"
 start=$SECONDS
 export PYTHONDONTWRITEBYTECODE=1
 echo "GameWeld PC2 — FAST offline feedback (NOT a release qualification)"
+bash -n scripts/pc2-cachyos-gtk-crash.sh
+echo "Crash-diagnostic helper syntax: PASS"
 python3 -m py_compile \
   scripts/gameweld-wemod-native-route.py \
   scripts/gameweld-wemod-live-attach.py \
