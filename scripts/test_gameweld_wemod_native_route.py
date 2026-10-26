@@ -56,6 +56,50 @@ class NativeRouteTests(unittest.TestCase):
             self.assertFalse(result["legacy_bridge_required"])
             self.assertFalse(result["game_runtime_attached"])
 
+    def test_steam_user_report_marks_runner_not_required_and_attachment_unverified(self):
+        install = self.root / "steamapps/common/Test Game"
+        install.mkdir(parents=True)
+        (self.root / "steamapps/appmanifest_123456.acf").write_text("fixture")
+        (self.root / "steamapps/compatdata/123456/pfx").mkdir(parents=True)
+        result = route.native_route_report("steam", "123456", install_dir=str(install))
+        text = route.human_readable_report(result)
+        self.assertIn("Steam AppID manifest: FOUND", text)
+        self.assertIn("Steam Proton prefix: FOUND", text)
+        self.assertIn("Separate Wine runner: NOT REQUIRED", text)
+        self.assertIn("Trainer attachment to this game: NOT VERIFIED", text)
+        self.assertIn("no GameWeld Steam Bridge needed", text)
+
+    def test_heroic_lutris_human_report_explains_runner_and_safe_next_action(self):
+        for provider, game_id in (("heroic", "gog_abcdef"), ("lutris", "lutris:my-game")):
+            with self.subTest(provider=provider):
+                prefix = self.root / (provider + "-pfx")
+                prefix.mkdir()
+                result = route.native_route_report(provider, game_id, prefix=str(prefix))
+                output = route.human_readable_report(result)
+                self.assertIn(f"{provider.title()} game prefix: FOUND", output)
+                self.assertIn(f"{provider.title()} configured Wine/Proton runner: NOT VERIFIED", output)
+                self.assertIn("original-platform integration", output)
+                self.assertIn("Safety: READ-ONLY", output)
+
+    def test_cli_text_format_keeps_machine_json_default(self):
+        import contextlib
+        from io import StringIO
+        report = route.native_route_report("steam", "123456")
+        with patch.object(route, "native_route_report", return_value=report):
+            stdout = StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(route.main([
+                    "--provider", "steam", "--game-id", "123456", "--format", "text"
+                ]), 0)
+            self.assertIn("GAMEWELD — WEMOD GAME CONNECTION", stdout.getvalue())
+            self.assertIn("NOT VERIFIED", stdout.getvalue())
+            stdout = StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(route.main([
+                    "--provider", "steam", "--game-id", "123456"
+                ]), 0)
+            self.assertFalse(json.loads(stdout.getvalue())["game_runtime_attached"])
+
     def test_unknown_game_and_provider_fail_closed(self):
         for provider, game_id in [
             ("steam", "invalid"), ("steam", "0"), ("heroic", "../../foo"),
