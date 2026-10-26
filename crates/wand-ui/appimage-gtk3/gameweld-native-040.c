@@ -4581,6 +4581,7 @@ static void *pc2_steam_bridge_worker(void *data){
             argv[n++]=pc2_native_route_helper();
             argv[n++]="--provider";argv[n++]=j->provider;
             argv[n++]="--game-id";argv[n++]=j->appid;
+            argv[n++]="--format";argv[n++]="text";
             if(j->game_dir[0]){argv[n++]="--install-dir";argv[n++]=j->game_dir;}
             if(j->prefix[0]){argv[n++]="--prefix";argv[n++]=j->prefix;}
             if(j->runner[0]){argv[n++]="--runner";argv[n++]=j->runner;}
@@ -5696,7 +5697,8 @@ static GtkWidget *build_settings(void){
             (GCallback)on_pc2_native_route,NULL,NULL,0);
         pack(native_card,native_check,0);
         pc2_native_route_status=label(
-            "No game connection checked. No Steam changes or game launches.","muted");
+            "Select a Steam, Heroic or Lutris game, then check its WeMod setup. "
+            "No game will be launched or modified.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_native_route_status,TRUE);
         pack(native_card,pc2_native_route_status,0);
         pack(deckpage,native_card,0);
