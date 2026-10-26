@@ -4839,7 +4839,7 @@ static void *pc2_steam_bridge_worker(void *data){
             argv[n++]="--progress";
         }else if(!strcmp(j->action,"prefix-stage")){
             argv[n++]=pc2_prepared_prefix_stage_helper();
-            argv[n++]="--single-cached";
+            argv[n++]="--release-asset-url";argv[n++]=j->source_url;
             argv[n++]="--approve-stage";
             argv[n++]="--progress";
         }else if(!strcmp(j->action,"prepared-import-preview")){
@@ -5009,15 +5009,17 @@ static void pc2_steam_bridge_action(const char *action){
         pc2_cache_cancel_requested=0;
         int selected=pc2_shared_wemod_choices?
             gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices):-1;
-        if(global_cache && (selected<0 ||
-           selected>=pc2_prepared_choice_count)){
-            free(j);
-            return;
-        }
-        if(global_cache){
+        if(global_cache || global_stage){
+            if(selected<0 || selected>=pc2_prepared_choice_count){
+                if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
+                    "Select a prepared release before downloading or staging.");
+                free(j);
+                return;
+            }
             const PC2PreparedChoice *choice=&pc2_prepared_choices[selected];
             snprintf(j->source_url,sizeof j->source_url,"%s",choice->url);
-            snprintf(j->source_bytes,sizeof j->source_bytes,"%lld",choice->bytes);
+            if(global_cache)
+                snprintf(j->source_bytes,sizeof j->source_bytes,"%lld",choice->bytes);
         }
     }
     pc2_steam_bridge_busy=1;
@@ -5037,7 +5039,7 @@ static void pc2_steam_bridge_action(const char *action){
         if(pc2_shared_wemod_cancel)
             gtk_widget_set_sensitive(pc2_shared_wemod_cancel,TRUE);
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
-            "Safely extracting one cached prepared .NET ZIP to private GameWeld staging. "
+            "Staging the exact selected .NET ZIP into private GameWeld cache. "
             "Your games and Proton prefixes are untouched…");
     }else if(import_preview){
         if(pc2_native_route_status)set_label(pc2_native_route_status,
@@ -5099,10 +5101,17 @@ static void on_pc2_bridge_prefix_catalog(GtkButton*b,void*d){(void)b;(void)d;pc2
 static void on_pc2_prepared_stage(GtkButton*b,void*d){
     (void)b;(void)d;
     if(!pc2_provider_controls_allowed() || pc2_steam_bridge_busy)return;
+    int selected=pc2_shared_wemod_choices?
+        gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices):-1;
+    if(selected<0 || selected>=pc2_prepared_choice_count){
+        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
+            "Choose the prepared .NET release first, then download and stage it.");
+        return;
+    }
     GtkWidget*dialog=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
         "Stage the cached prepared .NET environment for compatibility testing?\n\n"
-        "This extracts exactly one downloaded ZIP into GameWeld's private cache. "
+        "This extracts the exact release selected above from GameWeld's private cache. "
         "No Steam game, Proton prefix, registry, saves or launch options are changed. "
         "The ZIP is third-party and remains untrusted. Continue?");
     int answer=gtk_dialog_run((GtkDialog*)dialog);
