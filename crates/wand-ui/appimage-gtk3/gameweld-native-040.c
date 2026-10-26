@@ -4772,6 +4772,9 @@ static gboolean pc2_steam_bridge_done(gpointer data){
             "Next: Step 2 — Stage downloaded .NET prefix (isolated). "
             "No game prefix has changed; publisher and compatibility are not verified." : msg);
     }else if(!strcmp(j->action,"prefix-stage")){
+#ifdef GAMEWELD_PC2_GTK_ACTION_SMOKE
+        fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_HELPER_DONE status=%d\n", j->ok);
+#endif
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             j->ok ? "Step 2 complete — prepared .NET template staged privately. "
                     "Next: select a Steam game and use Step 3 to review compatibility. "
@@ -6385,9 +6388,26 @@ static void build_ui(void){
  * the expected failure is handled without changing game files. */
 static gboolean pc2_gtk_smoke_prefix_stage(gpointer ignored){
     (void)ignored;
-    fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_BEGIN\\n");
+    fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_BEGIN\n");
+    /* Simulate an explicitly chosen release in the empty test HOME. This
+     * invokes the Python staging helper without any ZIP or game writes. */
+    if(pc2_shared_wemod_choices){
+        pc2_prepared_choice_count=1;
+        snprintf(pc2_prepared_choices[0].tag,
+                 sizeof pc2_prepared_choices[0].tag, "%s", "PfxVer10.1");
+        snprintf(pc2_prepared_choices[0].name,
+                 sizeof pc2_prepared_choices[0].name, "%s", "GE-Proton10.1.zip");
+        snprintf(pc2_prepared_choices[0].url,
+                 sizeof pc2_prepared_choices[0].url, "%s",
+                 "https://github.com/DeckCheatz/BuiltPrefixes-dev/"
+                 "releases/download/PfxVer10.1/GE-Proton10.1.zip");
+        pc2_prepared_choices[0].bytes=1000000;
+        gtk_combo_box_text_append_text((GtkComboBoxText*)pc2_shared_wemod_choices,
+                                        "Synthetic DeckCheatz release (CI only)");
+        gtk_combo_box_set_active((GtkComboBox*)pc2_shared_wemod_choices,0);
+    }
     pc2_steam_bridge_action("prefix-stage");
-    fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_DISPATCHED\\n");
+    fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_DISPATCHED\n");
     return FALSE;
 }
 #endif
