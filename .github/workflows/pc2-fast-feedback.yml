@@ -1,0 +1,23 @@
+name: PC2 Fast Feedback
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pc2-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  fast-offline:
+    name: Fast offline safety (no native build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run GameWeld PC2 offline safety tests
+        run: bash scripts/pc2-fast-feedback.sh
+      - name: Scope reminder
+        run: |
+          echo 'Fast CI only: this does not verify a native build, real game launch or trainer attachment.'
+          echo 'Full CI and private Ubuntu baseline remain mandatory before a release.'
