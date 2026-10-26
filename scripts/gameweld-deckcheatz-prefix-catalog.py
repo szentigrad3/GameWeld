@@ -142,7 +142,7 @@ def main() -> int:
         help="Optional informational runner label; no game must be selected",
     )
     args = parser.parse_args()
-    print("Scope: SHARED WEMOD SETUP for Steam, Heroic and Lutris integrations")
+    print("Scope: SHARED PREPARED-PREFIX LIBRARY for Steam, Heroic and Lutris integrations")
     print("Provider launch integration: not tested by this catalog lookup")
     print(catalog_report(args.proton_label))
     return 0
