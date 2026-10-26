@@ -49,7 +49,7 @@ def safe_root(root: Path) -> Path:
 
 
 def load_audit():
-    script = Path(__file__).with_name("gameweld-prepared-prefix-audit.py")
+    script = Path(__file__).resolve().with_name("gameweld-prepared-prefix-audit.py")
     if script.is_symlink() or not script.is_file():
         raise StageRefused("Prepared ZIP archive inspector is missing")
     spec = importlib.util.spec_from_file_location("prepared_stage_audit", script)
