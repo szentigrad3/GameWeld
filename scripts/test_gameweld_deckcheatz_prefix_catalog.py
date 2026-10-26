@@ -85,7 +85,7 @@ class PreparedPrefixCatalogTests(unittest.TestCase):
              contextlib.redirect_stdout(result):
             rc = mod.main()
         self.assertEqual(rc, 0)
-        self.assertIn("SHARED WEMOD SETUP for Steam, Heroic and Lutris", result.getvalue())
+        self.assertIn("SHARED PREPARED-PREFIX LIBRARY for Steam, Heroic and Lutris", result.getvalue())
         self.assertIn("Configured Proton label: Shared GameWeld WeMod environment", result.getvalue())
         self.assertIn("Detected Proton version label: UNKNOWN", result.getvalue())
         self.assertIn("No archive downloaded; no files copied", result.getvalue())
