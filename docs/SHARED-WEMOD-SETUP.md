@@ -1,8 +1,7 @@
 # GameWeld — prepared WeMod setup for all game libraries
 
 **Scope:** Steam, Heroic, Lutris, and future supported Windows-game providers.
-**Status:** Architecture + read-only catalog and archive audit implemented. Installation,
-game integration, account migration, and verified trainer activation **not yet done**.
+**Status:** Architecture + read-only catalog and archive audit implemented. Game integration, account migration, and verified trainer activation **not yet done**.\nCache-only download code exists but is not enabled in the GUI.
 
 ## User-visible goal
 
@@ -75,6 +74,35 @@ need to be implemented and verified.
 Global actions such as **Find prepared WeMod setup** and **Check prepared ZIP**
 must work without a selected game or AppID. Per-game installation and launch
 actions must require an unambiguous game and provider context.
+
+## Download-only cache stage (development code; not yet connected to GUI)
+
+The helper \`scripts/gameweld-prepared-prefix-cache.py\` adds an opt-in
+**cache-only** download path for the user-approved release ZIP. It is disabled
+unless \`--approve-cache-download\` is supplied. This is deliberately distinct
+from the future **Install** and **Play** actions.
+
+- Only an exact GitHub release ZIP URL under the configured
+  DeckCheatz/BuiltPrefixes-dev project is accepted; the downloaded response
+  must remain on GitHub's HTTPS asset hosts.
+- The declared asset size is bounded and checked against actual bytes, with
+  a free-space gate. Downloads stream to a temporary file under a separate
+  GameWeld cache directory.
+- Before committing to the cache, the helper validates ZIP member paths,
+  symlinks, decompression ratios and CRC through the shared archive inspector.
+  Any failed/aborted download discards its temporary file.
+- The resulting cache ZIP is content-addressed by SHA-256, but labeled
+  **publisher authenticity unverified**, **game compatibility unverified**
+  and **not installed**.
+- No archive is extracted, no WeMod account data is read, no Wine/Proton
+  runtime is invoked, and no selected game's live prefix is modified.
+- The normal GUI currently exposes only **Find prepared WeMod setup**, a
+  release-metadata lookup. No cache download/install button is enabled yet.
+
+**Before surfacing a download button:** verify the exact selected release
+against authoritative metadata, show source/size/compatibility cautions,
+require a click-through user confirmation, handle cancellation/progress, and
+ensure the setup cannot be confused with a finished game installation.
 
 ## Required transactional installer (not implemented)
 
