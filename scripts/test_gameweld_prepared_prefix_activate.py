@@ -163,6 +163,59 @@ class PrefixActivationTests(unittest.TestCase):
                     accepted_risk=True, proc_root=self.processes)
         self.original()
 
+    def test_recover_interrupted_swap_with_game_prefix_temporarily_missing(self):
+        txid = "f" * 32
+        original = self.compat.parent / f".gameweld-original-{self.appid}-{txid}"
+        staging = self.compat.parent / f".gameweld-import-{self.appid}-{txid}"
+        shutil.copytree(self.candidate, staging)
+        data = {
+            "txid": txid, "appid": self.appid, "state": "PREPARED",
+            "compat_path": str(self.compat), "backup_path": str(original),
+            "staging_path": str(staging),
+            "original_sha256": importer.fingerprint(self.compat)
+        }
+        promote.write_new_journal(self.state, txid, data)
+        os.rename(self.compat, original)
+        self.assertFalse(self.compat.exists())
+        with patch.dict(os.environ, {
+            "GAMEWELD_PREFIX_IMPORT_EXPERIMENT": promote.EXPERIMENT
+        }):
+            result = promote.recover_interrupted(
+                self.appid, self.install, txid, state_root=self.state,
+                approved=True, game_closed=True, accepted_risk=True,
+                proc_root=self.processes)
+        self.assertEqual(result["state"], "ROLLED_BACK")
+        self.original()
+        self.assertTrue(Path(str(staging) + ".aborted").exists())
+        self.assertEqual(promote.read_journal(self.state, txid)["state"], "ROLLED_BACK")
+
+    def test_recover_interrupted_journal_after_candidate_switch(self):
+        txid = "e" * 32
+        backup = self.compat.parent / f".gameweld-original-{self.appid}-{txid}"
+        staging = self.compat.parent / f".gameweld-import-{self.appid}-{txid}"
+        shutil.copytree(self.candidate, staging)
+        data = {
+            "txid": txid, "appid": self.appid, "state": "PREPARED",
+            "compat_path": str(self.compat), "backup_path": str(backup),
+            "staging_path": str(staging),
+            "original_sha256": importer.fingerprint(self.compat)
+        }
+        promote.write_new_journal(self.state, txid, data)
+        os.rename(self.compat, backup)
+        os.rename(staging, self.compat)
+        with patch.dict(os.environ, {
+            "GAMEWELD_PREFIX_IMPORT_EXPERIMENT": promote.EXPERIMENT
+        }):
+            result = promote.recover_interrupted(
+                self.appid, self.install, txid, state_root=self.state,
+                approved=True, game_closed=True, accepted_risk=True,
+                proc_root=self.processes)
+        self.assertEqual(result["state"], "ROLLED_BACK")
+        self.original()
+        retired = self.compat.parent / f".gameweld-recovered-test-{self.appid}-{txid}"
+        self.assertTrue(retired.is_dir())
+        self.assertEqual((retired / "pfx/system.reg").read_bytes(), b"PREPARED DOTNET")
+
     def test_rollback_requires_original_backup(self):
         data = self.do_activate()
         shutil.rmtree(Path(data["backup_path"]))
