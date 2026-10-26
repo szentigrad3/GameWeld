@@ -5676,7 +5676,7 @@ static GtkWidget *build_settings(void){
         GtkWidget*shared_card=box(GTK_ORIENTATION_VERTICAL,9);style(shared_card,"card");
         pack(shared_card,label("Prepared WeMod setup — All game libraries","card-title"),0);
         GtkWidget*shared_note=label(
-            "One shared GameWeld-managed WeMod environment for Steam, Heroic and Lutris. "
+            "One GameWeld-managed prepared setup library for Steam, Heroic and Lutris. "
             "Find a compatible prepared setup without selecting a game. "
             "This currently checks releases only; installation, backup and rollback "
             "are not yet enabled.","muted");
