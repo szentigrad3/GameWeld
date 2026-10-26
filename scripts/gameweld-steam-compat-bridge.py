@@ -824,7 +824,7 @@ def netfx_isolation_plan(
     cache = xdg_dir("XDG_CACHE_HOME", ".cache")
     root = cache / "gameweld" / "netfx-isolation"
     proposed = root / f"appid-{appid}"
-    disallowed = (game, current, proton.parent, client)
+    disallowed = (steamapps, game, current, proton.parent, client)
     # Consider the complete proposed ancestry. A symlink outside the four
     # previously checked final components could alias a Steam/library root.
     unsafe_links = any(part.is_symlink() for part in (proposed, *proposed.parents))
