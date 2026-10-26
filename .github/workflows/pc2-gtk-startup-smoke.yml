@@ -70,6 +70,12 @@ jobs:
             echo "FAIL: the regression action was not exercised by native GTK."
             exit 1
           fi
+          if ! grep -q "PC2_GTK_SMOKE_PREFIX_STAGE_HELPER_DONE status=0" gtk-startup.log; then
+            if ! grep -q "PC2_GTK_SMOKE_PREFIX_STAGE_HELPER_DONE status=1" gtk-startup.log; then
+              echo "FAIL: the selected-release Python staging helper did not return."
+              exit 1
+            fi
+          fi
           if [[ "$result" == 124 ]]; then
             echo "PASS: Native GTK frontend remained alive through the smoke window."
             exit 0
