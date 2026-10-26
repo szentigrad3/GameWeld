@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -496,10 +497,17 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             with patch.object(bridge.subprocess, "Popen",
                               side_effect=AssertionError("Proton must not execute")), \
                  patch.object(bridge.subprocess, "call",
-                              side_effect=AssertionError("Winetricks must not execute")):
+                              side_effect=AssertionError("Winetricks must not execute")), \
+                 patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)), \
+                 patch.object(bridge, "steam_compat_selection",
+                              return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"):
                 plan = bridge.netfx_isolation_plan("3008130", game)
             self.assertIn("PLAN ONLY (READ-ONLY", plan)
             self.assertIn("Saved Proton executable:", plan)
+            self.assertIn("Scratch filesystem free space: 16.0 GiB available", plan)
+            self.assertIn("Steam saved compatibility selection: GAMEWELD BRIDGE SELECTED", plan)
+            self.assertIn("Actual live Proton executable/version: NOT VERIFIED", plan)
             self.assertIn("Workspace check: AVAILABLE FOR A FUTURE APPROVED TEST", plan)
             self.assertIn("NOT SELECTED OR VERIFIED", plan)
             self.assertIn("No automatic promotion/copying", plan)
@@ -523,6 +531,62 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertIn("Workspace check: BLOCKED",
                           bridge.netfx_isolation_plan("3008130", game))
             self.assertTrue(target.is_symlink())
+
+    def test_isolated_netfx_plan_low_disk_space_blocks_future_test(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            with patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=3 * 1024 ** 3)):
+                plan = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("Workspace check: BLOCKED", plan)
+            self.assertIn("3.0 GiB available", plan)
+            self.assertIn("(LOW SPACE)", plan)
+            self.assertFalse((self.home / ".cache").exists())
+
+    def test_isolated_netfx_plan_optional_installer_hash_is_evidence_only(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            candidate = self.root / "offline-net-installer.exe"
+            candidate.write_bytes(b"MZ-MOCK-NOT-AN-INSTALLER")
+            expected = bridge.hashlib.sha256(candidate.read_bytes()).hexdigest()
+            with patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)), \
+                 patch.object(bridge.subprocess, "Popen",
+                              side_effect=AssertionError("installer must not run")):
+                plan = bridge.netfx_isolation_plan("3008130", game, installer_path=candidate)
+                self.assertIn("NOT VERIFIED against a trusted publisher", plan)
+                checked = bridge.netfx_isolation_plan(
+                    "3008130", game, installer_path=candidate, expected_sha256=expected
+                )
+                mismatch = bridge.netfx_isolation_plan(
+                    "3008130", game, installer_path=candidate, expected_sha256="0" * 64
+                )
+            self.assertIn("MATCHES supplied digest", checked)
+            self.assertIn("publisher provenance must still be independently verified", checked)
+            self.assertIn("MISMATCH — DO NOT EXECUTE", mismatch)
+            self.assertIn("prefix creation, registry changes and DLL copies: NOT PERFORMED", checked)
+            self.assertEqual(candidate.read_bytes(), b"MZ-MOCK-NOT-AN-INSTALLER")
+
+    def test_isolated_netfx_plan_rejects_symlinked_installer(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            file = self.root / "candidate.exe"
+            file.write_bytes(b"MZ-TEST")
+            symlink = self.root / "installer-link.exe"
+            symlink.symlink_to(file)
+            with self.assertRaisesRegex(ValueError, "non-symlinked"):
+                bridge.netfx_isolation_plan("3008130", game, installer_path=symlink)
+            with self.assertRaisesRegex(ValueError, "requires --installer-path"):
+                bridge.netfx_isolation_plan("3008130", game, expected_sha256="0" * 64)
 
     def test_isolated_netfx_plan_rejects_wrong_game_and_unconfigured(self):
         with patch.dict(os.environ, self.env):
