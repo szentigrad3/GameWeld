@@ -681,7 +681,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Stage downloaded .NET prefix (isolated)") && strcmp(s, "Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4768,13 +4768,14 @@ static gboolean pc2_steam_bridge_done(gpointer data){
             "No game prefix was changed.";
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             (j->ok && !pc2_cache_cancel_requested) ?
-            "Prepared WeMod ZIP downloaded and ZIP-checked into a separate "
-            "GameWeld cache. NOT installed. Publisher identity, game compatibility "
-            "and trainer attachment are unverified; no game prefix changed." : msg);
+            "Step 1 complete — prepared WeMod ZIP downloaded and checked. "
+            "Next: Step 2 — Stage downloaded .NET prefix (isolated). "
+            "No game prefix has changed; publisher and compatibility are not verified." : msg);
     }else if(!strcmp(j->action,"prefix-stage")){
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
-            j->ok ? "Prepared .NET template staged separately. Game prefix untouched. "
-                    "Select a game and review its version compatibility next." : msg);
+            j->ok ? "Step 2 complete — prepared .NET template staged privately. "
+                    "Next: select a Steam game and use Step 3 to review compatibility. "
+                    "Game prefixes and saves remain unchanged." : msg);
     }else if(!strcmp(j->action,"native-route")||!strcmp(j->action,"live-attach-preview")||!strcmp(j->action,"prepared-import-preview")){
         if(pc2_native_route_status)set_label(pc2_native_route_status,msg);
         if(G.pc2_deckcheatz_overview_status)
@@ -6071,12 +6072,12 @@ static GtkWidget *build_settings(void){
             (GCallback)pc2_prepared_choice_update,NULL,NULL,0);
         pack(shared_card,pc2_shared_wemod_choices,0);
         pc2_shared_wemod_download=button(
-            "Download selected prepared setup (cache only)","action");
+            "Step 1 — Download selected prepared setup (cache only)","action");
         gtk_widget_set_sensitive(pc2_shared_wemod_download,FALSE);
         g_signal_connect_data(pc2_shared_wemod_download,"clicked",
             (GCallback)on_pc2_prepared_prefix_cache,NULL,NULL,0);
         pack(shared_card,pc2_shared_wemod_download,0);
-        GtkWidget*prepared_stage_button=button("Stage downloaded .NET prefix (isolated)","action");
+        GtkWidget*prepared_stage_button=button("Step 2 — Stage downloaded .NET prefix (isolated)","action");
         g_signal_connect_data(prepared_stage_button,"clicked",
             (GCallback)on_pc2_prepared_stage,NULL,NULL,0);
         pack(shared_card,prepared_stage_button,0);
@@ -6106,7 +6107,7 @@ static GtkWidget *build_settings(void){
         g_signal_connect_data(live_attach_preview,"clicked",
             (GCallback)on_pc2_live_attach_preview,NULL,NULL,0);
         pack(native_card,live_attach_preview,0);
-        GtkWidget*prepared_import_preview=button("Review prepared .NET prefix (read-only)","action");
+        GtkWidget*prepared_import_preview=button("Step 3 — Review prepared .NET prefix (read-only)","action");
         g_signal_connect_data(prepared_import_preview,"clicked",
             (GCallback)on_pc2_prepared_import_preview,NULL,NULL,0);
         pack(native_card,prepared_import_preview,0);
