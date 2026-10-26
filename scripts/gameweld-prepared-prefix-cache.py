@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -166,11 +167,31 @@ def acquire_to_cache(
 
         sha = digest.hexdigest()
         destination = stored / (sha + ".zip")
-        if destination.exists() or destination.is_symlink():
-            # Don't overwrite anything; a previously fetched file still
-            # requires an independent verification before being used.
-            raise CacheRefused("A cache entry with this digest already exists")
+        metadata_path = stored / (sha + ".source.json")
+        if (destination.exists() or destination.is_symlink() or
+                metadata_path.exists() or metadata_path.is_symlink()):
+            raise CacheRefused("An existing archive or metadata record must not be overwritten")
+        # Preserve the asset name so a ZIP that intentionally omits the
+        # Proton 'version' file can still be matched to the game prefix.
+        # Release metadata is NOT a publisher signature or compatibility proof.
+        source_record = {
+            "sha256": sha, "bytes": length, "source": SOURCE_REPO,
+            "release_tag": tag, "asset_name": filename,
+            "publisher_authenticity": "UNVERIFIED",
+        }
         os.replace(temp, destination)
+        try:
+            fd = os.open(metadata_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                         getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as output:
+                json.dump(source_record, output, sort_keys=True, indent=2)
+                output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
+        except OSError:
+            metadata_path.unlink(missing_ok=True)
+            destination.unlink(missing_ok=True)
+            raise
         if progress is not None:
             progress("CACHED", length, declared_size)
         return {
