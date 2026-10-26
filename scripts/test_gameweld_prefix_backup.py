@@ -198,6 +198,17 @@ class PrefixBackupTests(unittest.TestCase):
                                  backup_root=self.backup_root)
         self.assertEqual(self.game_snapshot(), self.before)
 
+    def test_non_object_manifest_is_cleanly_refused(self):
+        with patch.object(backup.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 200 * 1024 ** 3})()):
+            saved = self.call()
+        manifest = Path(saved["backup_path"]) / "manifest.json"
+        manifest.write_text("[]")
+        with self.assertRaisesRegex(backup.BackupRefused, "JSON object"):
+            backup.verify_backup(Path(saved["backup_path"]),
+                                 backup_root=self.backup_root)
+        self.assertEqual(self.game_snapshot(), self.before)
+
     def test_invalid_provider_or_game_id_refused(self):
         for provider, game_id in [("steam", "0"), ("steam", "../x"),
                                   ("heroic", "bad/id"), ("unknown", "123")]:
