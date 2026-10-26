@@ -141,9 +141,28 @@ def main() -> int:
         "--proton-label", default="Shared GameWeld WeMod environment",
         help="Optional informational runner label; no game must be selected",
     )
+    parser.add_argument("--machine-lines", action="store_true",
+                        help="Emit bounded release choices for the GameWeld GUI")
     args = parser.parse_args()
     print("Scope: SHARED PREPARED-PREFIX LIBRARY for Steam, Heroic and Lutris integrations")
     print("Provider launch integration: not tested by this catalog lookup")
+    if args.machine_lines:
+        try:
+            releases = fetch_release_metadata()
+            candidates = list_release_assets(releases, args.proton_label)
+        except (OSError, ValueError, TimeoutError) as error:
+            print(f"Release lookup: UNAVAILABLE ({type(error).__name__})")
+            return 1
+        for item in candidates[:4]:
+            tag, asset = item["release"], item["asset"]
+            # The format is a private, easily parsed UI protocol. Reject any
+            # field that could smuggle a delimiter or an extra output line.
+            if not all("\t" not in field and "\n" not in field and "\r" not in field
+                       for field in (tag, asset, item["url"])):
+                continue
+            print(f"ASSET\t{tag}\t{asset}\t{item['size']}\t{item['url']}")
+        print(catalog_report(args.proton_label, releases=releases))
+        return 0
     print(catalog_report(args.proton_label))
     return 0
 
