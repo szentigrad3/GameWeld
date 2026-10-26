@@ -758,6 +758,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('button("Check game WeMod connection","action")', ui)
         self.assertIn('pack(deckpage,native_card,0);', ui)
         self.assertIn('strcmp(s, "Check game WeMod connection")', guard)
+        self.assertIn('strcmp(s, "Check WeMod setup")', guard)
+        self.assertNotIn('strcmp(s, "Legacy: Play using existing Steam Bridge")', guard)
         self.assertIn('argv[n++]=pc2_native_route_helper();', ui)
         self.assertIn('strcmp(j->action,"native-route")', ui)
         self.assertIn('if(native_route)', ui)
