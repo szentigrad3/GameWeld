@@ -546,6 +546,20 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertTrue(cache_alias.is_symlink())
             self.assertFalse((self.steam / "steamapps/gameweld").exists())
 
+    def test_isolated_netfx_plan_refuses_workspace_inside_steam_library(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            unsafe_cache = self.steam / "steamapps/other-diagnostics"
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": str(unsafe_cache)}), \
+                 patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)):
+                report = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("Workspace check: BLOCKED", report)
+            self.assertFalse(unsafe_cache.exists())
+
     def test_isolated_netfx_plan_low_disk_space_blocks_future_test(self):
         with patch.dict(os.environ, self.env):
             bridge.configure("3008130", self.proton, self.client, enabled=False)
