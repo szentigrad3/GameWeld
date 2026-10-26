@@ -879,7 +879,7 @@ def netfx_isolation_plan(
         if (installer_path.is_symlink() or not installer_path.is_file() or
                 installer_path.stat().st_size == 0 or
                 installer_path.stat().st_size > 512 * 1024 ** 2):
-            raise ValueError("Installer candidate must be a regular 1–512 MiB non-symlinked file")
+            raise ValueError("Installer candidate must be a nonempty regular non-symlinked file no larger than 512 MiB")
         file_size = installer_path.stat().st_size
         digest = hashlib.sha256()
         with installer_path.open("rb") as stream:
