@@ -792,12 +792,18 @@ def netfx_registered_without_native_clr(appid: str, game_dir: Path) -> bool:
         return False
 
 
-def netfx_isolation_plan(appid: str, game_dir: Path) -> str:
-    """Plan (never execute) a separate .NET test away from the game's prefix.
+def netfx_isolation_plan(
+    appid: str,
+    game_dir: Path,
+    *,
+    installer_path: Path | None = None,
+    expected_sha256: str | None = None,
+) -> str:
+    """Read-only isolated .NET experiment preflight; no Wine or writes.
 
-    This command is deliberately incapable of creating the sandbox, invoking
-    Proton, installing runtimes, editing Wine registry keys or copying DLLs.
-    Only user-authorised future work could implement an actual sandbox runner.
+    A digest comparison requires a checksum independently obtained from a
+    trusted publisher. A matching user-supplied digest alone is not proof of
+    authenticity or compatibility, and never authorizes installation.
     """
     if not valid_appid(appid):
         raise ValueError("Invalid Steam AppID for isolated .NET test plan")
@@ -819,38 +825,91 @@ def netfx_isolation_plan(appid: str, game_dir: Path) -> str:
     root = cache / "gameweld" / "netfx-isolation"
     proposed = root / f"appid-{appid}"
     disallowed = (game, current, proton.parent, client)
-    unsafe_links = any(p.is_symlink() for p in
-                       (cache, cache / "gameweld", root, proposed))
+    # Consider the complete proposed ancestry. A symlink outside the four
+    # previously checked final components could alias a Steam/library root.
+    unsafe_links = any(part.is_symlink() for part in (proposed, *proposed.parents))
     overlaps_protected = any(
         proposed == protected or proposed in protected.parents or
         protected in proposed.parents
         for protected in disallowed
     )
     occupied = proposed.exists() or proposed.is_symlink()
-    ready = not (unsafe_links or overlaps_protected or occupied)
+
+    nearest = next((part for part in (proposed, *proposed.parents) if part.exists()), None)
+    disk_status = "INCONCLUSIVE (no readable parent filesystem)"
+    enough_space = False
+    if nearest is not None and not unsafe_links:
+        try:
+            free = shutil.disk_usage(nearest).free
+            free_gib = free / (1024 ** 3)
+            enough_space = free >= 8 * 1024 ** 3
+            disk_status = (
+                f"{free_gib:.1f} GiB available; conservative planning target: 8 GiB "
+                + ("(PASS)" if enough_space else "(LOW SPACE)")
+            )
+        except OSError:
+            pass
+    ready = not (unsafe_links or overlaps_protected or occupied) and enough_space
+
+    try:
+        selection = steam_compat_selection(appid, configured_proton=proton)
+    except (OSError, ValueError) as exc:
+        selection = "UNVERIFIED (read-only Steam compatibility lookup failed)"
+    # This is the saved Steam selection, not proof of a running process.
     lines = [
         f"GAMEWELD — ISOLATED .NET TEST PLAN • AppID {appid}",
         "Mode: PLAN ONLY (READ-ONLY; no sandbox or installer created)",
-        "Selected Steam game: verified matching local AppID manifest",
+        "Selected Steam game: matching local AppID manifest filename (contents not verified)",
         f"Saved Proton executable: {proton}",
-        "Proton selection: saved GameWeld configuration; actual running tool not proven",
+        f"Steam saved compatibility selection: {selection}",
+        "Actual live Proton executable/version: NOT VERIFIED (no process executed)",
         f"Existing game compatdata: {current} (DO NOT TOUCH)",
         f"Proposed separate workspace: {proposed}",
         "Workspace check: " +
         ("AVAILABLE FOR A FUTURE APPROVED TEST" if ready else
-         "BLOCKED (path exists, overlaps protected files, or has symlink ancestry)"),
-        "Install source: NOT SELECTED OR VERIFIED",
+         "BLOCKED (occupied, symlink/overlap risk, or insufficient/unverified free space)"),
+        "Scratch filesystem free space: " + disk_status,
+    ]
+
+    if installer_path is None:
+        if expected_sha256 is not None:
+            raise ValueError("An expected checksum requires --installer-path")
+        lines.append("Install source: NOT SELECTED OR VERIFIED")
+    else:
+        if (installer_path.is_symlink() or not installer_path.is_file() or
+                installer_path.stat().st_size == 0 or
+                installer_path.stat().st_size > 512 * 1024 ** 2):
+            raise ValueError("Installer candidate must be a regular 1–512 MiB non-symlinked file")
+        file_size = installer_path.stat().st_size
+        digest = hashlib.sha256()
+        with installer_path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        actual = digest.hexdigest()
+        lines.append(f"Installer candidate: {installer_path} ({file_size} bytes)")
+        lines.append(f"Installer computed SHA-256: {actual}")
+        if expected_sha256 is None:
+            lines.append("Installer checksum: NOT VERIFIED against a trusted publisher")
+        else:
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+                raise ValueError("Expected installer SHA-256 must be 64 hexadecimal characters")
+            if actual.lower() != expected_sha256.lower():
+                lines.append("Installer checksum: MISMATCH — DO NOT EXECUTE")
+            else:
+                lines.append("Installer checksum: MATCHES supplied digest; "
+                             "publisher provenance must still be independently verified")
+
+    lines += [
         "Compatibility of .NET installer with this Proton build: NOT VERIFIED",
         "Proton run, downloads, prefix creation, registry changes and DLL copies: NOT PERFORMED",
         "Do not run the previous dotnet48/MSI installer on the live game prefix.",
-        "Before any future sandbox test: choose a trusted installer, check its hash, "
-        "confirm available space, and explicitly approve a disposable-only test.",
+        "Before any future sandbox test: independently verify installer origin "
+        "and checksum, and explicitly approve the disposable-only test.",
         "After a future sandbox test: require actual CLR loading evidence; "
         "a registry Release key or mere DLL presence is not a pass.",
         "No automatic promotion/copying from sandbox into a Steam game prefix.",
     ]
     return "\n".join(lines)
-
 
 def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
     """Bounded, read-only, game-scoped readiness summary for the GUI.
@@ -1000,6 +1059,8 @@ def main() -> int:
         parser.add_argument("--client", type=Path)
         parser.add_argument("--enable-trainer", action="store_true")
         parser.add_argument("--delay-seconds", type=int, default=12)
+        parser.add_argument("--installer-path", type=Path)
+        parser.add_argument("--expected-sha256")
         parser.add_argument("--confirm", action="store_true")
         args = parser.parse_args()
         if args.action == "ui-state":
@@ -1016,7 +1077,11 @@ def main() -> int:
         if args.action == "netfx-plan":
             if not args.appid or not args.game_dir:
                 raise ValueError("Isolated .NET plan requires --appid and --game-dir")
-            print(netfx_isolation_plan(args.appid, args.game_dir))
+            print(netfx_isolation_plan(
+                args.appid, args.game_dir,
+                installer_path=args.installer_path,
+                expected_sha256=args.expected_sha256
+            ))
             return 0
         if args.action == "netfx-status":
             if not args.appid or not args.game_dir:
