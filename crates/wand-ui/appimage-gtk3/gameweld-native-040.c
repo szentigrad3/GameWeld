@@ -4577,6 +4577,12 @@ static const char *pc2_prepared_prefix_catalog_helper(void){
     else snprintf(p,sizeof p,"gameweld-deckcheatz-prefix-catalog.py");
     return p;
 }
+static const char *pc2_prepared_prefix_cache_helper(void){
+    static char p[2048];const char *appdir=getenv("APPDIR");
+    if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-prepared-prefix-cache.py",appdir);
+    else snprintf(p,sizeof p,"gameweld-prepared-prefix-cache.py");
+    return p;
+}
 static const char *pc2_native_route_helper(void){
     static char p[2048];const char *appdir=getenv("APPDIR");
     if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-wemod-native-route.py",appdir);
@@ -4588,7 +4594,17 @@ static gboolean pc2_steam_bridge_done(gpointer data){
     pc2_steam_bridge_busy=0;
     const char *msg=j->output[0]?j->output:(j->ok?"Complete.":"Steam Bridge operation failed.");
     if(!strcmp(j->action,"prefix-catalog")){
-        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,msg);
+        if(j->ok)pc2_prepared_catalog_display(msg);
+        else{
+            pc2_prepared_choices_clear();
+            if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,msg);
+        }
+    }else if(!strcmp(j->action,"prefix-cache")){
+        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
+            j->ok ?
+            "Prepared WeMod ZIP downloaded and ZIP-checked into a separate "
+            "GameWeld cache. NOT installed. Publisher identity, game compatibility "
+            "and trainer attachment are unverified; no game prefix changed." : msg);
     }else if(!strcmp(j->action,"native-route")){
         if(pc2_native_route_status)set_label(pc2_native_route_status,msg);
         if(G.pc2_deckcheatz_overview_status)
@@ -4643,6 +4659,12 @@ static void *pc2_steam_bridge_worker(void *data){
         if(!strcmp(j->action,"prefix-catalog")){
             /* Shared catalog sends no game identifier to the provider. */
             argv[n++]=pc2_prepared_prefix_catalog_helper();
+            argv[n++]="--machine-lines";
+        }else if(!strcmp(j->action,"prefix-cache")){
+            argv[n++]=pc2_prepared_prefix_cache_helper();
+            argv[n++]="--release-asset-url";argv[n++]=j->source_url;
+            argv[n++]="--declared-size";argv[n++]=j->source_bytes;
+            argv[n++]="--approve-cache-download";
         }else if(!strcmp(j->action,"native-route")){
             argv[n++]=pc2_native_route_helper();
             argv[n++]="--provider";argv[n++]=j->provider;
@@ -4663,7 +4685,7 @@ static void *pc2_steam_bridge_worker(void *data){
                 argv[n++]="--steam-root";argv[n++]=j->steam_root;
             }
         }
-        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"prefix-catalog")&&strcmp(j->action,"native-route")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
+        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"prefix-catalog")&&strcmp(j->action,"prefix-cache")&&strcmp(j->action,"native-route")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char *const*)argv);_exit(127);
     }
@@ -4672,6 +4694,7 @@ static void *pc2_steam_bridge_worker(void *data){
         close(pipefd[0]);snprintf(j->output,sizeof j->output,"Failed to launch Steam Bridge helper.");
     }else{
         j->ok=bounded_child_output(pid,pipefd[0],j->output,sizeof j->output,
+                                   !strcmp(j->action,"prefix-cache")?300:
                                    !strcmp(j->action,"play")?35:12);
         if(!j->ok&&!j->output[0])snprintf(j->output,sizeof j->output,"Steam Bridge helper failed or timed out.");
     }
@@ -4682,9 +4705,10 @@ static void pc2_steam_bridge_action(const char *action){
     if(!pc2_provider_controls_allowed()||pc2_steam_bridge_busy)return;
     int global_upgrade=!strcmp(action,"upgrade");
     int global_catalog=!strcmp(action,"prefix-catalog");
+    int global_cache=!strcmp(action,"prefix-cache");
     int native_route=!strcmp(action,"native-route");
     Game *g=NULL;
-    if(!global_upgrade&&!global_catalog){
+    if(!global_upgrade&&!global_catalog&&!global_cache){
         if(G.selected<0||G.selected>=G.game_count){
             if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
                 "Select a supported game in Library first.");
@@ -4704,7 +4728,7 @@ static void pc2_steam_bridge_action(const char *action){
             return;
         }
     }
-    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"prefix-catalog")&&strcmp(action,"native-route")&&strcmp(action,"netfx-status")){
+    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"prefix-catalog")&&strcmp(action,"prefix-cache")&&strcmp(action,"native-route")&&strcmp(action,"netfx-status")){
         char question[1024];
         if(global_upgrade){
             snprintf(question,sizeof question,
@@ -4762,7 +4786,7 @@ static void pc2_steam_bridge_action(const char *action){
     }
     PC2SteamBridgeJob*j=calloc(1,sizeof *j);if(!j)return;
     snprintf(j->action,sizeof j->action,"%s",action);
-    if(!global_upgrade&&!global_catalog){
+    if(!global_upgrade&&!global_catalog&&!global_cache){
         snprintf(j->appid,sizeof j->appid,"%s",(native_route&&!game_is_steam(g))?game_key(g):g->appid);
         if(native_route){
             snprintf(j->provider,sizeof j->provider,"%s",
@@ -4775,12 +4799,30 @@ static void pc2_steam_bridge_action(const char *action){
         snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
     }else{
         snprintf(j->game,sizeof j->game,"%s",
-                 global_catalog?"Shared WeMod setup":"Installed GameWeld Bridge");
+                 global_catalog?"Shared WeMod setup":
+                 global_cache?"Shared prepared WeMod cache":"Installed GameWeld Bridge");
+    }
+    if(global_cache){
+        int selected=pc2_shared_wemod_choices?
+            gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices):-1;
+        if(pc2_discovery_only() || selected<0 ||
+           selected>=pc2_prepared_choice_count){
+            free(j);
+            return;
+        }
+        const PC2PreparedChoice *choice=&pc2_prepared_choices[selected];
+        snprintf(j->source_url,sizeof j->source_url,"%s",choice->url);
+        snprintf(j->source_bytes,sizeof j->source_bytes,"%lld",choice->bytes);
     }
     pc2_steam_bridge_busy=1;
     if(global_catalog){
+        pc2_prepared_choices_clear();
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             "Checking prepared WeMod releases for a shared GameWeld setup…");
+    }else if(global_cache){
+        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
+            "Downloading and checking the selected third-party ZIP into a "
+            "separate cache only. No game prefix is being changed…");
     }else if(native_route){
         if(pc2_native_route_status)set_label(pc2_native_route_status,
             "Checking provider-native setup without changing Steam or game prefixes…");
