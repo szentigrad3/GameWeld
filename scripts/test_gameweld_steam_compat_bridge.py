@@ -424,10 +424,14 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 side_effect=AssertionError("read-only inspection started a process")
             ):
                 report = bridge.preflight_report("3008130", game_dir=game)
-            self.assertEqual(
-                bridge.primary_ui_state("3008130", game_dir=game)[0],
-                "runtime"
-            )
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ):
+                self.assertEqual(
+                    bridge.primary_ui_state("3008130", game_dir=game)[0],
+                    "runtime"
+                )
             self.assertIn("Next action: INVESTIGATE WINDOWS .NET RUNTIME", report)
             self.assertIn("No installation or prefix repair was attempted", report)
             self.assertIn("registration entries found", report)
