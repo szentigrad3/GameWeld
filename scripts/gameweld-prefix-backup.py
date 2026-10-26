@@ -254,6 +254,7 @@ def create_backup(
             destination.write("\n")
             destination.flush()
             os.fsync(destination.fileno())
+        os.chmod(temp / "manifest.json", 0o600)
         if target.exists() or target.is_symlink():
             raise BackupRefused("Backup destination collision")
         os.rename(temp, target)
@@ -294,6 +295,8 @@ def verify_backup(backup_dir: Path, *, backup_root: Path) -> dict:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise BackupRefused("Backup manifest is invalid") from exc
+    if not isinstance(manifest, dict):
+        raise BackupRefused("Backup manifest must be a JSON object")
     sha = hashlib.sha256()
     with archive_path.open("rb") as stream:
         for block in iter(lambda: stream.read(CHUNK), b""):
