@@ -666,7 +666,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4363,6 +4363,9 @@ static char pc2_bridge_ready_appid[192]={0};
 static char pc2_bridge_ready_state[24]="blocked";
 static char pc2_bridge_ready_reason[2048]={0};
 static unsigned pc2_bridge_readiness_generation=0;
+/* The settings-level repair button is enabled only by a matching read-only
+ * preflight reporting a verified launcher update. */
+static GtkWidget *pc2_steam_bridge_quick_upgrade=NULL;
 
 static int pc2_bridge_has_stale_launcher(const char *state,const char *reason){
     /* Only this exact, source-verified failure routes to launcher-only repair.
@@ -4448,6 +4451,8 @@ static void pc2_bridge_readiness_for_game(Game *g){
         return;
     }
     snprintf(pc2_bridge_ready_appid,sizeof pc2_bridge_ready_appid,"%s",g->appid);
+    if(pc2_steam_bridge_quick_upgrade)
+        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,FALSE);
     snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"checking");
     pc2_bridge_readiness_generation++;
     pc2_bridge_apply_primary("checking","Checking saved Steam Bridge configuration…");
@@ -4464,6 +4469,8 @@ static void pc2_bridge_readiness_for_game(Game *g){
     }
 }
 static void pc2_bridge_readiness_invalidate(void){
+    if(pc2_steam_bridge_quick_upgrade)
+        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,FALSE);
     pc2_bridge_ready_appid[0]=0;
     pc2_bridge_ready_state[0]=0;
     pc2_bridge_readiness_generation++;
@@ -4490,6 +4497,16 @@ static gboolean pc2_steam_bridge_done(gpointer data){
     pc2_steam_bridge_busy=0;
     const char *msg=j->output[0]?j->output:(j->ok?"Complete.":"Steam Bridge operation failed.");
     if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,msg);
+    if(pc2_steam_bridge_quick_upgrade &&
+       (!strcmp(j->action,"preflight")||!strcmp(j->action,"upgrade"))){
+        int selected_matches=G.selected>=0&&G.selected<G.game_count &&
+            !strcmp(G.games[G.selected].appid,j->appid);
+        int update_available=!strcmp(j->action,"preflight")&&j->ok&&
+            selected_matches &&
+            strstr(j->output,"Next action: REPAIR")!=NULL &&
+            strstr(j->output,"Installed Steam Bridge: UPDATE AVAILABLE (")!=NULL;
+        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,update_available);
+    }
     log_line("Steam Bridge [%s] for %s (%s): %s — %.2000s",
         j->action,j->game,j->appid,j->ok?"OK":"FAILED",msg);
     if(j->ok&&(!strcmp(j->action,"setup")||!strcmp(j->action,"trainer-on")||
@@ -5666,6 +5683,11 @@ static GtkWidget *build_settings(void){
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
         pack(bridge_card,pc2_steam_bridge_status,0);
+        pc2_steam_bridge_quick_upgrade=button("Update Steam Bridge","primary-action");
+        g_signal_connect_data(pc2_steam_bridge_quick_upgrade,"clicked",
+            (GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);
+        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,FALSE);
+        pack(bridge_card,pc2_steam_bridge_quick_upgrade,0);
         GtkWidget*bridge_maintenance=gtk_expander_new("Steam Bridge Maintenance (advanced)");
         gtk_expander_set_expanded(bridge_maintenance,FALSE);
         GtkWidget*bridge_maintenance_box=box(GTK_ORIENTATION_VERTICAL,7);
