@@ -302,6 +302,33 @@ installation is BLOCKED and no changes were made.
 This is **read-only status integration**, NOT an installer, lock, trusted
 trainer compatibility check, or permission to change a live prefix.
 
+
+## Faster development without skipping release gates
+
+The draft PR has **two testing speeds**:
+
+- **Fast Feedback** runs on each draft PR update, without installing GTK
+  packages or building the private AppDir. It runs the existing ten PC2
+  offline safety suites (including Steam/Heroic/Lutris fixtures, prefix
+  backups, restore rehearsal, symlink and transaction checks). Superseded
+  runs are cancelled. Local one-command equivalent:
+  `bash scripts/pc2-fast-feedback.sh`.
+- **Full CI** and the **PC2 Ubuntu Baseline** (native GTK/Go build, private
+  packaging audit, distribution checks) run when the PR is marked **Ready
+  for review** or when explicitly started from GitHub Actions. Superseded
+  full runs are also cancelled. They still run for main/release pushes where
+  configured.
+
+**Before any candidate release:** run both full workflows on the exact
+candidate commit and require passing results, then complete actual
+CachyOS, Steam, Heroic and Lutris gameplay tests. A passing Fast Feedback
+workflow is never equivalent to a native build, tested game integration
+or trainer attachment. Never treat a skipped draft-PR native workflow as
+proof of success. Restore the PR to draft if subsequent unreviewed changes
+invalidate its candidate status.
+
+This optimizes the *iteration loop*, not the safety requirements.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
