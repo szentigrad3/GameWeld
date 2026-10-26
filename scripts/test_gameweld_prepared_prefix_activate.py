@@ -47,7 +47,7 @@ class PrefixActivationTests(unittest.TestCase):
         self.state.chmod(0o700)
         self.candidate_dir = self.state / "2353250-aaaaaaaaaaaaaaaa"
         self.candidate = self.candidate_dir / "compatdata"
-        shutil.copytree(self.compat, self.candidate)
+        shutil.copytree(self.compat, self.candidate, symlinks=True)
         (self.candidate / "pfx/system.reg").write_bytes(b"PREPARED DOTNET")
         (self.candidate / "pfx/.wemod_installer").write_text("true")
         info = {
@@ -167,7 +167,7 @@ class PrefixActivationTests(unittest.TestCase):
         txid = "f" * 32
         original = self.compat.parent / f".gameweld-original-{self.appid}-{txid}"
         staging = self.compat.parent / f".gameweld-import-{self.appid}-{txid}"
-        shutil.copytree(self.candidate, staging)
+        shutil.copytree(self.candidate, staging, symlinks=True)
         data = {
             "txid": txid, "appid": self.appid, "state": "PREPARED",
             "compat_path": str(self.compat), "backup_path": str(original),
