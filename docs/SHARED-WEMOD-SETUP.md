@@ -329,6 +329,36 @@ invalidate its candidate status.
 
 This optimizes the *iteration loop*, not the safety requirements.
 
+## Live-process candidate check — no game mutations
+
+The existing **Check game WeMod connection** button now also attempts to
+identify a `WeMod.exe` process in the **same selected Wine/Proton prefix**.
+The read-only process inspector compares exact WINEPREFIX or Steam compat-data
+plus AppID environment evidence before inspecting the process name. It reads
+only a bounded Linux procfs command line / process name in memory and publishes
+only a candidate count and safe status, never command lines, environment
+values, account tokens, or game paths.
+
+The normal seven-line GUI summary reports:
+
+- **Process visible in selected prefix** — candidate found; trainer attachment
+  and in-game activation are **NOT VERIFIED**
+- **Not seen in selected prefix** — selected-prefix processes were inspected
+  but no WeMod candidate found; this is not proof of absence
+- **Not verified** — no matching process or insufficient procfs access;
+  do not assume a runner has stopped or a trainer is missing
+
+Practical next live test: first launch one game **normally from Steam,
+Heroic, or Lutris**. If WeMod is already running in that game's existing
+environment, select the game in GameWeld and click **Check game WeMod
+connection**. Compare the result with the visible game and WeMod windows.
+No GameWeld Steam Bridge, prefix replacement or new launch hook is involved.
+
+This process-name heuristic is **not trustworthy attachment verification**.
+A candidate process can be unrelated, misnamed or running without an active
+trainer. Real in-game feature activation and a secure, provider-native handoff
+remain release blockers. The public Install/Play setup is still blocked.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
