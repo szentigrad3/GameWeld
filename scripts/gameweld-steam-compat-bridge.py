@@ -944,6 +944,12 @@ def netfx_isolation_plan(
         lines.append("GE-Proton10 possible runners: NOT DETECTED in scanned Steam roots "
                      "(could be installed elsewhere)")
         lines.append("No Proton version was downloaded, installed or selected.")
+    lines.append("GE-Proton10-34 official release (manual review only): "
+                 "https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/GE-Proton10-34")
+    lines.append("GE-Proton10-34 release provides its own SHA-512 checksum asset; "
+                 "verify it before trusting an obtained archive.")
+    lines.append("Microsoft .NET Framework 4.8 offline Runtime (manual review only): "
+                 "https://dotnet.microsoft.com/en-us/download/dotnet-framework/net48")
 
     if installer_path is None:
         if expected_sha256 is not None:
@@ -973,6 +979,17 @@ def netfx_isolation_plan(
                 lines.append("Installer checksum: MATCHES supplied digest; "
                              "publisher provenance must still be independently verified")
 
+    if not ready:
+        lines.append("Experiment gate: BLOCKED — disposable workspace is unsafe "
+                     "or has insufficient/unverified free space.")
+    elif not candidates:
+        lines.append("Experiment gate: NOT READY — no GE-Proton10 candidate detected; "
+                     "review the official release before considering a download.")
+    elif installer_path is None:
+        lines.append("Experiment gate: NOT READY — no offline .NET installer selected.")
+    else:
+        lines.append("Experiment gate: NOT AUTHORIZED — candidate files alone do "
+                     "not prove publisher origin or compatibility.")
     lines += [
         "Compatibility of .NET installer with this Proton build: NOT VERIFIED",
         "Proton run, downloads, prefix creation, registry changes and DLL copies: NOT PERFORMED",
