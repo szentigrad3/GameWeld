@@ -174,8 +174,11 @@ class TransactionRehearsalTests(unittest.TestCase):
     def test_symlink_added_after_scan_is_rejected_without_following(self):
         previous = txn.shutil.copytree
         secret = self.real_game_fixtures[0] / "system.reg"
+        inserted = {"value": False}
         def racing_source(source, target, *args, **kwargs):
-            (self.root / "prefix/drive_c/newlink").symlink_to(secret)
+            if not inserted["value"]:
+                inserted["value"] = True
+                (self.root / "prefix/drive_c/newlink").symlink_to(secret)
             return previous(source, target, *args, **kwargs)
         with patch.object(txn.shutil, "disk_usage",
                           return_value=type("Disk", (), {"free": 2 * 1024 ** 3})()):
