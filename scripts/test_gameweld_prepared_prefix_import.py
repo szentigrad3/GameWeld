@@ -104,6 +104,54 @@ class PreparedPrefixImportTests(unittest.TestCase):
             return plugin.prepare_candidate(
                 report, paths, state_root=self.state, approved=approved)
 
+    def selected_url(self, tag="PfxVer10.1", asset="GE-Proton10.1.zip"):
+        return (f"https://github.com/DeckCheatz/BuiltPrefixes-dev/"
+                f"releases/download/{tag}/{asset}")
+
+    def test_exact_staged_release_selected_among_multiple_versions(self):
+        other = self.cache / "staging" / ("b" * 64)
+        shutil.copytree(self.stage, other)
+        info = json.loads((other / "manifest.json").read_text())
+        info["source_archive_sha256"] = other.name
+        info["source_asset"] = "GE-Proton9.26.zip"
+        info["source_release"] = "PfxVer9.26"
+        (other / "manifest.json").write_text(json.dumps(info))
+        selected = plugin.select_staged_release(self.cache, self.selected_url())
+        self.assertEqual(selected, self.stage)
+        report, _ = plugin.preview(
+            self.appid, self.game, selected,
+            cache_root=self.cache, state_root=self.state)
+        self.assertTrue(report["version_match"])
+        self.assertEqual(self.game_state(), self.original)
+
+    def test_selected_release_missing_from_staging_fails_closed(self):
+        with self.assertRaisesRegex(plugin.ImportBlocked, "Step 2"):
+            plugin.select_staged_release(
+                self.cache, self.selected_url("PfxVer9.26", "GE-Proton9.26.zip"))
+        self.assertEqual(self.game_state(), self.original)
+
+    def test_selected_release_rejects_untrusted_url(self):
+        with self.assertRaisesRegex(plugin.ImportBlocked, "Invalid selected"):
+            plugin.select_staged_release(self.cache, "https://example.org/fake.zip")
+        self.assertEqual(self.game_state(), self.original)
+
+    def test_selected_release_rejects_symlinked_stage(self):
+        linked = self.cache / "staging" / ("a" * 64)
+        linked.symlink_to(self.stage)
+        with self.assertRaisesRegex(plugin.ImportBlocked, "Unsafe symlinked"):
+            plugin.select_staged_release(self.cache, self.selected_url())
+        self.assertEqual(self.game_state(), self.original)
+
+    def test_selected_release_rejects_duplicate_version(self):
+        other = self.cache / "staging" / ("b" * 64)
+        shutil.copytree(self.stage, other)
+        info = json.loads((other / "manifest.json").read_text())
+        info["source_archive_sha256"] = other.name
+        (other / "manifest.json").write_text(json.dumps(info))
+        with self.assertRaisesRegex(plugin.ImportBlocked, "Several staged"):
+            plugin.select_staged_release(self.cache, self.selected_url())
+        self.assertEqual(self.game_state(), self.original)
+
     def test_read_only_preview_matches_proton_and_reports_registry_conflict(self):
         result, paths = self.preview()
         self.assertEqual(result["ge_proton_major"], 10)
