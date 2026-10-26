@@ -44,7 +44,10 @@ def runtime_activity(provider: str, game_id: str, prefix: Path | None,
     if prefix is None or not prefix.is_dir() or prefix.is_symlink():
         result["reason"] = "Exact existing game prefix is not established"
         return result
-    script = Path(__file__).with_name("gameweld-prefix-runtime-preflight.py")
+    # Development AppDir libexec entries are symlinks to the source checkout.
+    # Resolve this script itself, then load its known sibling without treating
+    # an arbitrary external helper symlink as trusted.
+    script = Path(__file__).resolve().with_name("gameweld-prefix-runtime-preflight.py")
     if not script.is_file() or script.is_symlink():
         result["reason"] = "Read-only runtime inspector unavailable"
         return result
