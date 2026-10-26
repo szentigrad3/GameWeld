@@ -792,6 +792,56 @@ def netfx_registered_without_native_clr(appid: str, game_dir: Path) -> bool:
         return False
 
 
+def discover_ge_proton10_candidates(steamapps: Path) -> list[Path]:
+    """Bounded read-only discovery; folder names are NOT engine proof.
+
+    The selected Steam library and conventional Steam user locations are
+    inspected, but no tools are installed, executed or selected for a game.
+    Results are potential disposable-test runners, never a recommendation to
+    replace the game's working Compatibility selection.
+    """
+    home = Path.home()
+    steam_root = steamapps.parent
+    roots = (
+        steamapps / "common",
+        steam_root / "compatibilitytools.d",
+        home / ".steam" / "root" / "compatibilitytools.d",
+        home / ".steam" / "steam" / "compatibilitytools.d",
+        home / ".local" / "share" / "Steam" / "compatibilitytools.d",
+    )
+    # GE-Proton10-34 is a *label*, not a guarantee of a particular Wine
+    # version, patch level, installer behavior or binary provenance.
+    label = re.compile(r"(?:GE[-_ ]?Proton|Proton[-_ ]?GE)[-_ ]?10(?:[-_.]\d+)*", re.I)
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            for index, candidate in enumerate(root.iterdir()):
+                if index >= 256:  # hard bound for unusual/malicious folders
+                    break
+                if not label.fullmatch(candidate.name):
+                    continue
+                if candidate.is_symlink() or not candidate.is_dir():
+                    continue
+                script = candidate / "proton"
+                if script.is_symlink() or not script.is_file():
+                    continue
+                try:
+                    verified = validate_proton(script)
+                except (OSError, ValueError):
+                    continue
+                if verified not in seen:
+                    seen.add(verified)
+                    discovered.append(verified)
+                if len(discovered) >= 12:
+                    return discovered
+        except (OSError, PermissionError):
+            continue
+    return discovered
+
+
 def netfx_isolation_plan(
     appid: str,
     game_dir: Path,
@@ -863,6 +913,8 @@ def netfx_isolation_plan(
         f"Saved Proton executable: {proton}",
         f"Steam saved compatibility selection: {selection}",
         "Actual live Proton executable/version: NOT VERIFIED (no process executed)",
+        "Candidate comparison: preserve the saved game Proton; explore GE-Proton10 "
+        "ONLY in a separate disposable test after approval.",
         f"Existing game compatdata: {current} (DO NOT TOUCH)",
         f"Proposed separate workspace: {proposed}",
         "Workspace check: " +
@@ -870,6 +922,18 @@ def netfx_isolation_plan(
          "BLOCKED (occupied, symlink/overlap risk, or insufficient/unverified free space)"),
         "Scratch filesystem free space: " + disk_status,
     ]
+    candidates = discover_ge_proton10_candidates(steamapps)
+    if candidates:
+        lines.append(f"GE-Proton10 possible runners found: {len(candidates)} "
+                     "(read-only filename and toolmanifest checks)")
+        for candidate in candidates:
+            lines.append(f"  Candidate Proton launcher: {candidate}")
+        lines.append("Wine engine version and .NET installation compatibility: "
+                     "UNVERIFIED (never executed)")
+    else:
+        lines.append("GE-Proton10 possible runners: NOT DETECTED in scanned Steam roots "
+                     "(could be installed elsewhere)")
+        lines.append("No Proton version was downloaded, installed or selected.")
 
     if installer_path is None:
         if expected_sha256 is not None:
