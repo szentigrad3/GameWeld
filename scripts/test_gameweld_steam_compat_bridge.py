@@ -560,6 +560,55 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertIn("Workspace check: BLOCKED", report)
             self.assertFalse(unsafe_cache.exists())
 
+    def test_ge_proton10_candidate_found_without_selection_or_execution(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            candidate = self.home / ".steam/root/compatibilitytools.d/GE-Proton10-34"
+            candidate.mkdir(parents=True)
+            executable = candidate / "proton"
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            (candidate / "toolmanifest.vdf").write_text('"manifest" {}\n')
+            before = bridge.config_path().read_bytes()
+            with patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)), \
+                 patch.object(bridge.subprocess, "Popen",
+                              side_effect=AssertionError("no candidate may launch")):
+                plan = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("GE-Proton10 possible runners found: 1", plan)
+            self.assertIn(str(executable), plan)
+            self.assertIn("Wine engine version and .NET installation compatibility: UNVERIFIED", plan)
+            self.assertIn("preserve the saved game Proton", plan)
+            self.assertIn(str(self.proton.resolve()), plan)
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+            self.assertFalse((self.home / ".cache").exists())
+
+    def test_ge_proton10_candidate_skips_symlink_and_invalid_lookalikes(self):
+        with patch.dict(os.environ, self.env):
+            root = self.steam / "compatibilitytools.d"
+            root.mkdir()
+            good = root / "GE-Proton10-34"
+            good.mkdir()
+            exe = good / "proton"
+            exe.write_bytes(b"#!/bin/sh\n")
+            exe.chmod(0o755)
+            (good / "toolmanifest.vdf").write_text("manifest")
+            bad11 = root / "GE-Proton11-1"
+            bad11.mkdir()
+            (bad11 / "proton").write_bytes(b"not-validated")
+            bad10 = root / "GE-Proton10-35"
+            bad10.mkdir()
+            (bad10 / "proton").write_bytes(b"not-validated")
+            alias = self.home / ".steam/root/compatibilitytools.d/GE-Proton10-36"
+            alias.parent.mkdir(parents=True)
+            alias.symlink_to(good, target_is_directory=True)
+            items = bridge.discover_ge_proton10_candidates(self.steam / "steamapps")
+            self.assertEqual(items, [exe.resolve()])
+            self.assertTrue(alias.is_symlink())
+
     def test_isolated_netfx_plan_low_disk_space_blocks_future_test(self):
         with patch.dict(os.environ, self.env):
             bridge.configure("3008130", self.proton, self.client, enabled=False)
