@@ -203,6 +203,39 @@ def human_readable_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+
+def gui_summary(report: dict) -> str:
+    """Compact normal Settings status; detailed text/JSON remain available."""
+    provider = report["provider"]
+    title = {"steam": "Steam", "heroic": "Heroic", "lutris": "Lutris"}[provider]
+    evidence = report["evidence"]
+    present = lambda key: "found" if evidence.get(key) else "not verified"
+    if provider == "steam":
+        fields = (
+            "AppID manifest: " + present("steam_manifest_present") +
+            "  |  Proton prefix: " + present("game_prefix_present")
+        )
+    else:
+        fields = (
+            "Wine prefix: " + present("game_prefix_present") +
+            "  |  Runner: " + present("runner_file_present")
+        )
+    state = report.get("process_activity", {}).get("state", "UNKNOWN")
+    activity = {
+        "ACTIVE": "ACTIVE — close this game before any future setup",
+        "UNKNOWN": "UNKNOWN — game closure not verified",
+        "IDLE_CANDIDATE": "NO MATCH FOUND — game closure still unverified",
+    }.get(state, "UNKNOWN — process inspection unavailable")
+    return "\n".join([
+        f"WeMod connection • {title} ({report['game_id']})",
+        fields,
+        "Game activity: " + activity,
+        "WeMod and trainer: NOT VERIFIED — setup not ready",
+        "Install: BLOCKED  |  Steam Bridge: not required",
+        "No changes made to this game or its prefix.",
+    ])
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", required=True, choices=PROVIDERS)
@@ -210,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--install-dir")
     parser.add_argument("--prefix")
     parser.add_argument("--runner")
-    parser.add_argument("--format", choices=("json", "text"), default="json",
+    parser.add_argument("--format", choices=("json", "text", "summary"), default="json",
                         help="JSON for scripts; concise text for GameWeld GUI")
     args = parser.parse_args(argv)
     try:
@@ -222,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.exit(2, "GameWeld native route BLOCKED: " + str(exc) + "\n")
     if args.format == "text":
         print(human_readable_report(result))
+    elif args.format == "summary":
+        print(gui_summary(result))
     else:
         print(json.dumps(result, indent=2, sort_keys=True))
     return 0
