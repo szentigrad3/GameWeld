@@ -4725,6 +4725,12 @@ static const char *pc2_native_route_helper(void){
     else snprintf(p,sizeof p,"gameweld-wemod-native-route.py");
     return p;
 }
+static const char *pc2_live_attach_helper(void){
+    static char p[2048];const char *appdir=getenv("APPDIR");
+    if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-wemod-live-attach.py",appdir);
+    else snprintf(p,sizeof p,"gameweld-wemod-live-attach.py");
+    return p;
+}
 static gboolean pc2_steam_bridge_done(gpointer data){
     PC2SteamBridgeJob*j=data;
     pc2_steam_bridge_busy=0;
@@ -4750,11 +4756,11 @@ static gboolean pc2_steam_bridge_done(gpointer data){
             "Prepared WeMod ZIP downloaded and ZIP-checked into a separate "
             "GameWeld cache. NOT installed. Publisher identity, game compatibility "
             "and trainer attachment are unverified; no game prefix changed." : msg);
-    }else if(!strcmp(j->action,"native-route")){
+    }else if(!strcmp(j->action,"native-route")||!strcmp(j->action,"live-attach-preview")){
         if(pc2_native_route_status)set_label(pc2_native_route_status,msg);
         if(G.pc2_deckcheatz_overview_status)
             set_label(G.pc2_deckcheatz_overview_status,
-                "Native WeMod setup is a read-only preview. No game or trainer launched.");
+                "WeMod setup is a read-only preview. No game or trainer launched.");
     }else if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,msg);
     if(pc2_steam_bridge_quick_upgrade &&
        (!strcmp(j->action,"preflight")||!strcmp(j->action,"upgrade"))){
@@ -4811,6 +4817,11 @@ static void *pc2_steam_bridge_worker(void *data){
             argv[n++]="--declared-size";argv[n++]=j->source_bytes;
             argv[n++]="--approve-cache-download";
             argv[n++]="--progress";
+        }else if(!strcmp(j->action,"live-attach-preview")){
+            argv[n++]=pc2_live_attach_helper();
+            argv[n++]="--appid";argv[n++]=j->appid;
+            argv[n++]="--install-dir";argv[n++]=j->game_dir;
+            argv[n++]="--format";argv[n++]="summary";
         }else if(!strcmp(j->action,"native-route")){
             argv[n++]=pc2_native_route_helper();
             argv[n++]="--provider";argv[n++]=j->provider;
@@ -4859,6 +4870,7 @@ static void pc2_steam_bridge_action(const char *action){
     int global_catalog=!strcmp(action,"prefix-catalog");
     int global_cache=!strcmp(action,"prefix-cache");
     int native_route=!strcmp(action,"native-route");
+    int live_preview=!strcmp(action,"live-attach-preview");
     Game *g=NULL;
     if(!global_upgrade&&!global_catalog&&!global_cache){
         if(G.selected<0||G.selected>=G.game_count){
@@ -4867,7 +4879,13 @@ static void pc2_steam_bridge_action(const char *action){
             return;
         }
         g=&G.games[G.selected];
-        if(native_route){
+        if(live_preview){
+            if(!game_is_steam(g)||game_is_steam_shortcut(g)||!g->appid[0]){
+                if(pc2_native_route_status)set_label(pc2_native_route_status,
+                    "Live WeMod preview requires an installed Steam Windows game.");
+                return;
+            }
+        }else if(native_route){
             if(!game_is_steam(g)&&!game_is_heroic(g)&&!game_is_lutris(g)){
                 if(pc2_native_route_status)set_label(pc2_native_route_status,
                     "Select a Steam, Heroic or Lutris Windows game.");
@@ -4880,7 +4898,7 @@ static void pc2_steam_bridge_action(const char *action){
             return;
         }
     }
-    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"prefix-catalog")&&strcmp(action,"prefix-cache")&&strcmp(action,"native-route")&&strcmp(action,"netfx-status")){
+    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"prefix-catalog")&&strcmp(action,"prefix-cache")&&strcmp(action,"native-route")&&strcmp(action,"live-attach-preview")&&strcmp(action,"netfx-status")){
         char question[1024];
         if(global_upgrade){
             snprintf(question,sizeof question,
@@ -4980,6 +4998,9 @@ static void pc2_steam_bridge_action(const char *action){
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             "Downloading and checking the selected third-party ZIP into a "
             "separate cache only. No game prefix is being changed…");
+    }else if(live_preview){
+        if(pc2_native_route_status)set_label(pc2_native_route_status,
+            "Previewing the selected Steam game's existing Proton context… No launch or game changes.");
     }else if(native_route){
         if(pc2_native_route_status)set_label(pc2_native_route_status,
             "Checking provider-native setup without changing Steam or game prefixes…");
@@ -4994,6 +5015,9 @@ static void pc2_steam_bridge_action(const char *action){
 }
 static void on_pc2_native_route(GtkButton*b,void*d){
     (void)b;(void)d;pc2_steam_bridge_action("native-route");
+}
+static void on_pc2_live_attach_preview(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_steam_bridge_action("live-attach-preview");
 }
 static void on_pc2_bridge_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("preflight");}
 static void on_pc2_bridge_upgrade(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("upgrade");}
@@ -6015,6 +6039,10 @@ static GtkWidget *build_settings(void){
         g_signal_connect_data(native_check,"clicked",
             (GCallback)on_pc2_native_route,NULL,NULL,0);
         pack(native_card,native_check,0);
+        GtkWidget*live_attach_preview=button("Preview no-options WeMod handoff (read-only)","action");
+        g_signal_connect_data(live_attach_preview,"clicked",
+            (GCallback)on_pc2_live_attach_preview,NULL,NULL,0);
+        pack(native_card,live_attach_preview,0);
         pc2_native_route_status=label(
             "Select a Steam, Heroic or Lutris game, then check its WeMod setup. "
             "No game will be launched or modified.","muted");
