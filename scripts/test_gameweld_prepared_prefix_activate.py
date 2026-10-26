@@ -193,7 +193,7 @@ class PrefixActivationTests(unittest.TestCase):
         txid = "e" * 32
         backup = self.compat.parent / f".gameweld-original-{self.appid}-{txid}"
         staging = self.compat.parent / f".gameweld-import-{self.appid}-{txid}"
-        shutil.copytree(self.candidate, staging)
+        shutil.copytree(self.candidate, staging, symlinks=True)
         data = {
             "txid": txid, "appid": self.appid, "state": "PREPARED",
             "compat_path": str(self.compat), "backup_path": str(backup),
