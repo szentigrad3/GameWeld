@@ -745,8 +745,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('pack(bridge_card,netfx_plan,0);', ui)
         self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
         self.assertIn('!strcmp(job->result,"runtime")', ui)
-        self.assertIn('else if(!strcmp(state,"runtime"))title="Find prepared WeMod setup";', ui)
-        self.assertIn('else if(!strcmp(state,"runtime"))pc2_steam_bridge_action("prefix-catalog");', ui)
+        self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],"Check WeMod setup");', ui)
+        self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn('strcmp(action,"netfx-plan")', ui)
         self.assertIn('strcmp(j->action,"netfx-plan")', ui)
         self.assertIn('strcmp(s, "Find prepared WeMod setup")', guard)
@@ -754,6 +754,13 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('pack(deckpage,shared_card,0);', ui)
         self.assertIn('pc2_shared_wemod_status', ui)
         self.assertIn('int global_catalog=!strcmp(action,"prefix-catalog");', ui)
+        self.assertIn('int native_route=!strcmp(action,"native-route");', ui)
+        self.assertIn('button("Check game WeMod connection","action")', ui)
+        self.assertIn('pack(deckpage,native_card,0);', ui)
+        self.assertIn('strcmp(s, "Check game WeMod connection")', guard)
+        self.assertIn('argv[n++]=pc2_native_route_helper();', ui)
+        self.assertIn('strcmp(j->action,"native-route")', ui)
+        self.assertIn('if(native_route)', ui)
         self.assertIn('if(!global_upgrade&&!global_catalog)', ui)
         self.assertIn('pc2_prepared_prefix_catalog_helper()', ui)
         self.assertIn('argv[n++]=pc2_prepared_prefix_catalog_helper();', ui)
@@ -779,34 +786,27 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('gtk_widget_set_sensitive(button,update_available)', ui)
         self.assertIn('(GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);', ui)
 
-    def test_primary_gui_offers_confirmed_launcher_only_repair(self):
-        # Static integration guard: GTK itself runs in the separate native CI
-        # build, while the logic lives in the source-only Steam Bridge helper.
+    def test_legacy_bridge_is_optional_not_primary_and_never_claims_success(self):
         ui = (Path(__file__).resolve().parents[1] /
               "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
-        self.assertIn("pc2_bridge_has_stale_launcher", ui)
         self.assertIn(
-            'strstr(reason,"Installed Steam Bridge launcher is outdated or unverified:")',
+            "Legacy Steam Bridge — optional compatibility fallback", ui
+        )
+        self.assertIn('gtk_expander_set_expanded(legacy_bridge,FALSE);', ui)
+        self.assertIn(
+            'button("Legacy: Play using existing Steam Bridge","action")', ui
+        )
+        self.assertIn('(GCallback)on_pc2_bridge_play,NULL,NULL,0);', ui)
+        self.assertIn('pc2_steam_bridge_action("native-route");', ui)
+        self.assertIn(
+            'gtk_button_set_label((GtkButton*)buttons[i],"Check WeMod setup");', ui
+        )
+        self.assertNotIn('pack(deckpage,bridge_card,0);', ui)
+        self.assertIn('GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui)
+        self.assertIn(
+            "Steam Play request accepted. Game and WeMod startup are NOT YET VERIFIED",
             ui
         )
-        self.assertIn('strstr(reason,"UPDATE AVAILABLE (")!=NULL', ui)
-        self.assertIn('title="Update Steam Bridge"', ui)
-        self.assertIn(
-            'else if(pc2_bridge_has_stale_launcher(state,pc2_bridge_ready_reason))',
-            ui
-        )
-        self.assertIn('pc2_steam_bridge_action("upgrade");', ui)
-        self.assertIn(
-            'else if(!strcmp(state,"steam")||!strcmp(state,"repair"))',
-            ui
-        )
-        self.assertIn(
-            'if(global_upgrade)', ui
-        )
-        self.assertIn(
-            'GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui
-        )
-        self.assertIn("Steam Play request accepted. Game and WeMod startup are NOT YET VERIFIED", ui)
         self.assertNotIn("Steam launch ASSOCIATION OBSERVED", ui)
 
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
