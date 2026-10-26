@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Fast, source-only GameWeld PC2 checks. No GTK apt installs, Go build, network,
+# game launches, Wine/Proton execution, or writes to installed prefixes.
+set -Eeuo pipefail
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+start=$SECONDS
+export PYTHONDONTWRITEBYTECODE=1
+echo "GameWeld PC2 — FAST offline feedback (NOT a release qualification)"
+python3 -m py_compile \
+  scripts/gameweld-wemod-native-route.py \
+  scripts/gameweld-prefix-runtime-preflight.py \
+  scripts/gameweld-deckcheatz-prefix-catalog.py \
+  scripts/gameweld-prepared-prefix-audit.py \
+  scripts/gameweld-prepared-prefix-cache.py \
+  scripts/gameweld-prepared-prefix-stage.py \
+  scripts/gameweld-prefix-backup.py \
+  scripts/gameweld-prefix-restore-rehearsal.py \
+  scripts/gameweld-transaction-rehearsal.py
+
+# The same PC2 safety suites used by full CI, without GTK/Ubuntu
+# dependency installation or private binary packaging.
+suites=(
+  test_gameweld_steam_compat_bridge.py
+  test_gameweld_deckcheatz_prefix_catalog.py
+  test_gameweld_prepared_prefix_audit.py
+  test_gameweld_prepared_prefix_cache.py
+  test_gameweld_prepared_prefix_stage.py
+  test_gameweld_prefix_backup.py
+  test_gameweld_prefix_restore_rehearsal.py
+  test_gameweld_transaction_rehearsal.py
+  test_gameweld_prefix_runtime_preflight.py
+  test_gameweld_wemod_native_route.py
+)
+for suite in "${suites[@]}"; do
+  echo "== $suite =="
+  python3 -m unittest discover -s scripts -p "$suite" -q
+done
+echo "PASS: ${#suites[@]} PC2 safety suites in $((SECONDS-start))s."
+echo "NOT TESTED HERE: native GTK build, Ubuntu AppDir audit, live Steam/Heroic/Lutris integration, real WeMod trainer."
