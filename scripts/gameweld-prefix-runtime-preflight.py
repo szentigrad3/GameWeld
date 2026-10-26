@@ -69,10 +69,10 @@ def is_wemod_process(pid: Path) -> bool | None:
             raw = stream.read(MAX_PROCESS_NAME_BYTES + 1)
         if 0 < len(raw) <= MAX_PROCESS_NAME_BYTES:
             inspected = True
-            for arg in raw.split(b"\\x00"):
+            for arg in raw.split(b"\x00"):
                 if not arg:
                     continue
-                name = arg.strip(b"\\\"' ").replace(b"\\\\", b"/").split(b"/")[-1]
+                name = arg.strip(b"\"' ").replace(b"\\", b"/").split(b"/")[-1]
                 if name.lower() == b"wemod.exe":
                     return True
     except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
