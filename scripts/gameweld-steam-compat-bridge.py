@@ -802,12 +802,22 @@ def discover_ge_proton10_candidates(steamapps: Path) -> list[Path]:
     """
     home = Path.home()
     steam_root = steamapps.parent
+    data_home = xdg_dir("XDG_DATA_HOME", ".local/share")
     roots = (
+        # Steam-discoverable tools and GE installations in the game library.
         steamapps / "common",
         steam_root / "compatibilitytools.d",
         home / ".steam" / "root" / "compatibilitytools.d",
         home / ".steam" / "steam" / "compatibilitytools.d",
+        data_home / "Steam" / "compatibilitytools.d",
         home / ".local" / "share" / "Steam" / "compatibilitytools.d",
+        # Reuse the existing read-only runner locations understood by
+        # GameWeld's Heroic repair tooling. Never trigger that repair flow.
+        data_home / "gameweld" / "repair-runtimes",
+        home / ".config" / "heroic" / "tools" / "proton",
+        home / ".local" / "share" / "heroic" / "tools" / "proton",
+        # Distro-packaged compatibility tools, if any.
+        Path("/usr/share/steam/compatibilitytools.d"),
     )
     # GE-Proton10-34 is a *label*, not a guarantee of a particular Wine
     # version, patch level, installer behavior or binary provenance.
