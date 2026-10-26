@@ -14,6 +14,8 @@ echo "== Explicit-opt-in WeMod prefix cache-only download security tests =="
 python3 -m unittest discover -s scripts -p 'test_gameweld_prepared_prefix_cache.py' -v
 echo "== Isolated prepared WeMod archive staging and no-game-write regression =="
 python3 -m unittest discover -s scripts -p 'test_gameweld_prepared_prefix_stage.py' -v
+echo "== Independent per-game prefix backup dry-run and safe-snapshot regression =="
+python3 -m unittest discover -s scripts -p 'test_gameweld_prefix_backup.py' -v
 echo "== Provider-native WeMod route / no mandatory Steam Bridge =="
 python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_native_route.py' -v
 for f in scripts/regression-test-0.7.0-rc6-signed-catalogs.py scripts/regression-test-0.7.0-rc5-staging.py scripts/regression-test-0.7.0-rc9.4-epoch.py scripts/regression-test-0.7.0-stable.py scripts/regression-test-0.7.0-pc1-distribution.py; do
