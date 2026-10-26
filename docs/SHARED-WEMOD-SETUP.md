@@ -40,11 +40,34 @@ existing account data and permissions, and never send it to the release catalog.
 A prepared prefix is not proof that every game has a supported WeMod trainer.
 Missing trainers and unsupported game processes must be shown as distinct states.
 
+## No mandatory GameWeld Steam Bridge
+
+The default GameWeld WeMod flow must **not** require registering or selecting
+the custom GameWeld Steam Bridge. Steam Bridge is an **optional legacy fallback**
+for users with a previously tested working configuration (for example,
+Astrometica), not a new installation requirement.
+
+The existing DeckCheatz/wemod-launcher 1.x approach uses a Steam launch-options
+command prefix (the \`%command%\` wrapper). Its successor DeckCheatz uses a
+Steam compatibility-tool slot. Both can start the trainer in the game's own
+Proton environment, but neither establishes a universal "no platform
+integration needed" capability. GameWeld must detect the actual integration
+before enabling **Play with WeMod**.
+
+**Implementation status:** GameWeld's primary PC2 button is now
+**Check WeMod setup**, and the provider-native route assessor is read-only
+for Steam/Heroic/Lutris. The previous Bridge actions are available under the
+collapsed **Legacy Steam Bridge — optional compatibility fallback** section
+and live legacy launch is disabled in ordinary discovery-only builds. Native
+runtime attachment and transaction-safe prepared-prefix installation still
+need to be implemented and verified.
+
+
 ## Provider adapters
 
 | Provider | Preparation context | Launch requirement |
 | --- | --- | --- |
-| Steam | Validate the exact AppID and compatibility context | Request Steam Play using the saved compatibility tool; do not overwrite Steam settings |
+| Steam | Validate the exact AppID and compatibility context | Launch through Steam using a verified DeckCheatz-style command prefix, native compat tool or equivalent hook; don't require GameWeld Steam Bridge or overwrite existing settings |
 | Heroic | Validate game/runner/prefix against Heroic provider preflight | Launch via Heroic's supported path; preserve its per-game runner and prefix |
 | Lutris | Validate selected game and configured Wine prefix/runner | Launch via Lutris's registered game path; preserve existing runner |
 | Other supported Windows games | Use an explicit provider adapter | Do not guess executable locations, prefixes or attach semantics |
