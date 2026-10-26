@@ -4846,7 +4846,7 @@ static void *pc2_steam_bridge_worker(void *data){
             argv[n++]=pc2_prepared_import_helper();
             argv[n++]="--appid";argv[n++]=j->appid;
             argv[n++]="--install-dir";argv[n++]=j->game_dir;
-            argv[n++]="--single-staged";
+            argv[n++]="--release-asset-url";argv[n++]=j->source_url;
             argv[n++]="--format";argv[n++]="summary";
         }else if(!strcmp(j->action,"live-attach-preview")){
             argv[n++]=pc2_live_attach_helper();
@@ -5021,6 +5021,18 @@ static void pc2_steam_bridge_action(const char *action){
             if(global_cache)
                 snprintf(j->source_bytes,sizeof j->source_bytes,"%lld",choice->bytes);
         }
+    }
+    if(import_preview){
+        int choice=pc2_shared_wemod_choices?
+            gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices):-1;
+        if(choice<0 || choice>=pc2_prepared_choice_count){
+            if(pc2_native_route_status)set_label(pc2_native_route_status,
+                "Select the prepared release in Step 1 before reviewing compatibility.");
+            free(j);
+            return;
+        }
+        snprintf(j->source_url,sizeof j->source_url,"%s",
+                 pc2_prepared_choices[choice].url);
     }
     pc2_steam_bridge_busy=1;
     if(global_catalog){
