@@ -20,6 +20,8 @@ echo "== Isolated prefix restore rehearsal and adversarial rollback fixture test
 python3 -m unittest discover -s scripts -p 'test_gameweld_prefix_restore_rehearsal.py' -v
 echo "== Journaled synthetic install and rollback fault-injection regression =="
 python3 -m unittest discover -s scripts -p 'test_gameweld_transaction_rehearsal.py' -v
+echo "== Provider-aware Wine Proton procfs activity advisory (read-only) =="
+python3 -m unittest discover -s scripts -p 'test_gameweld_prefix_runtime_preflight.py' -v
 echo "== Provider-native WeMod route / no mandatory Steam Bridge =="
 python3 -m unittest discover -s scripts -p 'test_gameweld_wemod_native_route.py' -v
 for f in scripts/regression-test-0.7.0-rc6-signed-catalogs.py scripts/regression-test-0.7.0-rc5-staging.py scripts/regression-test-0.7.0-rc9.4-epoch.py scripts/regression-test-0.7.0-stable.py scripts/regression-test-0.7.0-pc1-distribution.py; do
