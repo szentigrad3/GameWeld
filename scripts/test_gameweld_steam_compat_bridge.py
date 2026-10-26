@@ -786,7 +786,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('.game-connection-summary{', ui)
         self.assertIn('strcmp(j->action,"native-route")', ui)
         self.assertIn('if(native_route)', ui)
-        self.assertIn('if(!global_upgrade&&!global_catalog&&!global_cache)', ui)
+        self.assertIn('if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage)', ui)
         self.assertIn('pc2_prepared_prefix_catalog_helper()', ui)
         self.assertIn('argv[n++]=pc2_prepared_prefix_catalog_helper();', ui)
         self.assertIn('pc2_steam_bridge_action("prefix-catalog");', ui)
