@@ -40,7 +40,7 @@ suites=(
 )
 for suite in "${suites[@]}"; do
   echo "== $suite =="
-  python3 -m unittest discover -s scripts -p "$suite" -q
+  timeout --signal=TERM --kill-after=5s 30s python3 -m unittest discover -s scripts -p "$suite" -q
 done
 echo "PASS: ${#suites[@]} PC2 safety suites in $((SECONDS-start))s."
 echo "NOT TESTED HERE: native GTK build, Ubuntu AppDir audit, live Steam/Heroic/Lutris integration, real WeMod trainer."
