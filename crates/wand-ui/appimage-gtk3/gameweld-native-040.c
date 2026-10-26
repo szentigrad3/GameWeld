@@ -4572,8 +4572,29 @@ static void pc2_prepared_catalog_display(const char *raw){
             g_string_append_c(summary,'\n');
         }
     }
-    if(pc2_shared_wemod_status)
-        set_label(pc2_shared_wemod_status,summary->str);
+    /* GTK may implicitly select the first row when items are appended.
+     * An unverified 900+ MiB third-party prefix must never be selected
+     * automatically, especially when no matching Proton version is known. */
+    if(pc2_shared_wemod_choices)
+        gtk_combo_box_set_active((GtkComboBox*)pc2_shared_wemod_choices,-1);
+    if(pc2_shared_wemod_download)
+        gtk_widget_set_sensitive(pc2_shared_wemod_download,FALSE);
+    if(pc2_shared_wemod_status){
+        char concise[1024];
+        if(pc2_prepared_choice_count)
+            snprintf(concise,sizeof concise,
+                "%d possible prepared prefix release(s) found. Select one "
+                "manually to review its size and source. No version was "
+                "verified for this game. A ZIP is not an installed or "
+                "working trainer. No files downloaded.",
+                pc2_prepared_choice_count);
+        else
+            snprintf(concise,sizeof concise,
+                "No safe release choices found. The catalog may be offline "
+                "or the release metadata may not match accepted ZIP rules. "
+                "%.500s",summary->str);
+        set_label(pc2_shared_wemod_status,concise);
+    }
     g_string_free(summary,TRUE);
     g_free(copy);
 }
