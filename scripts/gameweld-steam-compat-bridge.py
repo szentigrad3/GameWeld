@@ -754,6 +754,66 @@ def netfx_clr_evidence(prefix: Path) -> list[str]:
     return report
 
 
+def netfx_isolation_plan(appid: str, game_dir: Path) -> str:
+    """Plan (never execute) a separate .NET test away from the game's prefix.
+
+    This command is deliberately incapable of creating the sandbox, invoking
+    Proton, installing runtimes, editing Wine registry keys or copying DLLs.
+    Only user-authorised future work could implement an actual sandbox runner.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid Steam AppID for isolated .NET test plan")
+    game = game_dir.expanduser().resolve(strict=True)
+    steamapps = game.parent.parent
+    manifest = steamapps / f"appmanifest_{appid}.acf"
+    if (not game.is_dir() or game.parent.name != "common" or
+            steamapps.name != "steamapps" or not manifest.is_file() or
+            manifest.is_symlink()):
+        raise ValueError("Select an installed Steam game with the matching AppID manifest")
+
+    entry = load_config().get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("Configure this game's Steam Bridge before planning an isolated test")
+    proton = validate_proton(Path(entry["proton"]))
+    client = validate_client(Path(entry["client"]))
+    current = steamapps / "compatdata" / appid
+    cache = xdg_dir("XDG_CACHE_HOME", ".cache")
+    root = cache / "gameweld" / "netfx-isolation"
+    proposed = root / f"appid-{appid}"
+    disallowed = (game, current, proton.parent, client)
+    unsafe_links = any(p.is_symlink() for p in
+                       (cache, cache / "gameweld", root, proposed))
+    overlaps_protected = any(
+        proposed == protected or proposed in protected.parents or
+        protected in proposed.parents
+        for protected in disallowed
+    )
+    occupied = proposed.exists() or proposed.is_symlink()
+    ready = not (unsafe_links or overlaps_protected or occupied)
+    lines = [
+        f"GAMEWELD — ISOLATED .NET TEST PLAN • AppID {appid}",
+        "Mode: PLAN ONLY (READ-ONLY; no sandbox or installer created)",
+        "Selected Steam game: verified matching local AppID manifest",
+        f"Saved Proton executable: {proton}",
+        "Proton selection: saved GameWeld configuration; actual running tool not proven",
+        f"Existing game compatdata: {current} (DO NOT TOUCH)",
+        f"Proposed separate workspace: {proposed}",
+        "Workspace check: " +
+        ("AVAILABLE FOR A FUTURE APPROVED TEST" if ready else
+         "BLOCKED (path exists, overlaps protected files, or has symlink ancestry)"),
+        "Install source: NOT SELECTED OR VERIFIED",
+        "Compatibility of .NET installer with this Proton build: NOT VERIFIED",
+        "Proton run, downloads, prefix creation, registry changes and DLL copies: NOT PERFORMED",
+        "Do not run the previous dotnet48/MSI installer on the live game prefix.",
+        "Before any future sandbox test: choose a trusted installer, check its hash, "
+        "confirm available space, and explicitly approve a disposable-only test.",
+        "After a future sandbox test: require actual CLR loading evidence; "
+        "a registry Release key or mere DLL presence is not a pass.",
+        "No automatic promotion/copying from sandbox into a Steam game prefix.",
+    ]
+    return "\n".join(lines)
+
+
 def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
     """Bounded, read-only, game-scoped readiness summary for the GUI.
 
@@ -891,9 +951,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "preflight", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "preflight", "netfx-status", "netfx-plan", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "preflight", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "preflight", "netfx-status", "netfx-plan", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -913,6 +973,11 @@ def main() -> int:
             if not args.appid:
                 raise ValueError("Preflight requires --appid")
             print(preflight_report(args.appid, game_dir=args.game_dir))
+            return 0
+        if args.action == "netfx-plan":
+            if not args.appid or not args.game_dir:
+                raise ValueError("Isolated .NET plan requires --appid and --game-dir")
+            print(netfx_isolation_plan(args.appid, args.game_dir))
             return 0
         if args.action == "netfx-status":
             if not args.appid or not args.game_dir:
