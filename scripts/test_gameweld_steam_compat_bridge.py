@@ -793,9 +793,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             "Legacy Steam Bridge — optional compatibility fallback", ui
         )
         self.assertIn('gtk_expander_set_expanded(legacy_bridge,FALSE);', ui)
-        self.assertIn(
-            'button("Legacy: Play using existing Steam Bridge","action")', ui
-        )
+        self.assertIn('legacy_bridge_play=button(', ui)
+        self.assertIn('"Legacy: Play using existing Steam Bridge","action");', ui)
         self.assertIn('(GCallback)on_pc2_bridge_play,NULL,NULL,0);', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn(
