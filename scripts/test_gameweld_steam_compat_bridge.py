@@ -741,6 +741,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('button("Check WeMod readiness","action")', ui)
         self.assertIn('strcmp(s, "Plan safe .NET test (read-only)")', guard)
         self.assertIn('button("Plan safe .NET test (read-only)","action")', ui)
+        self.assertIn('pack(bridge_maintenance_box,netfx_plan,0);', ui)
+        self.assertNotIn('pack(bridge_card,netfx_plan,0);', ui)
         self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
         self.assertIn('!strcmp(job->result,"runtime")', ui)
         self.assertIn('else if(!strcmp(state,"runtime"))title="Find prepared WeMod setup";', ui)
