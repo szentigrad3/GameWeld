@@ -1,7 +1,7 @@
 # GameWeld — prepared WeMod setup for all game libraries
 
 **Scope:** Steam, Heroic, Lutris, and future supported Windows-game providers.
-**Status:** Architecture + read-only catalog and archive audit implemented. Game integration, account migration, and verified trainer activation **not yet done**.
+**Status:** Architecture, read-only catalog and archive audit, plus opt-in isolated cache staging are implemented. Per-game application, account migration, rollback, and verified trainer activation **not yet done**.
 Cache-only download code and consent-driven GUI wiring exist; the discovery-only GUI deliberately disables downloads.
 
 ## User-visible goal
@@ -119,6 +119,39 @@ from the future **Install** and **Play** actions.
 review publisher integrity and release applicability; validate live progress,
 cancel, restart and interrupted-download recovery on CachyOS, and complete a
 separately approved, reversible per-game install and trainer-attachment flow.
+
+## Isolated staged extraction (private development only)
+
+The opt-in helper `scripts/gameweld-prepared-prefix-stage.py` reads only a
+content-addressed ZIP already in `.../gameweld/prepared-wemod/downloads/<sha256>.zip`.
+Its `--approve-stage` gate, SHA-256 filename check, archive member inspection and CRC
+verification run before staging begins. It refuses symlinked cache locations,
+preexisting destination directories and inadequate free space.
+
+If approved, the helper extracts into a newly created 0700 temporary directory
+inside the dedicated cache `staging/` subtree, writes a per-file SHA-256
+manifest, and renames the directory to its final content-addressed staging
+location. A failed or cancelled staging callback removes the incomplete
+temporary tree. Extracted files are ordinary private data files; no executable
+bit is inherited from the ZIP. Tests use synthetic archives and preserve
+fixture Steam, Heroic and Lutris prefixes.
+
+This is **not a prepared WeMod installer**. Staging does **not** inspect or
+modify an individual game's working prefix; it does not identify a trusted
+publisher, transfer WeMod account data, attach a trainer, or enable Play.
+Staging is not exposed as an ordinary ready-to-use GUI installation action.
+Third-party archive contents remain untrusted and MUST NOT be executed merely
+because they staged successfully.
+
+Manual, private development test against a previously verified cached ZIP:
+
+```bash
+python3 scripts/gameweld-prepared-prefix-stage.py \
+  --archive "$HOME/.cache/gameweld/prepared-wemod/downloads/<actual-sha256>.zip" \
+  --approve-stage
+```
+
+No game's prefix should ever be used as `--cache-root`.
 
 ## Required transactional installer (not implemented)
 
