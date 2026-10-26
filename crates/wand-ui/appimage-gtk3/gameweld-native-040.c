@@ -4514,6 +4514,107 @@ static GtkWidget *pc2_steam_bridge_status=NULL;
 static GtkWidget *pc2_shared_wemod_status=NULL;
 static GtkWidget *pc2_shared_wemod_choices=NULL;
 static GtkWidget *pc2_shared_wemod_download=NULL;
+static GtkWidget *pc2_shared_wemod_cancel=NULL;
+static volatile sig_atomic_t pc2_cache_child_pid=0;
+static volatile sig_atomic_t pc2_cache_cancel_requested=0;
+typedef struct { int percent; char stage[16]; } PC2CacheProgressEvent;
+static gboolean pc2_cache_progress_update(gpointer data){
+    PC2CacheProgressEvent *event=data;
+    if(pc2_steam_bridge_busy && pc2_shared_wemod_status){
+        char message[256];
+        if(!strcmp(event->stage,"VERIFY"))
+            snprintf(message,sizeof message,
+                "Download complete. Checking the ZIP structure and CRC... "
+                "Nothing has been installed.");
+        else
+            snprintf(message,sizeof message,
+                "Downloading prepared WeMod ZIP to shared cache: %d%%. "
+                "No game prefix is being changed.",event->percent);
+        set_label(pc2_shared_wemod_status,message);
+    }
+    free(event);
+    return FALSE;
+}
+static void pc2_cache_report_line(const char *line,char *result,
+                                   size_t capacity,size_t *used){
+    if(!strncmp(line,"PROGRESS\\t",9)){
+        char stage[16]={0};
+        long long current=0,total=0;
+        if(sscanf(line+9,"%15[^\\t]\\t%lld\\t%lld",stage,&current,&total)==3
+           &&total>0&&current>=0&&current<=total){
+            PC2CacheProgressEvent *event=calloc(1,sizeof *event);
+            if(event){
+                snprintf(event->stage,sizeof event->stage,"%s",stage);
+                event->percent=(int)(100*current/total);
+                g_idle_add(pc2_cache_progress_update,event);
+            }
+        }
+        return;
+    }
+    size_t n=strlen(line);
+    if(*used+n+2<capacity){
+        memcpy(result+*used,line,n);
+        *used+=n;
+        result[(*used)++]='\\n';
+        result[*used]=0;
+    }
+}
+static int pc2_cache_collect_output(pid_t pid,int fd,char *result,
+                                    size_t capacity,int seconds){
+    int status=0,finished=0;size_t used=0,line_used=0;
+    char line[2048]={0};
+    time_t deadline=time(NULL)+seconds;
+    fcntl(fd,F_SETFL,fcntl(fd,F_GETFL,0)|O_NONBLOCK);
+    while(time(NULL)<deadline){
+        struct pollfd pfd={.fd=fd,.events=POLLIN|POLLHUP};
+        if(poll(&pfd,1,200)>0){
+            char block[4096];ssize_t n;
+            while((n=read(fd,block,sizeof block))>0){
+                for(ssize_t i=0;i<n;i++){
+                    if(block[i]=='\\n'){
+                        line[line_used]=0;
+                        pc2_cache_report_line(line,result,capacity,&used);
+                        line_used=0;
+                    }else if(line_used+1<sizeof line)
+                        line[line_used++]=block[i];
+                }
+            }
+        }
+        pid_t completed=waitpid(pid,&status,WNOHANG);
+        if(completed==pid){finished=1;break;}
+        if(completed<0&&errno!=EINTR)break;
+    }
+    if(!finished){
+        kill(pid,SIGINT);
+        kill(-pid,SIGINT);
+        /* Interrupt first to let Python remove its temporary file. */
+        for(int i=0;i<10;i++){
+            if(waitpid(pid,&status,WNOHANG)==pid){finished=1;break;}
+            usleep(100000);
+        }
+        if(!finished){
+            kill(pid,SIGKILL);kill(-pid,SIGKILL);
+            while(waitpid(pid,&status,0)<0&&errno==EINTR){}
+        }
+    }else{
+        char block[4096];ssize_t n;
+        while((n=read(fd,block,sizeof block))>0){
+            for(ssize_t i=0;i<n;i++){
+                if(block[i]=='\\n'){
+                    line[line_used]=0;
+                    pc2_cache_report_line(line,result,capacity,&used);
+                    line_used=0;
+                }else if(line_used+1<sizeof line)
+                    line[line_used++]=block[i];
+            }
+        }
+    }
+    if(line_used){line[line_used]=0;
+        pc2_cache_report_line(line,result,capacity,&used);}
+    close(fd);
+    return finished&&WIFEXITED(status)&&WEXITSTATUS(status)==0;
+}
+
 typedef struct {
     char tag[128],name[256],url[1024];
     long long bytes;
