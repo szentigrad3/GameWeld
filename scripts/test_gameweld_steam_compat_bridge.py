@@ -407,8 +407,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             prefix.mkdir(parents=True)
             registry = prefix / "system.reg"
             registry.write_text(
-                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\\n'
-                '"Release"=dword:00082348\\n'
+                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\n'
+                '"Release"=dword:00082348\n'
             )
             folder = prefix / "drive_c/windows/Microsoft.NET"
             for arch in ("Framework", "Framework64"):
@@ -441,7 +441,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 runtime.mkdir(parents=True)
                 (runtime / "clr.dll").write_bytes(b"test-mock-dll")
                 (runtime / "mscorlib.dll").write_bytes(b"test-mock-mscorlib")
-            report = "\\n".join(bridge.netfx_clr_evidence(prefix))
+            report = "\n".join(bridge.netfx_clr_evidence(prefix))
             self.assertIn("Framework/clr.dll: present", report)
             self.assertIn("Framework64/clr.dll: present", report)
             self.assertIn("loading and WeMod compatibility NOT verified", report)
@@ -450,13 +450,13 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
     def test_clr_evidence_missing_or_symlinked_prefix_is_inconclusive(self):
         with patch.dict(os.environ, self.env):
             absent = self.root / "missing/pfx"
-            self.assertIn("INCONCLUSIVE", "\\n".join(bridge.netfx_clr_evidence(absent)))
+            self.assertIn("INCONCLUSIVE", "\n".join(bridge.netfx_clr_evidence(absent)))
             prefix = self.root / "working/pfx"
             (prefix / "drive_c/windows/Microsoft.NET").mkdir(parents=True)
             link = self.root / "prefix-link"
             link.symlink_to(prefix, target_is_directory=True)
-            self.assertIn("INCONCLUSIVE", "\\n".join(bridge.netfx_clr_evidence(link)))
-            self.assertNotIn("WARNING:", "\\n".join(bridge.netfx_clr_evidence(link)))
+            self.assertIn("INCONCLUSIVE", "\n".join(bridge.netfx_clr_evidence(link)))
+            self.assertNotIn("WARNING:", "\n".join(bridge.netfx_clr_evidence(link)))
 
     def test_preflight_unconfigured_does_not_run_installers(self):
         with patch.dict(os.environ, self.env):
