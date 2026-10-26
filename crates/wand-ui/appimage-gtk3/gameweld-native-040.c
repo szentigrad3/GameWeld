@@ -4814,7 +4814,7 @@ static void *pc2_steam_bridge_worker(void *data){
             argv[n++]=pc2_native_route_helper();
             argv[n++]="--provider";argv[n++]=j->provider;
             argv[n++]="--game-id";argv[n++]=j->appid;
-            argv[n++]="--format";argv[n++]="text";
+            argv[n++]="--format";argv[n++]="summary";
             if(j->game_dir[0]){argv[n++]="--install-dir";argv[n++]=j->game_dir;}
             if(j->prefix[0]){argv[n++]="--prefix";argv[n++]=j->prefix;}
             if(j->runner[0]){argv[n++]="--runner";argv[n++]=j->runner;}
