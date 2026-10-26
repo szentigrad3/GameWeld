@@ -590,6 +590,7 @@ static const char *CSS =
 ".empty-state{background:#0e1218;border:1px dashed #2a3340;border-radius:12px;padding:22px;color:#8793a3;font-size:11px}"
 ".section-divider{margin:5px 0}"
 ".page-shell{background:#0c0f14}"
+".game-connection-summary{color:#dce6f4;font-size:13px;font-weight:600;background:#141b25;border:1px solid #293447;border-radius:8px;padding:12px}"
 ".trainer-quick-summary{color:#d8e1ed;font-size:12px;padding:9px 0}"
 ".update-evidence{color:#d3deea;font-size:12px}"
 ".update-context{color:#d9e3f0;font-size:12px;background:#141b25;border:1px solid #293447;border-radius:8px;padding:11px}"
@@ -6018,6 +6019,7 @@ static GtkWidget *build_settings(void){
             "Select a Steam, Heroic or Lutris game, then check its WeMod setup. "
             "No game will be launched or modified.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_native_route_status,TRUE);
+        style(pc2_native_route_status,"game-connection-summary");
         pack(native_card,pc2_native_route_status,0);
         pack(deckpage,native_card,0);
         GtkWidget*bridge_card=box(GTK_ORIENTATION_VERTICAL,9);style(bridge_card,"card");
