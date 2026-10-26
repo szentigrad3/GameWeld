@@ -58,29 +58,35 @@ def environment_vars(blob: bytes) -> dict[str, str]:
 
 
 def is_wemod_process(pid: Path) -> bool | None:
-    """Identify a candidate WeMod.exe *name*, not an attached trainer.
+    """Read bounded process names, independently checking argv and comm.
 
-    None means the process name could not be inspected. Never report a
-    raw process command line, path, token or account identifier.
+    This only finds a WeMod.exe name candidate, never verifies attachment.
+    A missing cmdline must not conceal an accessible Linux comm name.
     """
+    inspected = False
     try:
-        raw = (pid / "cmdline").read_bytes()
-        if len(raw) > MAX_PROCESS_NAME_BYTES:
-            return None
-        args = raw.split(b"\x00")
-        for arg in args:
-            if not arg:
-                continue
-            name = arg.strip(b"\"' ").replace(b"\\", b"/").split(b"/")[-1]
-            if name.lower() == b"wemod.exe":
-                return True
-        # Wine may put the Windows executable name in comm instead of argv.
-        comm = (pid / "comm").read_bytes()
-        if len(comm) > 256:
-            return None
-        return comm.strip().lower() == b"wemod.exe"
+        with (pid / "cmdline").open("rb") as stream:
+            raw = stream.read(MAX_PROCESS_NAME_BYTES + 1)
+        if 0 < len(raw) <= MAX_PROCESS_NAME_BYTES:
+            inspected = True
+            for arg in raw.split(b"\\x00"):
+                if not arg:
+                    continue
+                name = arg.strip(b"\\\"' ").replace(b"\\\\", b"/").split(b"/")[-1]
+                if name.lower() == b"wemod.exe":
+                    return True
     except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
-        return None
+        pass
+    try:
+        with (pid / "comm").open("rb") as stream:
+            comm = stream.read(257)
+        if 0 < len(comm) <= 256:
+            inspected = True
+            if comm.strip().lower() == b"wemod.exe":
+                return True
+    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+        pass
+    return False if inspected else None
 
 
 def procfs_report(
