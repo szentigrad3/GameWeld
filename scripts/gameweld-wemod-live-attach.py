@@ -285,11 +285,38 @@ def launch(report: dict, private: dict, *, approved: bool,
     }
 
 
+
+def preview_summary(report: dict) -> str:
+    state = "FOUND" if report["matching_prefix_processes"] else "NOT FOUND"
+    mode = ("Already running; duplicate blocked" if report["wemod_already_visible"]
+            else "Not detected in selected prefix")
+    next_action = (
+        "Next: existing WeMod is already visible; no additional launch requested"
+        if report["wemod_already_visible"] else
+        "Next: compatible managed client/runtime and user approval required"
+        if not report["can_attempt_with_explicit_consent"] else
+        "Next: explicit experimental client handoff can be tested (prefix may change)"
+    )
+    return "\n".join([
+        "NO STEAM LAUNCH OPTIONS — live WeMod handoff preview",
+        f"Steam AppID: {report['appid']}  |  Game-prefix process: {state}",
+        f"WeMod process: {mode}",
+        "Managed WeMod client: " +
+            ("FOUND" if report["managed_client_present"] else "NOT VERIFIED"),
+        "Exact live Proton runtime: " +
+            ("FOUND" if report["unique_proton_context"] else "NOT VERIFIED"),
+        next_action,
+        "No game launched; no Steam Bridge or Steam options modified.",
+        "Trainer attachment: NOT VERIFIED (preview never launches WeMod).",
+    ])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--appid", required=True)
     parser.add_argument("--install-dir", type=Path, required=True)
     parser.add_argument("--client-dir", type=Path)
+    parser.add_argument("--format", choices=("json", "summary"), default="json")
     parser.add_argument("--launch-client", action="store_true")
     parser.add_argument("--approve-prefix-may-change", action="store_true")
     parser.add_argument("--approve-experimental-live-attach", action="store_true")
@@ -309,7 +336,10 @@ def main(argv=None) -> int:
             result = report
     except (AttachBlocked, OSError, ValueError) as exc:
         parser.exit(2, "GameWeld WeMod live attach BLOCKED — " + str(exc) + "\n")
-    print(json.dumps(result, indent=2, sort_keys=True))
+    if args.format == "summary" and not args.launch_client:
+        print(preview_summary(result))
+    else:
+        print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
