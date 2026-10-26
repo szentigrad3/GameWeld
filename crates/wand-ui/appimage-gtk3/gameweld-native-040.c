@@ -4842,7 +4842,7 @@ static void *pc2_steam_bridge_worker(void *data){
                 argv[n++]="--steam-root";argv[n++]=j->steam_root;
             }
         }
-        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"prefix-catalog")&&strcmp(j->action,"prefix-cache")&&strcmp(j->action,"native-route")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
+        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"prefix-catalog")&&strcmp(j->action,"prefix-cache")&&strcmp(j->action,"native-route")&&strcmp(j->action,"live-attach-preview")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char *const*)argv);_exit(127);
     }
