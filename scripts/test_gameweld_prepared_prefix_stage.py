@@ -64,6 +64,25 @@ class PreparedPrefixStageTests(unittest.TestCase):
                 approved=kwargs.pop("approved", True), **kwargs
             )
 
+    def test_missing_download_explains_first_step(self):
+        self.archive.unlink()
+        with self.assertRaisesRegex(stage.StageRefused, "Step 1: choose a release"):
+            stage.select_single_cached_zip(self.cache)
+        self.assertFalse((self.cache / "staging").exists())
+        self.untouched()
+
+    def test_single_cached_zip_selects_exact_archive(self):
+        self.assertEqual(stage.select_single_cached_zip(self.cache), self.archive)
+        self.assertFalse((self.cache / "staging").exists())
+        self.untouched()
+
+    def test_multiple_downloads_explains_explicit_selection(self):
+        self.make_zip([("pfx/second-file.bin", b"SECOND")])
+        with self.assertRaisesRegex(stage.StageRefused, "Multiple prepared ZIPs"):
+            stage.select_single_cached_zip(self.cache)
+        self.assertFalse((self.cache / "staging").exists())
+        self.untouched()
+
     def test_approval_required_and_no_staging_directory_created(self):
         with self.assertRaisesRegex(stage.StageRefused, "Explicit"):
             self.call(approved=False)
