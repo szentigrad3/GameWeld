@@ -63,6 +63,19 @@ typedef int gboolean;
 typedef unsigned int guint;
 typedef long gssize;
 typedef void *gpointer;
+typedef char gchar;
+typedef int64_t gint64;
+typedef struct _GString { char *str; size_t len; size_t allocated_len; } GString;
+extern char *g_strdup(const char *);
+extern gchar **g_strsplit(const gchar *, const gchar *, int);
+extern unsigned int g_strv_length(gchar **);
+extern void g_strfreev(gchar **);
+extern gboolean g_str_has_prefix(const gchar *, const gchar *);
+extern gint64 g_ascii_strtoll(const gchar *, gchar **, guint);
+extern GString *g_string_new(const gchar *);
+extern GString *g_string_append(GString *, const gchar *);
+extern GString *g_string_append_c(GString *, gchar);
+extern gchar *g_string_free(GString *, gboolean);
 
 extern void gtk_init(int *, char ***);
 extern GtkWidget *gtk_window_new(int);
@@ -5814,8 +5827,8 @@ static GtkWidget *build_settings(void){
         gtk_label_set_line_wrap((GtkLabel*)prefix_choice_note,TRUE);
         pack(shared_card,prefix_choice_note,0);
         pc2_shared_wemod_choices=gtk_combo_box_text_new();
-        g_signal_connect(pc2_shared_wemod_choices,"changed",
-            G_CALLBACK(pc2_prepared_choice_update),NULL);
+        g_signal_connect_data(pc2_shared_wemod_choices,"changed",
+            (GCallback)pc2_prepared_choice_update,NULL,NULL,0);
         pack(shared_card,pc2_shared_wemod_choices,0);
         pc2_shared_wemod_download=button(
             "Download selected prepared setup (cache only)","action");
