@@ -184,6 +184,13 @@ The only current safe development test is the synthetic-prefix unit suite:
 python3 -m unittest discover -s scripts -p 'test_gameweld_prefix_backup.py' -v
 ```
 
+The same helper supports `--verify-backup-dir /absolute/private/backup-directory`
+to independently reopen the saved TAR, confirm the archive digest and declared
+length, validate member names/types/counts, and read every archived regular
+file to compare its SHA-256 with the private manifest. It performs **no
+restoration or game-prefix writes**. Archive/manifest integrity proves only
+internal consistency, not the absolute trustworthiness of that backup.
+
 Do not use backups of real game profiles to claim rollback support until
 restore verification and a provider-specific idle/lock check are complete.
 
