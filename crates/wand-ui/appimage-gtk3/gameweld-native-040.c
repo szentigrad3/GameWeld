@@ -4525,12 +4525,15 @@ static gboolean pc2_cache_progress_update(gpointer data){
         char message[256];
         if(!strcmp(event->stage,"VERIFY"))
             snprintf(message,sizeof message,
-                "Download complete. Checking the ZIP structure and CRC... "
-                "Nothing has been installed.");
+                "Download complete. Checking ZIP structure and CRC. No game files changed.");
+        else if(!strcmp(event->stage,"STAGE")||!strcmp(event->stage,"STAGED"))
+            snprintf(message,sizeof message,
+                "Preparing isolated .NET template: %d%%. Original game prefix untouched.",
+                event->percent);
         else
             snprintf(message,sizeof message,
-                "Downloading prepared WeMod ZIP to shared cache: %d%%. "
-                "No game prefix is being changed.",event->percent);
+                "Downloading prepared WeMod ZIP to cache: %d%%. No game files changed.",
+                event->percent);
         set_label(pc2_shared_wemod_status,message);
     }
     free(event);
