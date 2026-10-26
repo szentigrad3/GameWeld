@@ -4506,6 +4506,12 @@ static const char *pc2_steam_bridge_helper(void){
     else snprintf(p,sizeof p,"gameweld-steam-compat-bridge.py");
     return p;
 }
+static const char *pc2_prepared_prefix_catalog_helper(void){
+    static char p[2048];const char *appdir=getenv("APPDIR");
+    if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-deckcheatz-prefix-catalog.py",appdir);
+    else snprintf(p,sizeof p,"gameweld-deckcheatz-prefix-catalog.py");
+    return p;
+}
 static gboolean pc2_steam_bridge_done(gpointer data){
     PC2SteamBridgeJob*j=data;
     pc2_steam_bridge_busy=0;
@@ -4555,13 +4561,22 @@ static void *pc2_steam_bridge_worker(void *data){
         setpgid(0,0);
         close(pipefd[0]);dup2(pipefd[1],STDOUT_FILENO);dup2(pipefd[1],STDERR_FILENO);close(pipefd[1]);
         const char *argv[16];int n=0;
-        argv[n++]="python3";argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
-        if(j->appid[0]){argv[n++]="--appid";argv[n++]=j->appid;}
+        argv[n++]="python3";
+        if(!strcmp(j->action,"prefix-catalog")){
+            /* Shared WeMod release lookup is global: no Steam AppID required
+             * and no game identifiers are sent to the catalog provider. */
+            argv[n++]=pc2_prepared_prefix_catalog_helper();
+        }else{
+            argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
+        }
+        if(strcmp(j->action,"prefix-catalog")&&j->appid[0]){
+            argv[n++]="--appid";argv[n++]=j->appid;
+        }
         if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")||!strcmp(j->action,"preflight")||!strcmp(j->action,"netfx-plan")||!strcmp(j->action,"prefix-catalog")||!strcmp(j->action,"netfx-status")){
-            if(j->game_dir[0]){
+            if(strcmp(j->action,"prefix-catalog")&&j->game_dir[0]){
                 argv[n++]="--game-dir";argv[n++]=j->game_dir;
             }
-            if(j->steam_root[0]){
+            if(strcmp(j->action,"prefix-catalog")&&j->steam_root[0]){
                 argv[n++]="--steam-root";argv[n++]=j->steam_root;
             }
         }
@@ -4583,8 +4598,9 @@ static void *pc2_steam_bridge_worker(void *data){
 static void pc2_steam_bridge_action(const char *action){
     if(!pc2_provider_controls_allowed()||pc2_steam_bridge_busy)return;
     int global_upgrade=!strcmp(action,"upgrade");
+    int global_catalog=!strcmp(action,"prefix-catalog");
     Game *g=NULL;
-    if(!global_upgrade){
+    if(!global_upgrade&&!global_catalog){
         if(G.selected<0||G.selected>=G.game_count){
             if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
                 "Select an installed Steam game in Library first.");
@@ -4655,13 +4671,14 @@ static void pc2_steam_bridge_action(const char *action){
     }
     PC2SteamBridgeJob*j=calloc(1,sizeof *j);if(!j)return;
     snprintf(j->action,sizeof j->action,"%s",action);
-    if(!global_upgrade){
+    if(!global_upgrade&&!global_catalog){
         snprintf(j->appid,sizeof j->appid,"%s",g->appid);
         snprintf(j->game,sizeof j->game,"%.*s",(int)sizeof(j->game)-1,g->name);
         snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
         snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
     }else{
-        snprintf(j->game,sizeof j->game,"Installed GameWeld Bridge");
+        snprintf(j->game,sizeof j->game,"%s",
+                 global_catalog?"Shared WeMod setup":"Installed GameWeld Bridge");
     }
     pc2_steam_bridge_busy=1;
     if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
