@@ -764,7 +764,10 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             'if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage){'
             '\n        snprintf(j->appid,sizeof j->appid', ui)
         self.assertIn('argv[n++]=pc2_prepared_prefix_stage_helper();', ui)
-        self.assertIn('argv[n++]="--single-cached";', ui)
+        self.assertIn('argv[n++]="--release-asset-url";argv[n++]=j->source_url;', ui)
+        self.assertIn('if(global_cache || global_stage){', ui)
+        self.assertIn('if(selected<0 || selected>=pc2_prepared_choice_count){', ui)
+        self.assertIn('pc2_steam_bridge_action("prefix-stage");', ui)
         self.assertIn('argv[n++]="--approve-stage";', ui)
         self.assertIn('"Step 1 — Download selected prepared setup (cache only)","action");', ui)
         self.assertIn('pc2_steam_bridge_action("prepared-import-preview");', ui)
