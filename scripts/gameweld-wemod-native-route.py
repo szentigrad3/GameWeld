@@ -8,6 +8,7 @@ no downloads, Wine/Proton execution, prefix writes or Steam modifications.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -29,6 +30,48 @@ def _path(value: str | None) -> Path | None:
         return None
     return path
 
+def runtime_activity(provider: str, game_id: str, prefix: Path | None,
+                     *, proc_root: Path | None = None) -> dict:
+    """Run the peer read-only procfs check when available, never authorize writes."""
+    result = {
+        "state": "UNKNOWN",
+        "reason": "Game-prefix process activity not verified",
+        "matching_process_count": 0,
+        "unreadable_same_user_processes": 0,
+        "installer_authorized": False,
+        "game_runtime_idle_verified": False,
+    }
+    if prefix is None or not prefix.is_dir() or prefix.is_symlink():
+        result["reason"] = "Exact existing game prefix is not established"
+        return result
+    script = Path(__file__).with_name("gameweld-prefix-runtime-preflight.py")
+    if not script.is_file() or script.is_symlink():
+        result["reason"] = "Read-only runtime inspector unavailable"
+        return result
+    try:
+        spec = importlib.util.spec_from_file_location("gameweld_runtime_activity", script)
+        if spec is None or spec.loader is None:
+            return result
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+        options = {} if proc_root is None else {"proc_root": proc_root}
+        report = checker.procfs_report(provider, game_id, prefix, **options)
+        state = report["state"]
+        if state not in ("ACTIVE", "UNKNOWN", "IDLE_CANDIDATE"):
+            return result
+        return {
+            "state": state,
+            "reason": report["reason"],
+            "matching_process_count": report.get("matching_process_count", 0),
+            "unreadable_same_user_processes": report.get(
+                "unreadable_same_user_processes", 0),
+            "installer_authorized": False,
+            "game_runtime_idle_verified": False,
+        }
+    except (OSError, ValueError, KeyError, ImportError, AttributeError):
+        result["reason"] = "Read-only process check could not be completed"
+        return result
+
 
 def native_route_report(
     provider: str,
@@ -37,6 +80,7 @@ def native_route_report(
     install_dir: str | None = None,
     prefix: str | None = None,
     runner: str | None = None,
+    proc_root: Path | None = None,
 ) -> dict:
     if provider not in PROVIDERS:
         raise NativeRouteBlocked("No supported Windows-game provider selected")
@@ -60,6 +104,7 @@ def native_route_report(
     if tool and tool.is_file() and not tool.is_symlink():
         evidence["runner_file_present"] = True
 
+    runtime_prefix = game_prefix
     if provider == "steam":
         if install and install.parent.name == "common" and install.parent.parent.name == "steamapps":
             manifest = install.parent.parent / ("appmanifest_" + game_id + ".acf")
@@ -67,6 +112,10 @@ def native_route_report(
             # Use only an exact candidate location, not the game's live prefix contents.
             compatdata = install.parent.parent / "compatdata" / game_id / "pfx"
             evidence["game_prefix_present"] = compatdata.is_dir() and not compatdata.is_symlink()
+            runtime_prefix = compatdata if evidence["game_prefix_present"] else None
+        else:
+            # Do not infer Steam game identity from an arbitrary prefix path.
+            runtime_prefix = None
         notes.append("Use Steam's original game launch path with a verified command-prefix or "
                      "other proven trainer integration. A prepared prefix alone is insufficient.")
         notes.append("Existing DeckCheatz 1.x may require Steam %command% launch options; "
@@ -80,12 +129,17 @@ def native_route_report(
         notes.append("Lutris native game launch/runner/prefix must be verified with its provider adapter. "
                      "Do not modify Lutris scripts or runner settings automatically.")
 
+    process = runtime_activity(
+        provider, game_id, runtime_prefix if evidence["game_prefix_present"] else None,
+        proc_root=proc_root
+    )
     return {
         "provider": provider,
         "game_id": game_id,
         "setup_scope": "Shared prepared prefix cache; per-game runtime context",
         "recommended_integration": "Provider-native (no GameWeld Steam Bridge required in design)",
         "evidence": evidence,
+        "process_activity": process,
         "state": "NOT READY — prepared WeMod setup and in-game trainer attachment unverified",
         "legacy_bridge_required": False,
         "existing_bridge_modified": False,
@@ -124,6 +178,13 @@ def human_readable_report(report: dict) -> str:
             present(evidence["runner_file_present"]) +
             " (presence only; runner has not been executed)",
         ]
+    runtime = report.get("process_activity", {})
+    status = runtime.get("state", "UNKNOWN")
+    lines.append("Game activity: " + {
+        "ACTIVE": "ACTIVE — matching Wine/Proton process detected; close the game before setup",
+        "UNKNOWN": "UNKNOWN — unable to prove whether the game is closed",
+        "IDLE_CANDIDATE": "NO MATCH FOUND — game closure is still unverified",
+    }.get(status, "UNKNOWN — runtime check unavailable"))
     lines.extend([
         "Prepared WeMod environment: NOT VERIFIED",
         "Trainer attachment to this game: NOT VERIFIED",
@@ -131,6 +192,7 @@ def human_readable_report(report: dict) -> str:
         "compatibility not yet proven",
         "Next step: Find prepared WeMod setup; then validate this game's "
         "native trainer attachment before enabling Play with WeMod.",
+        "Install permission: BLOCKED — process scan never authorizes game changes",
         "Safety: READ-ONLY; no game, Steam Bridge, WeMod installer or prefix changes.",
     ])
     if provider == "steam" and not evidence["steam_manifest_present"]:
