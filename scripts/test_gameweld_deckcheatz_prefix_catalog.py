@@ -90,6 +90,29 @@ class PreparedPrefixCatalogTests(unittest.TestCase):
         self.assertIn("Detected Proton version label: UNKNOWN", result.getvalue())
         self.assertIn("No archive downloaded; no files copied", result.getvalue())
 
+    def test_machine_lines_offer_bounded_choices_without_download(self):
+        import contextlib
+        import io
+        import sys
+        releases = [
+            release("GE-Proton10-34", "GE-Proton10-34.zip"),
+            release("GE-Proton11-1", "GE-Proton11-1.zip"),
+        ]
+        output = io.StringIO()
+        with patch.object(mod, "fetch_release_metadata",
+                          return_value=releases) as fetched, \
+             patch.object(sys, "argv", [
+                 "gameweld-deckcheatz-prefix-catalog.py", "--machine-lines"
+             ]), contextlib.redirect_stdout(output):
+            self.assertEqual(mod.main(), 0)
+        lines = output.getvalue().splitlines()
+        assets = [line for line in lines if line.startswith("ASSET\\t")]
+        self.assertEqual(len(assets), 2)
+        self.assertIn("GE-Proton10-34.zip", assets[0])
+        self.assertIn("https://github.com/DeckCheatz/BuiltPrefixes-dev/", assets[0])
+        self.assertIn("No archive downloaded; no files copied", output.getvalue())
+        fetched.assert_called_once()
+
     def test_invalid_catalog_shape_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "list"):
             mod.list_release_assets({"assets": []}, "GE-Proton11-1")
