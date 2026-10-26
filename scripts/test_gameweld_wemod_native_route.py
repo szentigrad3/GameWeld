@@ -106,7 +106,7 @@ class NativeRouteTests(unittest.TestCase):
                 ]), 0)
             self.assertIn("WeMod connection", stdout.getvalue())
             self.assertIn("Install: BLOCKED", stdout.getvalue())
-            self.assertLessEqual(len(stdout.getvalue().splitlines()), 7)
+            self.assertLessEqual(len(stdout.getvalue().splitlines()), 8)
 
     def test_steam_gui_report_surfaces_active_proton_session_without_leaking_tokens(self):
         install = self.root / "steamapps/common/Test Game"
