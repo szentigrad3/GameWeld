@@ -311,6 +311,78 @@ def select_single_cached_zip(cache_root: Path) -> Path:
     return archives[0]
 
 
+
+def cache_status(cache_root: Path) -> str:
+    """Summarize cached ZIPs and sidecar matches without URLs or local paths.
+
+    This never downloads, hashes a huge ZIP, stages, or reads any game data.
+    Exact byte SHA-256 and CRC validation still happens during staging.
+    """
+    root = safe_root(cache_root)
+    downloads = root / "downloads"
+    lines = [
+        "GAMEWELD PREPARED .NET CACHE — READ-ONLY DIAGNOSTIC",
+        "No archive downloaded, staged or installed by this command.",
+    ]
+    if not downloads.is_dir() or downloads.is_symlink():
+        return "\n".join(lines + [
+            "Status: NO CACHE DOWNLOAD FOLDER",
+            "If Step 1 reported success, check it and Step 2 were launched "
+            "with the same XDG_CACHE_HOME."
+        ])
+    archives = list(downloads.glob("*.zip"))
+    records = list(downloads.glob("*.source.json"))
+    lines.append(f"ZIP archives found: {len(archives)}")
+    lines.append(f"Source metadata records found: {len(records)}")
+    if len(archives) > 256 or len(records) > 256:
+        raise StageRefused("Too many cached objects to diagnose safely")
+    covered = set()
+    broken = 0
+    for record in sorted(records):
+        if record.is_symlink() or not record.is_file() or record.stat().st_size > 4096:
+            broken += 1
+            continue
+        try:
+            info = json.loads(record.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError, OSError):
+            broken += 1
+            continue
+        digest = record.name.removesuffix(".source.json")
+        if not isinstance(info, dict) or not HEX64.fullmatch(digest) or info.get("sha256") != digest:
+            broken += 1
+            continue
+        archive = downloads / (digest + ".zip")
+        covered.add(archive.name)
+        good_file = (archive.is_file() and not archive.is_symlink() and
+                     type(info.get("bytes")) is int and
+                     archive.stat().st_size == info["bytes"])
+        tag, asset = info.get("release_tag"), info.get("asset_name")
+        valid_name = lambda name: (
+            isinstance(name, str) and 0 < len(name) <= 128 and
+            all(ch.isascii() and (ch.isalnum() or ch in "._+-") for ch in name)
+        )
+        if not valid_name(tag) or not valid_name(asset):
+            broken += 1
+            continue
+        lines.append(f"Cached release: {tag} / {asset} — " +
+                     ("ZIP FOUND + SIZE MATCH" if good_file
+                      else "ZIP MISSING OR SIZE MISMATCH"))
+    if broken:
+        lines.append(f"Invalid or unreadable metadata records: {broken}")
+    orphan = sum(1 for a in archives if a.name not in covered)
+    if orphan:
+        lines.append(f"ZIP(s) without matching metadata records: {orphan}")
+    if not archives:
+        lines.append("Status: NO FINISHED ZIP. A selected catalog entry is not a download.")
+    elif not records or orphan:
+        lines.append("Status: At least one ZIP lacks source identification. "
+                     "Do not download again yet; keep the existing archive for inspection.")
+    else:
+        lines.append("Status: Cache entries listed above. Compare the release name "
+                     "with your selected dropdown; staging verifies full hashes/CRC.")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path)
@@ -322,6 +394,8 @@ def main(argv: list[str] | None = None) -> int:
                         default=Path(os.environ.get("XDG_CACHE_HOME") or
                                      str(Path.home() / ".cache")) /
                         "gameweld/prepared-wemod")
+    parser.add_argument("--cache-status", action="store_true",
+                        help="Show safe read-only ZIP/source metadata summary")
     parser.add_argument("--expected-sha256")
     parser.add_argument("--approve-stage", action="store_true")
     parser.add_argument("--progress", action="store_true")
@@ -330,6 +404,12 @@ def main(argv: list[str] | None = None) -> int:
     def on_progress(stage: str, current: int, total: int) -> None:
         print(f"PROGRESS\t{stage}\t{current}\t{total}", flush=True)
     try:
+        if args.cache_status:
+            if (args.archive is not None or args.single_cached or
+                    args.release_asset_url is not None or args.approve_stage):
+                raise StageRefused("Cache status cannot be combined with staging actions")
+            print(cache_status(args.cache_root))
+            return 0
         if sum((args.archive is not None, args.single_cached,
                 args.release_asset_url is not None)) != 1:
             raise StageRefused(
