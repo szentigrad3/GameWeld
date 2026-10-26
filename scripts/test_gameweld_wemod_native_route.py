@@ -226,6 +226,30 @@ class NativeRouteTests(unittest.TestCase):
         self.assertIn("WeMod process: Not verified", summary)
         self.assertIn("Trainer: NOT VERIFIED", summary)
 
+    def test_live_game_unknown_wemod_explains_unreadable_matching_names(self):
+        install = self.root / "steamapps/common/Test Game"
+        install.mkdir(parents=True)
+        (self.root / "steamapps/appmanifest_123456.acf").write_text("fixture")
+        prefix = self.root / "steamapps/compatdata/123456/pfx"
+        prefix.mkdir(parents=True)
+        proc = self.root / "proc"
+        pid = proc / "2000"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(
+            (f"STEAM_COMPAT_DATA_PATH={prefix.parent}\0SteamAppId=123456\0").encode()
+        )
+        result = route.native_route_report(
+            "steam", "123456", install_dir=str(install), proc_root=proc
+        )
+        self.assertEqual(result["process_activity"]["state"], "ACTIVE")
+        self.assertEqual(result["process_activity"]["matching_process_count"], 1)
+        self.assertEqual(result["process_activity"]["wemod_process_name_unreadable"], 1)
+        summary = route.gui_summary(result)
+        self.assertIn("ACTIVE — matching game session detected", summary)
+        self.assertIn("1/1 process names unreadable", summary)
+        self.assertIn("Trainer: NOT VERIFIED", summary)
+        self.assertIn("Install: BLOCKED", summary)
+
     def test_unknown_game_and_provider_fail_closed(self):
         for provider, game_id in [
             ("steam", "invalid"), ("steam", "0"), ("heroic", "../../foo"),
