@@ -157,8 +157,9 @@ def staged_prefix(stage_dir: Path, cache_root: Path) -> tuple[Path, dict]:
     payload = stage_dir / "payload"
     if not payload.is_dir() or payload.is_symlink():
         raise ImportBlocked("Staged archive has no safe payload")
-    # DeckCheatz package_prefix archives the compatdata root, which contains
-    # 'version' and 'pfx' including .NET/registry assets and marker.
+    # DeckCheatz packages the compatdata contents, including pfx registry
+    # and .NET files, but intentionally omits the 'version' file.
+    # Match the selected release from cached asset metadata instead.
     if not (payload / "pfx").is_dir() or (payload / "pfx").is_symlink():
         raise ImportBlocked("Archive is not a full Proton compatdata template (missing pfx)")
     marker = payload / "pfx" / ".wemod_installer"
