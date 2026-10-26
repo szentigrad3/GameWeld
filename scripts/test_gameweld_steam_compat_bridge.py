@@ -422,6 +422,18 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('strcmp(action,"preflight")', ui)
         self.assertIn('strcmp(j->action,"preflight")', ui)
         self.assertIn('!strcmp(j->action,"preflight")', ui)
+        self.assertIn('strcmp(s, "Update Steam Bridge")', guard)
+        self.assertIn('button("Update Steam Bridge","primary-action")', ui)
+        self.assertIn('pc2_steam_bridge_quick_upgrade,FALSE', ui)
+        self.assertIn('selected_matches &&', ui)
+        self.assertIn('strstr(j->output,"Next action: REPAIR")', ui)
+        self.assertIn(
+            'strstr(j->output,"Installed Steam Bridge: UPDATE AVAILABLE (")', ui
+        )
+        self.assertIn(
+            'gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,update_available)', ui
+        )
+        self.assertIn('(GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);', ui)
 
     def test_primary_gui_offers_confirmed_launcher_only_repair(self):
         # Static integration guard: GTK itself runs in the separate native CI
