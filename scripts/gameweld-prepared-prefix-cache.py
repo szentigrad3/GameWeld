@@ -207,7 +207,7 @@ def main() -> int:
         signal.signal(signal.SIGINT, cancel_download)
         signal.signal(signal.SIGTERM, cancel_download)
     def print_progress(stage: str, current: int, total: int) -> None:
-        print(f"PROGRESS\\t{stage}\\t{current}\\t{total}", flush=True)
+        print(f"PROGRESS\t{stage}\t{current}\t{total}", flush=True)
     try:
         result = acquire_to_cache(
             args.release_asset_url, declared_size=args.declared_size,
