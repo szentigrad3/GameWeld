@@ -99,6 +99,14 @@ class NativeRouteTests(unittest.TestCase):
                     "--provider", "steam", "--game-id", "123456"
                 ]), 0)
             self.assertFalse(json.loads(stdout.getvalue())["game_runtime_attached"])
+            stdout = StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(route.main([
+                    "--provider", "steam", "--game-id", "123456", "--format", "summary"
+                ]), 0)
+            self.assertIn("WeMod connection", stdout.getvalue())
+            self.assertIn("Install: BLOCKED", stdout.getvalue())
+            self.assertLessEqual(len(stdout.getvalue().splitlines()), 7)
 
     def test_steam_gui_report_surfaces_active_proton_session_without_leaking_tokens(self):
         install = self.root / "steamapps/common/Test Game"
