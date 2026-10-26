@@ -57,10 +57,14 @@ jobs:
           export WAND_NATIVE_START_PAGE=settings
           export PATH="$GITHUB_WORKSPACE/scripts:$PATH"
           echo "Starting native GameWeld GTK with isolated home and Xvfb (no game changes)."
+          # GitHub's bash wrapper sets -e; timeout's expected 124 is NOT a
+          # failure if the GUI stayed open for the entire smoke duration.
+          set +e
           timeout --signal=TERM --kill-after=3s 12s \
             xvfb-run -a -s '-screen 0 1280x800x24' \
             "$GITHUB_WORKSPACE/build/pc2-source/gameweld" >gtk-startup.log 2>&1
           result=$?
+          set -e
           cat gtk-startup.log
           if [[ "$result" == 124 ]]; then
             echo "PASS: Native GTK frontend remained alive through the smoke window."
