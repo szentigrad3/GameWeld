@@ -40,6 +40,9 @@ def runtime_activity(provider: str, game_id: str, prefix: Path | None,
         "unreadable_same_user_processes": 0,
         "installer_authorized": False,
         "game_runtime_idle_verified": False,
+        "wemod_process_candidates": 0,
+        "wemod_process_state": "UNVERIFIED",
+        "trainer_attached": False,
     }
     if prefix is None or not prefix.is_dir() or prefix.is_symlink():
         result["reason"] = "Exact existing game prefix is not established"
@@ -70,6 +73,9 @@ def runtime_activity(provider: str, game_id: str, prefix: Path | None,
                 "unreadable_same_user_processes", 0),
             "installer_authorized": False,
             "game_runtime_idle_verified": False,
+            "wemod_process_candidates": report.get("wemod_process_candidates", 0),
+            "wemod_process_state": report.get("wemod_process_state", "UNVERIFIED"),
+            "trainer_attached": False,
         }
     except (OSError, ValueError, KeyError, ImportError, AttributeError):
         result["reason"] = "Read-only process check could not be completed"
@@ -188,6 +194,14 @@ def human_readable_report(report: dict) -> str:
         "UNKNOWN": "UNKNOWN — unable to prove whether the game is closed",
         "IDLE_CANDIDATE": "NO MATCH FOUND — game closure is still unverified",
     }.get(status, "UNKNOWN — runtime check unavailable"))
+    wemod_state = runtime.get("wemod_process_state", "UNVERIFIED")
+    lines.append("WeMod process: " + (
+        "CANDIDATE VISIBLE — does not establish trainer attachment"
+        if wemod_state == "CANDIDATE_VISIBLE" else
+        "NOT SEEN in matching prefix (not proof of absence)"
+        if wemod_state == "NOT_SEEN" else
+        "UNVERIFIED — process-name evidence incomplete"
+    ))
     lines.extend([
         "Prepared WeMod environment: NOT VERIFIED",
         "Trainer attachment to this game: NOT VERIFIED",
@@ -226,11 +240,18 @@ def gui_summary(report: dict) -> str:
         "UNKNOWN": "UNKNOWN — game closure not verified",
         "IDLE_CANDIDATE": "NO MATCH FOUND — game closure still unverified",
     }.get(state, "UNKNOWN — process inspection unavailable")
+    wemod_state = report.get("process_activity", {}).get("wemod_process_state", "UNVERIFIED")
+    wemod = {
+        "CANDIDATE_VISIBLE": "Process visible in selected prefix — attachment NOT VERIFIED",
+        "NOT_SEEN": "Not seen in selected prefix — not proof of absence",
+        "UNVERIFIED": "Not verified",
+    }.get(wemod_state, "Not verified")
     return "\n".join([
         f"WeMod connection • {title} ({report['game_id']})",
         fields,
         "Game activity: " + activity,
-        "WeMod and trainer: NOT VERIFIED — setup not ready",
+        "WeMod process: " + wemod,
+        "Trainer: NOT VERIFIED — setup not ready",
         "Install: BLOCKED  |  Steam Bridge: not required",
         "No changes made to this game or its prefix.",
     ])
