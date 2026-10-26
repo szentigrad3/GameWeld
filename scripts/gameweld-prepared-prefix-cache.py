@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Download a third-party prepared WeMod ZIP to a shared cache, never a game.
+
+Intentionally opt-in. A stored ZIP is only structurally checked: no publisher
+signature, successful CLR runtime, trainer attachment, or game compatibility is
+implied. This tool does NOT extract the ZIP or edit Steam/Heroic/Lutris data.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import os
+from pathlib import Path
+import shutil
+import stat
+import sys
+from urllib.parse import unquote, urlsplit
+from urllib.request import Request, urlopen
+import uuid
+import zipfile
+
+SOURCE_REPO = "DeckCheatz/BuiltPrefixes-dev"
+MAX_DOWNLOAD_BYTES = 3_000_000_000
+CHUNK = 1024 * 1024
+TIMEOUT = 30
+
+
+class CacheRefused(ValueError):
+    pass
+
+
+def validate_release_url(url: str) -> tuple[str, str]:
+    """Only allow versioned release asset URLs from the configured project."""
+    parsed = urlsplit(url)
+    prefix = f"/{SOURCE_REPO}/releases/download/"
+    if (parsed.scheme != "https" or parsed.hostname != "github.com" or
+            parsed.username is not None or parsed.password is not None or
+            parsed.port not in (None, 443) or parsed.query or parsed.fragment or
+            not parsed.path.startswith(prefix)):
+        raise CacheRefused("Archive URL must be a direct DeckCheatz GitHub release asset")
+    parts = parsed.path[len(prefix):].split("/")
+    if (len(parts) != 2 or any(not p or p in (".", "..") for p in parts) or
+            any("%" in p for p in parts)):
+        raise CacheRefused("Invalid release tag or asset name")
+    tag, filename = map(unquote, parts)
+    if ("/" in tag or "\\" in tag or "/" in filename or "\\" in filename or
+            not filename.lower().endswith(".zip") or
+            not all(ch.isalnum() or ch in "._+-" for ch in tag + filename)):
+        raise CacheRefused("Release asset must be a simple ZIP filename")
+    return tag, filename
+
+
+def safe_cache_root(root: Path) -> Path:
+    """Check ancestry before any cache mutations; never follow a symlink."""
+    if not root.is_absolute():
+        raise CacheRefused("Cache location must be absolute")
+    if any(p.lower() in {"steamapps", "compatdata", "pfx"} for p in root.parts):
+        raise CacheRefused("Cache cannot be inside Steam or a game prefix")
+    if any(ancestor.is_symlink() for ancestor in (root, *root.parents)):
+        raise CacheRefused("Symlinked cache ancestry is forbidden")
+    if root.exists() and not root.is_dir():
+        raise CacheRefused("Cache path is not a directory")
+    return root
+
+
+def _load_zip_audit():
+    script = Path(__file__).with_name("gameweld-prepared-prefix-audit.py")
+    if script.is_symlink() or not script.is_file():
+        raise CacheRefused("Shared ZIP safety inspector is missing")
+    spec = importlib.util.spec_from_file_location("prepared_archive_audit", script)
+    if spec is None or spec.loader is None:
+        raise CacheRefused("Cannot load prepared ZIP safety inspector")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def acquire_to_cache(
+    url: str,
+    *,
+    declared_size: int,
+    cache_root: Path,
+    approved: bool,
+    opener=urlopen,
+) -> dict:
+    """Acquire and inspect untrusted ZIP bytes; never unpack or run them."""
+    tag, filename = validate_release_url(url)
+    if not approved:
+        raise CacheRefused("Explicit --approve-cache-download is required")
+    if type(declared_size) is not int or not 1_000_000 <= declared_size <= MAX_DOWNLOAD_BYTES:
+        raise CacheRefused("Declared asset size is outside accepted bounds")
+    root = safe_cache_root(cache_root)
+    existing = next((part for part in (root, *root.parents) if part.exists()), None)
+    if existing is None:
+        raise CacheRefused("No existing parent filesystem for cache")
+    try:
+        free = shutil.disk_usage(existing).free
+    except OSError as exc:
+        raise CacheRefused("Cannot confirm free space for cache") from exc
+    if free < declared_size * 2 + 512 * 1024 * 1024:
+        raise CacheRefused("Not enough free space for isolated cache download")
+
+    # All mutations are confined to this exact cache subtree. No ZIP
+    # extraction, Wine invocation, game-file access or account-data reads.
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    safe_cache_root(root)
+    incoming = root / "incoming"
+    stored = root / "downloads"
+    for d in (incoming, stored):
+        if d.is_symlink():
+            raise CacheRefused("Cache subfolder is symlinked")
+        d.mkdir(mode=0o700, exist_ok=True)
+    temp = incoming / (uuid.uuid4().hex + ".part")
+    request = Request(url, headers={
+        "Accept": "application/octet-stream",
+        "User-Agent": "GameWeld-prepared-prefix-cache",
+    })
+    length = 0
+    digest = hashlib.sha256()
+    try:
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "wb") as output:
+            with opener(request, timeout=TIMEOUT) as response:
+                final_url = urlsplit(response.geturl())
+                if (final_url.scheme != "https" or
+                        final_url.hostname not in {
+                            "github.com", "release-assets.githubusercontent.com",
+                        }):
+                    raise CacheRefused("Download redirect left the trusted GitHub asset hosts")
+                while True:
+                    chunk = response.read(CHUNK)
+                    if not chunk:
+                        break
+                    length += len(chunk)
+                    if length > declared_size or length > MAX_DOWNLOAD_BYTES:
+                        raise CacheRefused("Downloaded bytes exceeded declared asset size")
+                    digest.update(chunk)
+                    output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+        if length != declared_size:
+            raise CacheRefused("Downloaded file size does not match GitHub release metadata")
+
+        audit = _load_zip_audit()
+        try:
+            with zipfile.ZipFile(temp) as archive:
+                entries, uncompressed = audit.inspect_zip_members(archive)
+                if archive.testzip() is not None:
+                    raise CacheRefused("ZIP CRC check failed")
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError,
+                audit.UnsafePreparedPrefix) as exc:
+            raise CacheRefused("Unsafe or invalid prepared-prefix ZIP") from exc
+
+        sha = digest.hexdigest()
+        destination = stored / (sha + ".zip")
+        if destination.exists() or destination.is_symlink():
+            # Don't overwrite anything; a previously fetched file still
+            # requires an independent verification before being used.
+            raise CacheRefused("A cache entry with this digest already exists")
+        os.replace(temp, destination)
+        return {
+            "source": SOURCE_REPO, "release_tag": tag, "asset_name": filename,
+            "sha256": sha, "bytes": length, "zip_entries": entries,
+            "declared_unpacked_bytes": uncompressed,
+            "cache_path": str(destination), "archive_structural_check": "PASS",
+            "publisher_authenticity": "UNVERIFIED",
+            "game_compatibility": "UNVERIFIED",
+            "installed_to_game": False,
+            "trainer_verified": False,
+        }
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def main() -> int:
+    import json
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--release-asset-url", required=True)
+    parser.add_argument("--declared-size", type=int, required=True)
+    parser.add_argument("--approve-cache-download", action="store_true")
+    default_cache = Path(os.environ.get("XDG_CACHE_HOME") or
+                         str(Path.home() / ".cache"))
+    parser.add_argument("--cache-root", type=Path,
+                        default=default_cache / "gameweld/prepared-wemod")
+    args = parser.parse_args()
+    try:
+        result = acquire_to_cache(
+            args.release_asset_url, declared_size=args.declared_size,
+            approved=args.approve_cache_download,
+            cache_root=args.cache_root,
+        )
+    except (CacheRefused, OSError, ValueError) as exc:
+        parser.exit(2, f"Prepared prefix cache: BLOCKED — {exc}\n")
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
