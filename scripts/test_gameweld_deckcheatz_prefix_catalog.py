@@ -74,6 +74,22 @@ class PreparedPrefixCatalogTests(unittest.TestCase):
         self.assertIn("Before any future install:", report)
         self.assertIn("NOT VERIFIED", report)
 
+    def test_global_catalog_cli_requires_no_game_appid_or_steam_settings(self):
+        import contextlib
+        import io
+        import sys
+        result = io.StringIO()
+        with patch.object(mod, "fetch_release_metadata",
+                          return_value=[release("GE-Proton10-34", "GE-Proton10-34.zip")]), \
+             patch.object(sys, "argv", ["gameweld-deckcheatz-prefix-catalog.py"]), \
+             contextlib.redirect_stdout(result):
+            rc = mod.main()
+        self.assertEqual(rc, 0)
+        self.assertIn("SHARED WEMOD SETUP for Steam, Heroic and Lutris", result.getvalue())
+        self.assertIn("Configured Proton label: Shared GameWeld WeMod environment", result.getvalue())
+        self.assertIn("Detected Proton version label: UNKNOWN", result.getvalue())
+        self.assertIn("No archive downloaded; no files copied", result.getvalue())
+
     def test_invalid_catalog_shape_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "list"):
             mod.list_release_assets({"assets": []}, "GE-Proton11-1")
