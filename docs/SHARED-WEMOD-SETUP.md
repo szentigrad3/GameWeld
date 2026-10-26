@@ -410,20 +410,26 @@ intentionally excludes the `version` file; the Proton version is supplied by
 the release asset filename, e.g. `GE-Proton10.1.zip` (PfxVer10.1).
 GameWeld now retains the GitHub asset/tag metadata through cache → stage,
 matches GE-Proton major/minor to the selected game and rejects mismatches.
-The .wemod_installer marker and staged hashes are checked.
+The .wemod_installer marker and staged hashes are checked. The
+selected release is carried through **download → isolated stage → per-game
+read-only review**. Asset filenames and source metadata do not prove that
+DeckCheatz is a trusted publisher or that the resulting trainer will attach.
 
 **Normal source GUI workflow (development):**
 
 1. In Settings → WeMod & DeckCheatz choose **Find prepared WeMod setup**.
 2. Manually select an appropriate release; press **Download selected prepared
    setup (cache only)** and approve the download. Nothing is installed.
-3. Select **Stage downloaded .NET prefix (isolated)**, confirm. This extracts
-   exactly one cached ZIP into the private GameWeld cache; does not touch
-   Steam's prefix. When there are multiple cached ZIPs, the automatic path
-   refuses to guess.
-4. With a selected Steam game, use **Review prepared .NET prefix (read-only)**
-   to compare actual game's compatdata/version against the staged template.
-   Exact GE-Proton major/minor match and verified template files are required.
+3. Select **Step 2 — Stage downloaded .NET prefix (isolated)** and
+   confirm. It stages **the exact release selected in the dropdown** using
+   cached SHA-256/asset metadata. Other cached Proton releases are ignored,
+   not chosen by accident. If the selected release was not downloaded,
+   GameWeld tells the user to finish Step 1 first. Games are unchanged.
+4. With a selected Steam game, select the same prepared release and choose
+   **Step 3 — Review prepared .NET prefix (read-only)**. GameWeld matches
+   the exact selected staged archive and compares the game's current
+   compatdata/version to the release GE-Proton major/minor. It refuses a
+   missing, inconsistent or ambiguous stage rather than guessing.
 
 The developer-only CLI can then create a merged copy, independently of the
 game, using `gameweld-prepared-prefix-import.py --single-staged --appid <APPID> --install-dir <GAME_INSTALL_DIRECTORY> --prepare-isolated-copy --approve-isolated-copy`.
