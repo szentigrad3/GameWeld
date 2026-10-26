@@ -111,6 +111,54 @@ class PrefixRuntimePreflightTests(unittest.TestCase):
         self.assertEqual(result["unreadable_same_user_processes"], 1)
         self.unchanged()
 
+
+    def test_wemod_candidate_visible_only_in_exact_selected_prefix(self):
+        self.fake(340, [f"WINEPREFIX={self.prefixes['steam']}",
+                        "PRIVATE_KEY=NEVER_DISCLOSE"])
+        (self.proc / "340/cmdline").write_bytes(
+            b"wine\x00C:\\Program Files\\WeMod\\WeMod.exe\x00--session=PRIVATE\x00"
+        )
+        self.fake(341, ["WINEPREFIX=/other/game", "SteamAppId=361420"])
+        (self.proc / "341/cmdline").write_bytes(b"WeMod.exe\x00")
+        result = self.report()
+        self.assertEqual(result["state"], "ACTIVE")
+        self.assertEqual(result["wemod_process_candidates"], 1)
+        self.assertEqual(result["wemod_process_state"], "CANDIDATE_VISIBLE")
+        self.assertFalse(result["trainer_attached"])
+        self.assertFalse(result["installer_authorized"])
+        self.assertNotIn("PRIVATE", str(result))
+        self.unchanged()
+
+    def test_regular_game_process_without_wemod_is_not_seen(self):
+        self.fake(350, [f"WINEPREFIX={self.prefixes['heroic']}"])
+        (self.proc / "350/cmdline").write_bytes(
+            b"wine\x00C:\\Games\\ExampleGame.exe\x00"
+        )
+        (self.proc / "350/comm").write_bytes(b"ExampleGame.exe\n")
+        result = self.report("heroic", "gog-a")
+        self.assertEqual(result["state"], "ACTIVE")
+        self.assertEqual(result["wemod_process_state"], "NOT_SEEN")
+        self.assertEqual(result["wemod_process_candidates"], 0)
+        self.assertFalse(result["trainer_attached"])
+        self.unchanged()
+
+    def test_unreadable_process_name_does_not_claim_absent_wemod(self):
+        self.fake(351, [f"WINEPREFIX={self.prefixes['lutris']}"])
+        result = self.report("lutris", "lutris:b")
+        self.assertEqual(result["wemod_process_state"], "UNVERIFIED")
+        self.assertEqual(result["wemod_process_name_unreadable"], 1)
+        self.assertFalse(result["trainer_attached"])
+        self.unchanged()
+
+    def test_similar_process_name_does_not_fake_a_wemod_candidate(self):
+        self.fake(352, [f"WINEPREFIX={self.prefixes['steam']}"])
+        (self.proc / "352/cmdline").write_bytes(b"OtherWeMod.exe\x00")
+        (self.proc / "352/comm").write_bytes(b"OtherWeMod.exe\n")
+        result = self.report()
+        self.assertEqual(result["wemod_process_state"], "NOT_SEEN")
+        self.assertEqual(result["wemod_process_candidates"], 0)
+        self.unchanged()
+
     def test_no_processes_is_never_authorization_to_install(self):
         outcome = self.report()
         self.assertEqual(outcome["state"], "IDLE_CANDIDATE")
