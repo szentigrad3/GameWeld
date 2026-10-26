@@ -194,6 +194,35 @@ internal consistency, not the absolute trustworthiness of that backup.
 Do not use backups of real game profiles to claim rollback support until
 restore verification and a provider-specific idle/lock check are complete.
 
+## Isolated restore rehearsal — development test only
+
+`scripts/gameweld-prefix-restore-rehearsal.py` uses the independently verified backup TAR
+and SHA-256 file manifest to build a **disposable test copy** inside the
+private `gameweld/prefix-backups/restore-rehearsals` directory. It first verifies
+the backup, validates all TAR paths and member types, refuses symlinked
+staging destinations and non-directory path ancestors, then writes files
+itself (never uses tarfile.extractall), preserving archived Wine symlinks
+as non-followed link entries. A second stream verification checks the
+copied files and unchanged source TAR before committing the test copy.
+Failures/cancellation remove incomplete rehearsal directories.
+
+The restore rehearsal has **no destination override**; it cannot restore
+into the selected game prefix. It neither activates a trainer nor
+guarantees atomicity of a live restore. It never executes extracted content.
+The presence of a successful test copy must not enable installation
+or the public Play with WeMod action.
+
+Run only the synthetic regression suite in this phase:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_gameweld_prefix_restore_rehearsal.py' -v
+```
+
+Blockers before live apply/rollback: provider-aware process idle detection,
+verified complete user-data scope, trusted prepared archive source and
+runtime compatibility, a journaled transaction with tested rollback,
+and in-game trainer attachment validation on Steam, Heroic and Lutris.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
