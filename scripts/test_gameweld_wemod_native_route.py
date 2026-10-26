@@ -165,6 +165,19 @@ class NativeRouteTests(unittest.TestCase):
             )
             self.assertEqual(scanner.call_args.args[2], discovered)
 
+    def test_dev_appdir_symlinked_helper_finds_real_runtime_inspector(self):
+        prefix = self.root / "heroic/prefix"
+        prefix.mkdir(parents=True)
+        proc = self.root / "proc"
+        proc.mkdir()
+        symlink_path = self.root / "dev-AppDir/usr/libexec/gameweld-wemod-native-route.py"
+        symlink_path.parent.mkdir(parents=True)
+        symlink_path.symlink_to(SOURCE)
+        with patch.object(route, "__file__", str(symlink_path)):
+            activity = route.runtime_activity("heroic", "gog-a", prefix, proc_root=proc)
+        self.assertEqual(activity["state"], "IDLE_CANDIDATE")
+        self.assertFalse(activity["installer_authorized"])
+
     def test_unknown_game_and_provider_fail_closed(self):
         for provider, game_id in [
             ("steam", "invalid"), ("steam", "0"), ("heroic", "../../foo"),
