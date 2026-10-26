@@ -4493,11 +4493,77 @@ static void pc2_bridge_readiness_invalidate(void){
 typedef struct {
     char action[24],appid[192],game[256],output[4096];
     char game_dir[2048],steam_root[1024],provider[32],prefix[2048],runner[2048];
+    char source_url[1024],source_bytes[32];
     int ok;
 } PC2SteamBridgeJob;
 static int pc2_steam_bridge_busy=0;
 static GtkWidget *pc2_steam_bridge_status=NULL;
 static GtkWidget *pc2_shared_wemod_status=NULL;
+static GtkWidget *pc2_shared_wemod_choices=NULL;
+static GtkWidget *pc2_shared_wemod_download=NULL;
+typedef struct {
+    char tag[128],name[256],url[1024];
+    long long bytes;
+} PC2PreparedChoice;
+static PC2PreparedChoice pc2_prepared_choices[4];
+static int pc2_prepared_choice_count=0;
+static void pc2_prepared_choice_update(GtkComboBox *box, gpointer unused){
+    (void)unused;
+    if(!pc2_shared_wemod_download)return;
+    int index=gtk_combo_box_get_active(box);
+    gtk_widget_set_sensitive(pc2_shared_wemod_download,
+        !pc2_discovery_only() && pc2_provider_controls_allowed() &&
+        index>=0 && index<pc2_prepared_choice_count);
+}
+static void pc2_prepared_choices_clear(void){
+    pc2_prepared_choice_count=0;
+    if(pc2_shared_wemod_choices){
+        gtk_combo_box_text_remove_all((GtkComboBoxText*)pc2_shared_wemod_choices);
+        gtk_combo_box_set_active((GtkComboBox*)pc2_shared_wemod_choices,-1);
+    }
+    if(pc2_shared_wemod_download)gtk_widget_set_sensitive(pc2_shared_wemod_download,FALSE);
+}
+static void pc2_prepared_catalog_display(const char *raw){
+    pc2_prepared_choices_clear();
+    char *copy=g_strdup(raw ? raw : "");
+    char *save=NULL;
+    GString *summary=g_string_new("");
+    for(char *line=strtok_r(copy,"\n",&save);line;line=strtok_r(NULL,"\n",&save)){
+        if(!strncmp(line,"ASSET\t",6)){
+            gchar **cols=g_strsplit(line,"\t",5);
+            if(g_strv_length(cols)==5 && pc2_prepared_choice_count<4 &&
+               strlen(cols[1])<128 && strlen(cols[2])<256 &&
+               strlen(cols[4])<1024 &&
+               g_str_has_prefix(cols[4],
+                   "https://github.com/DeckCheatz/BuiltPrefixes-dev/releases/download/")){
+                char *end=NULL;
+                gint64 size=g_ascii_strtoll(cols[3],&end,10);
+                if(end&&!*end&&size>=1000000&&size<=3000000000LL){
+                    PC2PreparedChoice *choice=&pc2_prepared_choices[pc2_prepared_choice_count++];
+                    snprintf(choice->tag,sizeof choice->tag,"%s",cols[1]);
+                    snprintf(choice->name,sizeof choice->name,"%s",cols[2]);
+                    snprintf(choice->url,sizeof choice->url,"%s",cols[4]);
+                    choice->bytes=size;
+                    if(pc2_shared_wemod_choices){
+                        char label[512];
+                        snprintf(label,sizeof label,"%s — %s (%.1f MiB)",
+                                 choice->tag,choice->name,(double)size/1048576.0);
+                        gtk_combo_box_text_append_text(
+                            (GtkComboBoxText*)pc2_shared_wemod_choices,label);
+                    }
+                }
+            }
+            g_strfreev(cols);
+        }else{
+            g_string_append(summary,line);
+            g_string_append_c(summary,'\n');
+        }
+    }
+    if(pc2_shared_wemod_status)
+        set_label(pc2_shared_wemod_status,summary->str);
+    g_string_free(summary,TRUE);
+    g_free(copy);
+}
 static GtkWidget *pc2_native_route_status=NULL;
 static const char *pc2_steam_bridge_helper(void){
     static char p[2048];const char *appdir=getenv("APPDIR");
