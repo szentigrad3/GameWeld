@@ -148,6 +148,56 @@ class PrefixBackupTests(unittest.TestCase):
         self.assertEqual(list(self.backup_root.iterdir()), [])
         self.assertEqual(self.game_snapshot(), self.before)
 
+    def test_snapshot_verification_reads_archive_without_restoring_game(self):
+        with patch.object(backup.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 200 * 1024 ** 3})()):
+            saved = self.call()
+        result = backup.verify_backup(Path(saved["backup_path"]),
+                                      backup_root=self.backup_root)
+        self.assertEqual(result["status"],
+                         "BACKUP READABLE AND CHECKSUMS VERIFIED — restoration unavailable")
+        self.assertEqual(result["verified_files"], 2)
+        self.assertEqual(result["symlinks_not_followed"], 1)
+        self.assertFalse(result["ready_to_install"])
+        self.assertFalse(result["restoration_available"])
+        self.assertEqual(self.game_snapshot(), self.before)
+
+    def test_archive_corruption_or_manifest_forgery_refused(self):
+        with patch.object(backup.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 200 * 1024 ** 3})()):
+            first = self.call()
+            second = self.call()
+        damaged = Path(first["backup_path"]) / "prefix.tar"
+        with damaged.open("ab") as stream:
+            stream.write(b"CORRUPTION")
+        with self.assertRaisesRegex(backup.BackupRefused, "checksum/size"):
+            backup.verify_backup(Path(first["backup_path"]),
+                                 backup_root=self.backup_root)
+
+        manifest_file = Path(second["backup_path"]) / "manifest.json"
+        manifest = json.loads(manifest_file.read_text())
+        manifest["file_hashes"][0]["sha256"] = "0" * 64
+        manifest_file.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(backup.BackupRefused, "SHA-256"):
+            backup.verify_backup(Path(second["backup_path"]),
+                                 backup_root=self.backup_root)
+        self.assertEqual(self.game_snapshot(), self.before)
+
+    def test_external_backup_directory_and_symlinked_manifest_refused(self):
+        with patch.object(backup.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 200 * 1024 ** 3})()):
+            saved = self.call()
+        with self.assertRaisesRegex(backup.BackupRefused, "GameWeld-managed"):
+            backup.verify_backup(self.root, backup_root=self.backup_root)
+        manifest = Path(saved["backup_path"]) / "manifest.json"
+        replaced = manifest.with_name("original.json")
+        manifest.rename(replaced)
+        manifest.symlink_to(replaced)
+        with self.assertRaisesRegex(backup.BackupRefused, "symlinked"):
+            backup.verify_backup(Path(saved["backup_path"]),
+                                 backup_root=self.backup_root)
+        self.assertEqual(self.game_snapshot(), self.before)
+
     def test_invalid_provider_or_game_id_refused(self):
         for provider, game_id in [("steam", "0"), ("steam", "../x"),
                                   ("heroic", "bad/id"), ("unknown", "123")]:
