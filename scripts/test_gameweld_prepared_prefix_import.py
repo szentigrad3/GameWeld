@@ -73,13 +73,18 @@ class PreparedPrefixImportTests(unittest.TestCase):
 
     def write_template(self):
         payload = self.stage / "payload"
-        payload.mkdir(exist_ok=True)
+        if payload.exists():
+            shutil.rmtree(payload)
+        payload.mkdir()
         for name, content in self.items.items():
             file = payload / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_bytes(content)
         manifest = {
             "source_archive_sha256": self.stage.name,
+            "source_asset": "GE-Proton10.1.zip",
+            "source_release": "PfxVer10.1",
+            "source_repo": "DeckCheatz/BuiltPrefixes-dev",
             "installed_to_game": False,
             "files": [
                 {"path": name, "bytes": len(contents),
@@ -148,7 +153,32 @@ class PreparedPrefixImportTests(unittest.TestCase):
 
     def test_unknown_proton_version_blocks(self):
         (self.compat / "version").write_text("Proton Experimental")
-        with self.assertRaisesRegex(plugin.ImportBlocked, "recognizable"):
+        with self.assertRaisesRegex(plugin.ImportBlocked, "cannot be established"):
+            self.preview()
+
+    def test_realistic_deckcheatz_archive_without_version_file(self):
+        # DeckCheatz intentionally excludes the compatdata/version file when
+        # creating downloadable prefixes; the asset name provides its version.
+        self.items.pop("version")
+        self.write_template()
+        report, paths = self.preview()
+        self.assertTrue(report["version_match"])
+        candidate = self.prepare(report, paths)
+        clone = Path(candidate["candidate_dir"]) / "compatdata"
+        self.assertEqual((clone / "version").read_text(), "GE-Proton10-1")
+        self.assertEqual((clone / "pfx/system.reg").read_bytes(),
+                         b"REGISTRY_WITH_DOTNET48")
+        self.assertEqual(self.game_state(), self.original)
+
+    def test_missing_version_and_unidentified_release_block(self):
+        self.items.pop("version")
+        self.write_template()
+        path = self.stage / "manifest.json"
+        info = json.loads(path.read_text())
+        info["source_asset"] = None
+        info["source_release"] = None
+        path.write_text(json.dumps(info))
+        with self.assertRaisesRegex(plugin.ImportBlocked, "cannot be established"):
             self.preview()
 
     def test_staged_tampering_blocks_import(self):
