@@ -13,10 +13,12 @@ import importlib.util
 import os
 from pathlib import Path
 import shutil
+import signal
 import stat
 import sys
 from urllib.parse import unquote, urlsplit
 from urllib.request import Request, urlopen
+from typing import Callable
 import uuid
 import zipfile
 
@@ -83,6 +85,7 @@ def acquire_to_cache(
     cache_root: Path,
     approved: bool,
     opener=urlopen,
+    progress: Callable[[str, int, int], None] | None = None,
 ) -> dict:
     """Acquire and inspect untrusted ZIP bytes; never unpack or run them."""
     tag, filename = validate_release_url(url)
@@ -118,6 +121,9 @@ def acquire_to_cache(
     })
     length = 0
     digest = hashlib.sha256()
+    last_percent = -5
+    if progress is not None:
+        progress("DOWNLOAD", 0, declared_size)
     try:
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
         with os.fdopen(fd, "wb") as output:
@@ -137,11 +143,17 @@ def acquire_to_cache(
                         raise CacheRefused("Downloaded bytes exceeded declared asset size")
                     digest.update(chunk)
                     output.write(chunk)
+                    percent = length * 100 // declared_size
+                    if progress is not None and percent >= last_percent + 5:
+                        progress("DOWNLOAD", length, declared_size)
+                        last_percent = percent
             output.flush()
             os.fsync(output.fileno())
         if length != declared_size:
             raise CacheRefused("Downloaded file size does not match GitHub release metadata")
 
+        if progress is not None:
+            progress("VERIFY", length, declared_size)
         audit = _load_zip_audit()
         try:
             with zipfile.ZipFile(temp) as archive:
@@ -159,6 +171,8 @@ def acquire_to_cache(
             # requires an independent verification before being used.
             raise CacheRefused("A cache entry with this digest already exists")
         os.replace(temp, destination)
+        if progress is not None:
+            progress("CACHED", length, declared_size)
         return {
             "source": SOURCE_REPO, "release_tag": tag, "asset_name": filename,
             "sha256": sha, "bytes": length, "zip_entries": entries,
@@ -180,16 +194,26 @@ def main() -> int:
     parser.add_argument("--release-asset-url", required=True)
     parser.add_argument("--declared-size", type=int, required=True)
     parser.add_argument("--approve-cache-download", action="store_true")
+    parser.add_argument("--progress", action="store_true",
+                        help="Emit progress records for a parent GUI; no installation")
     default_cache = Path(os.environ.get("XDG_CACHE_HOME") or
                          str(Path.home() / ".cache"))
     parser.add_argument("--cache-root", type=Path,
                         default=default_cache / "gameweld/prepared-wemod")
     args = parser.parse_args()
+    def cancel_download(signum, frame):
+        raise CacheRefused("Cancelled by user; incomplete download discarded")
+    if args.progress:
+        signal.signal(signal.SIGINT, cancel_download)
+        signal.signal(signal.SIGTERM, cancel_download)
+    def print_progress(stage: str, current: int, total: int) -> None:
+        print(f"PROGRESS\\t{stage}\\t{current}\\t{total}", flush=True)
     try:
         result = acquire_to_cache(
             args.release_asset_url, declared_size=args.declared_size,
             approved=args.approve_cache_download,
             cache_root=args.cache_root,
+            progress=print_progress if args.progress else None,
         )
     except (CacheRefused, OSError, ValueError) as exc:
         parser.exit(2, f"Prepared prefix cache: BLOCKED — {exc}\n")
