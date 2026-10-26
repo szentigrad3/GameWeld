@@ -6366,7 +6366,7 @@ static gboolean pc2_gtk_smoke_prefix_stage(gpointer ignored){
     fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_BEGIN\\n");
     pc2_steam_bridge_action("prefix-stage");
     fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_DISPATCHED\\n");
-    return G_SOURCE_REMOVE;
+    return FALSE;
 }
 #endif
 
