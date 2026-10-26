@@ -424,7 +424,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 side_effect=AssertionError("read-only inspection started a process")
             ):
                 report = bridge.preflight_report("3008130", game_dir=game)
-            self.assertIn("Next action: PLAY", report)
+            self.assertIn("Next action: INVESTIGATE WINDOWS .NET RUNTIME", report)
+            self.assertIn("No installation or prefix repair was attempted", report)
             self.assertIn("registration entries found", report)
             self.assertIn(".NET CLR Framework/clr.dll: MISSING", report)
             self.assertIn(".NET CLR Framework64/clr.dll: MISSING", report)
