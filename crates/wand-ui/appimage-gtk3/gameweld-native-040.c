@@ -5708,7 +5708,8 @@ static GtkWidget *build_settings(void){
         pack(bridge_card,ready_prefix,0);
         GtkWidget*netfx_plan=button("Plan safe .NET test (read-only)","action");
         g_signal_connect_data(netfx_plan,"clicked",(GCallback)on_pc2_bridge_netfx_plan,NULL,NULL,0);
-        pack(bridge_card,netfx_plan,0);
+        /* Keep the legacy .NET experiment plan under advanced maintenance;
+         * ordinary players should only see the ready-made WeMod setup path. */
         pc2_steam_bridge_quick_upgrade=button("Update Steam Bridge","action");
         g_signal_connect_data(pc2_steam_bridge_quick_upgrade,"clicked",
             (GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);
@@ -5718,6 +5719,7 @@ static GtkWidget *build_settings(void){
         gtk_expander_set_expanded(bridge_maintenance,FALSE);
         GtkWidget*bridge_maintenance_box=box(GTK_ORIENTATION_VERTICAL,7);
         margins(bridge_maintenance_box,7);
+        pack(bridge_maintenance_box,netfx_plan,0);
         GtkWidget*bridge_upgrade_info=label(
             "If status reports UPDATE AVAILABLE, this installs the current GameWeld "
             "Bridge launcher with a backup. Close running games and restart Steam "
