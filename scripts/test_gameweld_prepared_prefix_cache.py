@@ -80,6 +80,43 @@ class PreparedPrefixCacheTests(unittest.TestCase):
         self.assertEqual(list((self.cache_root / "incoming").glob("*.part")), [])
         self.assert_game_untouched()
 
+    def test_download_progress_is_monotonic_and_never_installs(self):
+        updates = []
+        with patch.object(cache.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 5_000_000_000})()):
+            result = cache.acquire_to_cache(
+                URL, declared_size=len(self.archive),
+                cache_root=self.cache_root, approved=True, opener=self.opener,
+                progress=lambda stage, done, total: updates.append((stage, done, total))
+            )
+        self.assertEqual(updates[0], ("DOWNLOAD", 0, len(self.archive)))
+        downloads = [done for stage, done, total in updates if stage == "DOWNLOAD"]
+        self.assertEqual(downloads, sorted(downloads))
+        self.assertEqual(downloads[-1], len(self.archive))
+        self.assertEqual(updates[-2], ("VERIFY", len(self.archive), len(self.archive)))
+        self.assertEqual(updates[-1], ("CACHED", len(self.archive), len(self.archive)))
+        self.assertFalse(result["installed_to_game"])
+        self.assert_game_untouched()
+
+    def test_user_cancellation_discards_incomplete_temp_without_changing_games(self):
+        events = []
+        def cancel_at_chunk(stage, done, total):
+            events.append(stage)
+            if stage == "DOWNLOAD" and done > 0:
+                raise cache.CacheRefused("Cancelled by user")
+        with patch.object(cache.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 5_000_000_000})()):
+            with self.assertRaisesRegex(cache.CacheRefused, "Cancelled"):
+                cache.acquire_to_cache(
+                    URL, declared_size=len(self.archive),
+                    cache_root=self.cache_root, approved=True, opener=self.opener,
+                    progress=cancel_at_chunk
+                )
+        self.assertIn("DOWNLOAD", events)
+        self.assertEqual(list((self.cache_root / "incoming").glob("*.part")), [])
+        self.assertEqual(list((self.cache_root / "downloads").glob("*.zip")), [])
+        self.assert_game_untouched()
+
     def test_invalid_hosts_and_redirects_fail_closed(self):
         for url in (
             "https://evil.example/file.zip",
