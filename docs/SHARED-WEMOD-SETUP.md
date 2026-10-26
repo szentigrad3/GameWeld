@@ -359,6 +359,30 @@ A candidate process can be unrelated, misnamed or running without an active
 trainer. Real in-game feature activation and a secure, provider-native handoff
 remain release blockers. The public Install/Play setup is still blocked.
 
+## Running game detected, but WeMod is unverified
+
+When the selected game reports **ACTIVE** and WeMod is **UNVERIFIED**,
+GameWeld has confirmed at least one matching Wine/Proton process, but
+cannot yet establish whether a WeMod.exe process is in the same prefix.
+This is not an install failure and should not be reported as one.
+
+The process-name inspection now independently checks Linux cmdline and
+comm: a missing or unreadable cmdline no longer masks an accessible
+WeMod.exe comm name. Inspected and unreadable name counts provide a
+more specific, private explanation, such as "1/1 process names unreadable".
+No raw command line, account information or prefix path is printed.
+
+For an existing working game+WeMod session, start the game and WeMod
+using their already configured working methods, select the same game
+and click **Check game WeMod connection** again. The status can then
+report a WeMod **process candidate**, not trainer attachment.
+If WeMod is not already running, the check cannot start it.
+It does not yet provide a no-Bridge launcher/attacher.
+
+Do not interpret a process candidate as an injected, connected or
+functional trainer. No game prefixes, launch options, Steam settings or
+WeMod installations are modified by this check.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
