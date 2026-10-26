@@ -106,7 +106,7 @@ class PreparedPrefixCatalogTests(unittest.TestCase):
              ]), contextlib.redirect_stdout(output):
             self.assertEqual(mod.main(), 0)
         lines = output.getvalue().splitlines()
-        assets = [line for line in lines if line.startswith("ASSET\\t")]
+        assets = [line for line in lines if line.startswith("ASSET\t")]
         self.assertEqual(len(assets), 2)
         self.assertIn("GE-Proton10-34.zip", assets[0])
         self.assertIn("https://github.com/DeckCheatz/BuiltPrefixes-dev/", assets[0])
