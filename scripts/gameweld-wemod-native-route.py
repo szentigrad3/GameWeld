@@ -97,6 +97,47 @@ def native_route_report(
     }
 
 
+def human_readable_report(report: dict) -> str:
+    """Concise UX status for all supported providers, no false trainer READY."""
+    provider = report["provider"]
+    evidence = report["evidence"]
+    title = {"steam": "Steam", "heroic": "Heroic", "lutris": "Lutris"}[provider]
+    present = lambda value: "FOUND" if value else "NOT VERIFIED"
+    lines = [
+        f"GAMEWELD — WEMOD GAME CONNECTION • {title}",
+        f"Selected game: {report['game_id']}",
+        "Launch approach: Original game platform (no GameWeld Steam Bridge needed)",
+        "Game folder: " + present(evidence["game_install_verified"]) +
+        " (presence only, not game identity verification)",
+    ]
+    if provider == "steam":
+        lines += [
+            "Steam AppID manifest: " + present(evidence["steam_manifest_present"]) +
+            " (filename check; contents not verified)",
+            "Steam Proton prefix: " + present(evidence["game_prefix_present"]),
+            "Separate Wine runner: NOT REQUIRED for this Steam check",
+        ]
+    else:
+        lines += [
+            f"{title} game prefix: " + present(evidence["game_prefix_present"]),
+            f"{title} configured Wine/Proton runner: " +
+            present(evidence["runner_file_present"]) +
+            " (presence only; runner has not been executed)",
+        ]
+    lines.extend([
+        "Prepared WeMod environment: NOT VERIFIED",
+        "Trainer attachment to this game: NOT VERIFIED",
+        "Status: SETUP REQUIRED — original-platform integration and trainer "
+        "compatibility not yet proven",
+        "Next step: Find prepared WeMod setup; then validate this game's "
+        "native trainer attachment before enabling Play with WeMod.",
+        "Safety: READ-ONLY; no game, Steam Bridge, WeMod installer or prefix changes.",
+    ])
+    if provider == "steam" and not evidence["steam_manifest_present"]:
+        lines.append("Warning: exact Steam AppID manifest not found in selected library.")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", required=True, choices=PROVIDERS)
@@ -104,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--install-dir")
     parser.add_argument("--prefix")
     parser.add_argument("--runner")
+    parser.add_argument("--format", choices=("json", "text"), default="json",
+                        help="JSON for scripts; concise text for GameWeld GUI")
     args = parser.parse_args(argv)
     try:
         result = native_route_report(
@@ -112,7 +155,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     except NativeRouteBlocked as exc:
         parser.exit(2, "GameWeld native route BLOCKED: " + str(exc) + "\n")
-    print(json.dumps(result, indent=2, sort_keys=True))
+    if args.format == "text":
+        print(human_readable_report(result))
+    else:
+        print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
