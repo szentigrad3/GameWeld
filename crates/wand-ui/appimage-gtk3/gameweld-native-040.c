@@ -6356,4 +6356,22 @@ static void build_ui(void){
     }g_timeout_add(1000,heroic_session_status_tick,NULL);if(!pc2_discovery_only()){g_timeout_add(1500,trainer_monitor_initial_status,NULL);g_timeout_add(2800,trainer_dashboard_initial,NULL);g_timeout_add(45000,trainer_monitor_first_tick,NULL);g_timeout_add(1800000,trainer_monitor_tick,NULL);}
 }
 
-int main(int argc,char**argv){memset(&G,0,sizeof G);G.selected=-1;clear_desktop_activation_env();if(argc==2&&!strcmp(argv[1],"--pc2-provider-controls-status")){printf("PC2 provider controls: %s\n",pc2_provider_controls_allowed()?"enabled":"disabled");return 0;}if(argc==2&&!strcmp(argv[1],"--pc2-launch-gate-status")){printf("PC2 Steam game-only launch: %s\n",pc2_steam_launch_allowed()?"enabled":"disabled");return 0;}if(argc>1&&!strcmp(argv[1],"--cleanup-steam-hooks")){if(pc2_discovery_only()){fprintf(stderr,"PC2 discovery-only: Steam hook cleanup disabled.\\n");return 3;}char backup[2048]={0};int files=0;int n=cleanup_legacy_steam_hooks(backup,sizeof backup,&files);if(n>0){printf("Removed legacy wand-steam-wrap Launch Options from %d Steam config file(s).\n",files);if(backup[0])printf("Last backup: %s\n",backup);printf("Restart Steam once before testing direct Play.\n");return 0;}printf("No legacy wand-steam-wrap Launch Options found.\n");return 0;}G.legacy_wrapper_neutralized=pc2_discovery_only()?0:neutralize_legacy_wrapper();gtk_init(&argc,&argv);if(!start_backend()){fprintf(stderr,"Could not start GameWeld backend.\n");return 2;}char *e=NULL;if(!refresh_model(&e)){fprintf(stderr,"Backend status failed: %s\n",e?e:"unknown");free(e);}if(pc2_discovery_only())pc2_recent_load();build_ui();gtk_main();if(G.backend_pid>0){kill(G.backend_pid,SIGTERM);waitpid(G.backend_pid,NULL,WNOHANG);}return 0;}
+
+#ifdef GAMEWELD_PC2_GTK_ACTION_SMOKE
+/* Native CI alone: exercise the same global action that crashed on CachyOS.
+ * It can only stage to the isolated test HOME (which has no downloaded ZIP);
+ * the expected failure is handled without changing game files. */
+static gboolean pc2_gtk_smoke_prefix_stage(gpointer ignored){
+    (void)ignored;
+    fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_BEGIN\\n");
+    pc2_steam_bridge_action("prefix-stage");
+    fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_DISPATCHED\\n");
+    return G_SOURCE_REMOVE;
+}
+#endif
+
+int main(int argc,char**argv){memset(&G,0,sizeof G);G.selected=-1;clear_desktop_activation_env();if(argc==2&&!strcmp(argv[1],"--pc2-provider-controls-status")){printf("PC2 provider controls: %s\n",pc2_provider_controls_allowed()?"enabled":"disabled");return 0;}if(argc==2&&!strcmp(argv[1],"--pc2-launch-gate-status")){printf("PC2 Steam game-only launch: %s\n",pc2_steam_launch_allowed()?"enabled":"disabled");return 0;}if(argc>1&&!strcmp(argv[1],"--cleanup-steam-hooks")){if(pc2_discovery_only()){fprintf(stderr,"PC2 discovery-only: Steam hook cleanup disabled.\\n");return 3;}char backup[2048]={0};int files=0;int n=cleanup_legacy_steam_hooks(backup,sizeof backup,&files);if(n>0){printf("Removed legacy wand-steam-wrap Launch Options from %d Steam config file(s).\n",files);if(backup[0])printf("Last backup: %s\n",backup);printf("Restart Steam once before testing direct Play.\n");return 0;}printf("No legacy wand-steam-wrap Launch Options found.\n");return 0;}G.legacy_wrapper_neutralized=pc2_discovery_only()?0:neutralize_legacy_wrapper();gtk_init(&argc,&argv);if(!start_backend()){fprintf(stderr,"Could not start GameWeld backend.\n");return 2;}char *e=NULL;if(!refresh_model(&e)){fprintf(stderr,"Backend status failed: %s\n",e?e:"unknown");free(e);}if(pc2_discovery_only())pc2_recent_load();build_ui();
+#ifdef GAMEWELD_PC2_GTK_ACTION_SMOKE
+g_idle_add(pc2_gtk_smoke_prefix_stage,NULL);
+#endif
+gtk_main();if(G.backend_pid>0){kill(G.backend_pid,SIGTERM);waitpid(G.backend_pid,NULL,WNOHANG);}return 0;}
