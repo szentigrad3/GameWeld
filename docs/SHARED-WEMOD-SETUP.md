@@ -1,7 +1,8 @@
 # GameWeld — prepared WeMod setup for all game libraries
 
 **Scope:** Steam, Heroic, Lutris, and future supported Windows-game providers.
-**Status:** Architecture + read-only catalog and archive audit implemented. Game integration, account migration, and verified trainer activation **not yet done**.\nCache-only download code exists but is not enabled in the GUI.
+**Status:** Architecture + read-only catalog and archive audit implemented. Game integration, account migration, and verified trainer activation **not yet done**.
+Cache-only download code exists but is not enabled in the GUI.
 
 ## User-visible goal
 
