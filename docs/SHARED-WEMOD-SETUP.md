@@ -255,6 +255,24 @@ Before real installation: provider-aware runtime idle checks; durable journal
 recovery and full rollback validation; secure file/registry/account migration;
 real-world compatible and trusted source metadata; live in-game trainer tests.
 
+## Provider-aware Wine/Proton process preflight (read-only)
+
+`scripts/gameweld-prefix-runtime-preflight.py` examines same-user Linux
+procfs process environments in memory for an exact per-game WINEPREFIX
+or Steam compat-data/app-ID match. It reports one of:
+`ACTIVE` (matched), `UNKNOWN` (inspection incomplete), or
+`IDLE_CANDIDATE` (no match found). Output omits environment values,
+tokens, account data and raw process command lines. It never kills
+processes or alters a provider configuration.
+
+**All states keep `installer_authorized=false`. A negative procfs
+check is NOT proof the game is closed: sandbox namespaces, shared-prefix
+processes, privilege boundaries and different provider launch semantics
+can defeat this simple probe. The production installer still requires a
+trusted provider-specific process close/lock check before any game writes.
+
+Synthetic offline fixtures and refusal tests are wired into CI.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
