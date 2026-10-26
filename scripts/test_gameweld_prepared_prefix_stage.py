@@ -26,6 +26,7 @@ class PreparedPrefixStageTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.cache = self.root / "cache/gameweld/prepared-wemod"
         (self.cache / "downloads").mkdir(parents=True, mode=0o700)
+        self.cache.chmod(0o700)  # pathlib parents=True uses default mode for parent nodes
         self.games = [
             self.root / "steamapps/compatdata/361420/pfx",
             self.root / "Heroic/Prefixes/game-a",
