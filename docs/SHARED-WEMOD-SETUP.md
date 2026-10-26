@@ -223,6 +223,38 @@ verified complete user-data scope, trusted prepared archive source and
 runtime compatibility, a journaled transaction with tested rollback,
 and in-game trainer attachment validation on Steam, Heroic and Lutris.
 
+## Synthetic transactional apply/rollback (development rehearsal, NOT game install)
+
+`scripts/gameweld-transaction-rehearsal.py` adds a journaled copy/apply/rollback
+rehearsal **only** for a specially marked `gameweld/transaction-fixtures` directory.
+It refuses Steam, Heroic, Lutris and Proton prefix paths, symlinked input,
+shared hard links, oversized samples, insufficient space and missing approval.
+It cannot accept a downloaded third-party prefix archive or a real game
+path as the destination.
+
+The rehearsal keeps an independent original directory. It copies a synthetic
+patch into a separate candidate, checks hashes, journals the proposed
+transition, moves the original aside, and atomically renames the candidate
+into its synthetic fixture. An explicit rollback restores that retained
+original, with fault-injection coverage before and after the rename.
+A synthetic failure during an ordinary exception triggers automatic rollback.
+Actual power-loss recovery and full filesystem durability are NOT guaranteed;
+the journal remains for investigating interrupted test transactions.
+
+This demonstrates parts of transaction orchestration, **not** safe
+application to a real game. The regular GameWeld UI must not display
+"installed" or enable Play based on this test.
+
+Run the disposable-only automated tests:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_gameweld_transaction_rehearsal.py' -v
+```
+
+Before real installation: provider-aware runtime idle checks; durable journal
+recovery and full rollback validation; secure file/registry/account migration;
+real-world compatible and trusted source metadata; live in-game trainer tests.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
