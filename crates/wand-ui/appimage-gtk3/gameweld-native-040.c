@@ -4868,6 +4868,27 @@ static void on_pc2_bridge_gpu_on(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_b
 static void on_pc2_bridge_netfx_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("netfx-status");}
 static void on_pc2_bridge_netfx_plan(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("netfx-plan");}
 static void on_pc2_bridge_prefix_catalog(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("prefix-catalog");}
+static void on_pc2_prepared_prefix_cache(GtkButton*b,void*d){
+    (void)b;(void)d;
+    if(pc2_discovery_only() || !pc2_provider_controls_allowed() ||
+       pc2_steam_bridge_busy || !pc2_shared_wemod_choices)return;
+    int index=gtk_combo_box_get_active((GtkComboBox*)pc2_shared_wemod_choices);
+    if(index<0||index>=pc2_prepared_choice_count)return;
+    const PC2PreparedChoice *choice=&pc2_prepared_choices[index];
+    GtkWidget *dialog=gtk_message_dialog_new((GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        "Download %s (%0.1f MiB) from DeckCheatz?\n\n"
+        "Release: %s\n\n"
+        "This third-party ZIP will be stored in GameWeld's separate cache ONLY. "
+        "It will NOT be installed, extracted, executed or copied to your game. "
+        "Publisher identity and game compatibility are NOT verified. "
+        "Steam, Heroic, Lutris, your game prefixes and WeMod accounts will not "
+        "be changed.\n\nContinue with this cache-only download?",
+        choice->name,(double)choice->bytes/1048576.0,choice->tag);
+    int response=gtk_dialog_run((GtkDialog*)dialog);
+    gtk_widget_destroy(dialog);
+    if(response==GTK_RESPONSE_YES)pc2_steam_bridge_action("prefix-cache");
+}
 
 /* WeMod Enhancer is integrated into GameWeld PC2. The Linux release's
  * Python CLI is used, not its separate GUI or the Windows Wand WPF tool.
@@ -5787,6 +5808,21 @@ static GtkWidget *build_settings(void){
         GtkWidget*ready_prefix=button("Find prepared WeMod setup","action");
         g_signal_connect_data(ready_prefix,"clicked",(GCallback)on_pc2_bridge_prefix_catalog,NULL,NULL,0);
         pack(shared_card,ready_prefix,0);
+        GtkWidget*prefix_choice_note=label(
+            "Review an available release below. Version-label matches do not "
+            "prove a working WeMod trainer or a trusted publisher.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)prefix_choice_note,TRUE);
+        pack(shared_card,prefix_choice_note,0);
+        pc2_shared_wemod_choices=gtk_combo_box_text_new();
+        g_signal_connect(pc2_shared_wemod_choices,"changed",
+            G_CALLBACK(pc2_prepared_choice_update),NULL);
+        pack(shared_card,pc2_shared_wemod_choices,0);
+        pc2_shared_wemod_download=button(
+            "Download selected prepared setup (cache only)","action");
+        gtk_widget_set_sensitive(pc2_shared_wemod_download,FALSE);
+        g_signal_connect_data(pc2_shared_wemod_download,"clicked",
+            (GCallback)on_pc2_prepared_prefix_cache,NULL,NULL,0);
+        pack(shared_card,pc2_shared_wemod_download,0);
         pc2_shared_wemod_status=label(
             "No setup checked yet. No game files or settings will be changed.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_shared_wemod_status,TRUE);
@@ -5993,10 +6029,11 @@ static GtkWidget *build_about(void){
             "Provides game-specific trainer options without requiring users to edit Steam Launch Options.",NULL);
         pack(page,intro,0);
         GtkWidget*deck=card("DeckCheatz + WeMod",
-            "Play with WeMod in Overview or Library now requests Steam Play through the "
-            "configured GameWeld Bridge. Steam must have Bridge selected in this game's "
-            "Compatibility settings. The separate DeckCheatz 1.x manager is optional "
-            "and retains its own install, update and preview tools.",NULL);
+            "The default provider-native setup check supports Steam, Heroic and Lutris "
+            "without GameWeld Steam Bridge. Prepared release discovery is available "
+            "for all game libraries; opt-in download-to-cache and in-game trainer "
+            "attachment are separate steps. The previous Steam Bridge is an "
+            "optional legacy fallback; it is not the default.",NULL);
         pack(page,deck,0);
         GtkWidget*tested=card("Validation",
             "Astrometica launched through Proton Experimental and a WeMod trainer worked "
