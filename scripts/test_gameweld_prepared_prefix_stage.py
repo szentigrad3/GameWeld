@@ -64,6 +64,38 @@ class PreparedPrefixStageTests(unittest.TestCase):
                 approved=kwargs.pop("approved", True), **kwargs
             )
 
+    def test_cache_status_identifies_orphan_download_without_redownloading(self):
+        result = stage.cache_status(self.cache)
+        self.assertIn("ZIP archives found: 1", result)
+        self.assertIn("Source metadata records found: 0", result)
+        self.assertIn("ZIP(s) without matching metadata records: 1", result)
+        self.assertNotIn(str(self.root), result)
+        self.untouched()
+
+    def test_cache_status_lists_valid_release_without_exposing_paths(self):
+        self.add_source_record(self.archive)
+        result = stage.cache_status(self.cache)
+        self.assertIn("PfxVer10.1 / GE-Proton10.1.zip", result)
+        self.assertIn("ZIP FOUND + SIZE MATCH", result)
+        self.assertNotIn(str(self.root), result)
+        self.untouched()
+
+    def test_cache_status_detects_missing_or_mismatched_download(self):
+        self.add_source_record(self.archive)
+        self.archive.unlink()
+        result = stage.cache_status(self.cache)
+        self.assertIn("ZIP MISSING OR SIZE MISMATCH", result)
+        self.untouched()
+
+    def test_cache_status_detects_bad_record_without_following_links(self):
+        record = self.add_source_record(self.archive)
+        record.unlink()
+        record.symlink_to(self.root / "steamapps/compatdata/361420/pfx/system.reg")
+        result = stage.cache_status(self.cache)
+        self.assertIn("Invalid or unreadable metadata records: 1", result)
+        self.assertNotIn("KEEP ORIGINAL", result)
+        self.untouched()
+
     def test_missing_download_explains_first_step(self):
         self.archive.unlink()
         with self.assertRaisesRegex(stage.StageRefused, "Step 1: choose a release"):
