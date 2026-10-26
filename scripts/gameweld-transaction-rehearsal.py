@@ -196,7 +196,8 @@ def apply_rehearsal(
         "real_game_modified": False, "real_game_install_supported": False
     }
     try:
-        shutil.copytree(source, candidate, symlinks=False)
+        # Never follow a symlink added during preparation; collect() then rejects it.
+        shutil.copytree(source, candidate, symlinks=True)
         # After copying, re-inventory input to catch simple races.
         if collect(source) != source_before or collect(patch) != updates:
             raise TransactionRefused("Fixture changed during transaction preparation")
