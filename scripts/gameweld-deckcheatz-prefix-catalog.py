@@ -131,3 +131,22 @@ def catalog_report(proton_label: str, *, releases: object | None = None) -> str:
         "A download or installation requires a separate approved and reversible implementation. No automated replacement is enabled.",
     ])
     return "\n".join(lines)
+
+
+def main() -> int:
+    """Independent of game provider, AppID and any installed game prefix."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Read-only shared WeMod prefix release lookup")
+    parser.add_argument(
+        "--proton-label", default="Shared GameWeld WeMod environment",
+        help="Optional informational runner label; no game must be selected",
+    )
+    args = parser.parse_args()
+    print("Scope: SHARED WEMOD SETUP for Steam, Heroic and Lutris integrations")
+    print("Provider launch integration: not tested by this catalog lookup")
+    print(catalog_report(args.proton_label))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
