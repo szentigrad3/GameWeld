@@ -5024,6 +5024,19 @@ static void on_pc2_bridge_gpu_on(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_b
 static void on_pc2_bridge_netfx_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("netfx-status");}
 static void on_pc2_bridge_netfx_plan(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("netfx-plan");}
 static void on_pc2_bridge_prefix_catalog(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("prefix-catalog");}
+static void on_pc2_prepared_cache_cancel(GtkButton*b,void*d){
+    (void)b;(void)d;
+    if(pc2_discovery_only() || !pc2_steam_bridge_busy)return;
+    pc2_cache_cancel_requested=1;
+    pid_t child=pc2_cache_child_pid;
+    if(child>0)kill(child,SIGINT);
+    if(pc2_shared_wemod_cancel)
+        gtk_widget_set_sensitive(pc2_shared_wemod_cancel,FALSE);
+    if(pc2_shared_wemod_status)
+        set_label(pc2_shared_wemod_status,
+            "Cancelling cache-only download; asking the helper to "
+            "discard its incomplete temporary file...");
+}
 static void on_pc2_prepared_prefix_cache(GtkButton*b,void*d){
     (void)b;(void)d;
     if(pc2_discovery_only() || !pc2_provider_controls_allowed() ||
@@ -5979,6 +5992,11 @@ static GtkWidget *build_settings(void){
         g_signal_connect_data(pc2_shared_wemod_download,"clicked",
             (GCallback)on_pc2_prepared_prefix_cache,NULL,NULL,0);
         pack(shared_card,pc2_shared_wemod_download,0);
+        pc2_shared_wemod_cancel=button("Cancel cache download","action");
+        gtk_widget_set_sensitive(pc2_shared_wemod_cancel,FALSE);
+        g_signal_connect_data(pc2_shared_wemod_cancel,"clicked",
+            (GCallback)on_pc2_prepared_cache_cancel,NULL,NULL,0);
+        pack(shared_card,pc2_shared_wemod_cancel,0);
         pc2_shared_wemod_status=label(
             "No setup checked yet. No game files or settings will be changed.","muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_shared_wemod_status,TRUE);
