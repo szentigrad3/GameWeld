@@ -93,6 +93,32 @@ class PreparedPrefixStageTests(unittest.TestCase):
         self.assertEqual(list((self.cache / "staging").glob(".incoming-*")), [])
         self.untouched()
 
+    def test_source_asset_version_record_is_retained_when_staged(self):
+        import json
+        record = {
+            "sha256": self.archive.stem,
+            "source": "DeckCheatz/BuiltPrefixes-dev",
+            "asset_name": "GE-Proton10.1.zip",
+            "release_tag": "PfxVer10.1",
+            "publisher_authenticity": "UNVERIFIED",
+        }
+        (self.cache / "downloads" / (self.archive.stem + ".source.json")).write_text(
+            json.dumps(record))
+        result = self.call()
+        self.assertEqual(result["source_asset"], "GE-Proton10.1.zip")
+        self.assertEqual(result["source_release"], "PfxVer10.1")
+        self.assertFalse(result["installed_to_game"])
+        self.untouched()
+
+    def test_symlinked_appdir_can_load_trusted_zip_inspector(self):
+        fake = self.root / "dev-AppDir/usr/libexec/gameweld-prepared-prefix-stage.py"
+        fake.parent.mkdir(parents=True)
+        fake.symlink_to(SOURCE)
+        with patch.object(stage, "__file__", str(fake)):
+            audit = stage.load_audit()
+        self.assertTrue(callable(audit.inspect_zip_members))
+        self.untouched()
+
     def test_hash_mismatch_blocks_before_extraction(self):
         self.archive.write_bytes(self.archive.read_bytes() + b"changed")
         with self.assertRaisesRegex(stage.StageRefused, "SHA-256"):
