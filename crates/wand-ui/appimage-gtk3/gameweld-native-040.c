@@ -667,7 +667,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4495,12 +4495,13 @@ static void pc2_bridge_readiness_invalidate(void){
  * confirmation and take effect only on the next Steam launch. */
 typedef struct {
     char action[24],appid[192],game[256],output[4096];
-    char game_dir[2048],steam_root[1024];
+    char game_dir[2048],steam_root[1024],provider[32],prefix[2048],runner[2048];
     int ok;
 } PC2SteamBridgeJob;
 static int pc2_steam_bridge_busy=0;
 static GtkWidget *pc2_steam_bridge_status=NULL;
 static GtkWidget *pc2_shared_wemod_status=NULL;
+static GtkWidget *pc2_native_route_status=NULL;
 static const char *pc2_steam_bridge_helper(void){
     static char p[2048];const char *appdir=getenv("APPDIR");
     if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-steam-compat-bridge.py",appdir);
@@ -4513,12 +4514,23 @@ static const char *pc2_prepared_prefix_catalog_helper(void){
     else snprintf(p,sizeof p,"gameweld-deckcheatz-prefix-catalog.py");
     return p;
 }
+static const char *pc2_native_route_helper(void){
+    static char p[2048];const char *appdir=getenv("APPDIR");
+    if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-wemod-native-route.py",appdir);
+    else snprintf(p,sizeof p,"gameweld-wemod-native-route.py");
+    return p;
+}
 static gboolean pc2_steam_bridge_done(gpointer data){
     PC2SteamBridgeJob*j=data;
     pc2_steam_bridge_busy=0;
     const char *msg=j->output[0]?j->output:(j->ok?"Complete.":"Steam Bridge operation failed.");
     if(!strcmp(j->action,"prefix-catalog")){
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,msg);
+    }else if(!strcmp(j->action,"native-route")){
+        if(pc2_native_route_status)set_label(pc2_native_route_status,msg);
+        if(G.pc2_deckcheatz_overview_status)
+            set_label(G.pc2_deckcheatz_overview_status,
+                "Native WeMod setup is a read-only preview. No game or trainer launched.");
     }else if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,msg);
     if(pc2_steam_bridge_quick_upgrade &&
        (!strcmp(j->action,"preflight")||!strcmp(j->action,"upgrade"))){
@@ -4563,17 +4575,21 @@ static void *pc2_steam_bridge_worker(void *data){
     if(pid==0){
         setpgid(0,0);
         close(pipefd[0]);dup2(pipefd[1],STDOUT_FILENO);dup2(pipefd[1],STDERR_FILENO);close(pipefd[1]);
-        const char *argv[16];int n=0;
+        const char *argv[24];int n=0;
         argv[n++]="python3";
         if(!strcmp(j->action,"prefix-catalog")){
-            /* Shared WeMod release lookup is global: no Steam AppID required
-             * and no game identifiers are sent to the catalog provider. */
+            /* Shared catalog sends no game identifier to the provider. */
             argv[n++]=pc2_prepared_prefix_catalog_helper();
+        }else if(!strcmp(j->action,"native-route")){
+            argv[n++]=pc2_native_route_helper();
+            argv[n++]="--provider";argv[n++]=j->provider;
+            argv[n++]="--game-id";argv[n++]=j->appid;
+            if(j->game_dir[0]){argv[n++]="--install-dir";argv[n++]=j->game_dir;}
+            if(j->prefix[0]){argv[n++]="--prefix";argv[n++]=j->prefix;}
+            if(j->runner[0]){argv[n++]="--runner";argv[n++]=j->runner;}
         }else{
             argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
-        }
-        if(strcmp(j->action,"prefix-catalog")&&j->appid[0]){
-            argv[n++]="--appid";argv[n++]=j->appid;
+            if(j->appid[0]){argv[n++]="--appid";argv[n++]=j->appid;}
         }
         if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")||!strcmp(j->action,"preflight")||!strcmp(j->action,"netfx-plan")||!strcmp(j->action,"prefix-catalog")||!strcmp(j->action,"netfx-status")){
             if(strcmp(j->action,"prefix-catalog")&&j->game_dir[0]){
@@ -4583,7 +4599,7 @@ static void *pc2_steam_bridge_worker(void *data){
                 argv[n++]="--steam-root";argv[n++]=j->steam_root;
             }
         }
-        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"prefix-catalog")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
+        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"prefix-catalog")&&strcmp(j->action,"native-route")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char *const*)argv);_exit(127);
     }
@@ -4602,21 +4618,29 @@ static void pc2_steam_bridge_action(const char *action){
     if(!pc2_provider_controls_allowed()||pc2_steam_bridge_busy)return;
     int global_upgrade=!strcmp(action,"upgrade");
     int global_catalog=!strcmp(action,"prefix-catalog");
+    int native_route=!strcmp(action,"native-route");
     Game *g=NULL;
     if(!global_upgrade&&!global_catalog){
         if(G.selected<0||G.selected>=G.game_count){
             if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
-                "Select an installed Steam game in Library first.");
+                "Select a supported game in Library first.");
             return;
         }
         g=&G.games[G.selected];
-        if(!game_is_steam(g)||game_is_steam_shortcut(g)||!g->appid[0]){
+        if(native_route){
+            if(!game_is_steam(g)&&!game_is_heroic(g)&&!game_is_lutris(g)){
+                if(pc2_native_route_status)set_label(pc2_native_route_status,
+                    "Select a Steam, Heroic or Lutris Windows game.");
+                return;
+            }
+            if(!game_key(g)[0])return;
+        }else if(!game_is_steam(g)||game_is_steam_shortcut(g)||!g->appid[0]){
             if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
-                "Steam Bridge currently supports installed Steam Windows titles only.");
+                "Legacy Steam Bridge supports installed Steam Windows titles only.");
             return;
         }
     }
-    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"prefix-catalog")&&strcmp(action,"netfx-status")){
+    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"prefix-catalog")&&strcmp(action,"native-route")&&strcmp(action,"netfx-status")){
         char question[1024];
         if(global_upgrade){
             snprintf(question,sizeof question,
@@ -4675,7 +4699,13 @@ static void pc2_steam_bridge_action(const char *action){
     PC2SteamBridgeJob*j=calloc(1,sizeof *j);if(!j)return;
     snprintf(j->action,sizeof j->action,"%s",action);
     if(!global_upgrade&&!global_catalog){
-        snprintf(j->appid,sizeof j->appid,"%s",g->appid);
+        snprintf(j->appid,sizeof j->appid,"%s",native_route?game_key(g):g->appid);
+        if(native_route){
+            snprintf(j->provider,sizeof j->provider,"%s",
+                game_is_steam(g)?"steam":game_is_heroic(g)?"heroic":"lutris");
+            snprintf(j->prefix,sizeof j->prefix,"%s",g->prefix);
+            snprintf(j->runner,sizeof j->runner,"%s",g->wine_bin);
+        }
         snprintf(j->game,sizeof j->game,"%.*s",(int)sizeof(j->game)-1,g->name);
         snprintf(j->game_dir,sizeof j->game_dir,"%s",g->install_dir);
         snprintf(j->steam_root,sizeof j->steam_root,"%s",g->steam_root);
@@ -4687,6 +4717,9 @@ static void pc2_steam_bridge_action(const char *action){
     if(global_catalog){
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             "Checking prepared WeMod releases for a shared GameWeld setup…");
+    }else if(native_route){
+        if(pc2_native_route_status)set_label(pc2_native_route_status,
+            "Checking provider-native setup without changing Steam or game prefixes…");
     }else if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
         !strcmp(action,"play")?"Asking Steam to launch the selected game with its saved Compatibility setting…":
         !strcmp(action,"setup")?"Setting up a new game-only Steam Bridge configuration…":
@@ -4695,6 +4728,9 @@ static void pc2_steam_bridge_action(const char *action){
     if(pthread_create(&thread,NULL,pc2_steam_bridge_worker,j)==0)pthread_detach(thread);
     else{pc2_steam_bridge_busy=0;free(j);if(pc2_steam_bridge_status)
         set_label(pc2_steam_bridge_status,"Failed to start Steam Bridge helper thread.");}
+}
+static void on_pc2_native_route(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_steam_bridge_action("native-route");
 }
 static void on_pc2_bridge_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("preflight");}
 static void on_pc2_bridge_upgrade(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("upgrade");}
