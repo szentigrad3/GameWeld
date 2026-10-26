@@ -383,6 +383,25 @@ Do not interpret a process candidate as an injected, connected or
 functional trainer. No game prefixes, launch options, Steam settings or
 WeMod installations are modified by this check.
 
+## Next live milestone after process-candidate detection
+
+When a game-prefix process and WeMod.exe candidate are both detected,
+GameWeld's concise status tells the user to select that game inside WeMod,
+start its trainer, and observe one harmless feature working **in-game**.
+This is a manual validation prompt, not automated trainer attachment.
+
+**Important:** prefix activity proves only that one or more processes
+reference the selected Proton/Wine prefix. It does **not** independently
+identify the game's Windows executable. A WeMod.exe candidate can be present
+without the game itself running or without successful trainer injection.
+The UI therefore says "a process uses this prefix" and continues to show
+"Trainer: NOT VERIFIED" and "Install: BLOCKED".
+
+A read-only status must never turn into a real setup install, launch-option
+change, or game execution based solely on a process name. A real observed
+trainer effect and separately proven native launch/attachment remain required
+for the first public WeMod integration milestone.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
