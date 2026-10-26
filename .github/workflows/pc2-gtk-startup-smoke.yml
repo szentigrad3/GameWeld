@@ -1,0 +1,86 @@
+name: PC2 GTK Startup Smoke
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'crates/wand-ui/appimage-gtk3/**'
+      - 'scripts/run-pc2-source-frontend.sh'
+      - 'scripts/gameweld-*.py'
+      - 'cmd/gameweld-backend/**'
+      - '.github/workflows/pc2-gtk-startup-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pc2-gtk-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  startup:
+    name: Xvfb native frontend launch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/gameweld-backend/go.mod
+          cache: false
+      - name: Install native GTK and debugger
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc libgtk-3-dev pkg-config xvfb gdb
+      - name: Build exact source-runner frontend and backend with symbols
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/run-pc2-source-frontend.sh --check-layout
+          mkdir -p build/pc2-source
+          ( cd cmd/gameweld-backend && go build -trimpath -o ../../build/pc2-source/wand-native-backend . )
+          gcc -O0 -g -fno-omit-frame-pointer -pthread -DGAMEWELD_PC2_DISCOVERY_ONLY=1 \
+            crates/wand-ui/appimage-gtk3/gameweld-native-040.c \
+            -o build/pc2-source/gameweld \
+            $(pkg-config --cflags --libs gtk+-3.0)
+      - name: GUI startup must survive with empty temporary home
+        shell: bash
+        run: |
+          set -uo pipefail
+          test_home="$(mktemp -d)"
+          trap 'rm -rf "$test_home"' EXIT
+          mkdir -p "$test_home/.cache" "$test_home/.config" "$test_home/.local/share" "$test_home/.local/state"
+          export HOME="$test_home"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_STATE_HOME="$HOME/.local/state"
+          export APPDIR="$GITHUB_WORKSPACE/build/pc2-source/dev-AppDir"
+          export WAND_NATIVE_BACKEND="$GITHUB_WORKSPACE/build/pc2-source/wand-native-backend"
+          export WAND_NATIVE_START_PAGE=settings
+          export PATH="$GITHUB_WORKSPACE/scripts:$PATH"
+          echo "Starting native GameWeld GTK with isolated home and Xvfb (no game changes)."
+          timeout --signal=TERM --kill-after=3s 12s \
+            xvfb-run -a -s '-screen 0 1280x800x24' \
+            "$GITHUB_WORKSPACE/build/pc2-source/gameweld" >gtk-startup.log 2>&1
+          result=$?
+          cat gtk-startup.log
+          if [[ "$result" == 124 ]]; then
+            echo "PASS: Native GTK frontend remained alive through the smoke window."
+            exit 0
+          fi
+          echo "FAIL: GTK frontend exited prematurely (status $result). Capturing gdb stack..."
+          timeout --signal=TERM --kill-after=2s 22s \
+            xvfb-run -a -s '-screen 0 1280x800x24' \
+            gdb -q -batch -ex 'set pagination off' \
+            -ex run -ex 'thread apply all bt 12' \
+            --args "$GITHUB_WORKSPACE/build/pc2-source/gameweld" >gtk-gdb.log 2>&1 || true
+          tail -180 gtk-gdb.log
+          exit 1
+      - name: Store private GUI crash logs (text only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc2-gtk-startup-crash-text
+          path: |
+            gtk-startup.log
+            gtk-gdb.log
+          if-no-files-found: ignore
+          retention-days: 3
