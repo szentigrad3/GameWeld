@@ -159,6 +159,44 @@ class PrefixRuntimePreflightTests(unittest.TestCase):
         self.assertEqual(result["wemod_process_candidates"], 0)
         self.unchanged()
 
+    def test_wemod_comm_detected_when_cmdline_is_absent(self):
+        self.fake(400, [f"WINEPREFIX={self.prefixes['steam']}"])
+        (self.proc / "400/comm").write_bytes(b"WeMod.exe\n")
+        result = self.report()
+        self.assertEqual(result["wemod_process_state"], "CANDIDATE_VISIBLE")
+        self.assertEqual(result["wemod_process_name_inspected"], 1)
+        self.assertEqual(result["wemod_process_name_unreadable"], 0)
+        self.assertFalse(result["trainer_attached"])
+        self.unchanged()
+
+    def test_wemod_comm_detected_when_cmdline_permission_denied(self):
+        self.fake(401, [f"WINEPREFIX={self.prefixes['steam']}"])
+        (self.proc / "401/cmdline").write_bytes(b"hidden")
+        (self.proc / "401/comm").write_bytes(b"WeMod.exe\n")
+        original = Path.open
+        def blocked_open(path, *args, **kwargs):
+            if path.name == "cmdline" and path.parent.name == "401":
+                raise PermissionError("synthetic proc restriction")
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "open", blocked_open):
+            result = self.report()
+        self.assertEqual(result["wemod_process_state"], "CANDIDATE_VISIBLE")
+        self.assertEqual(result["wemod_process_name_inspected"], 1)
+        self.assertEqual(result["wemod_process_name_unreadable"], 0)
+        self.unchanged()
+
+    def test_unreadable_matching_processes_are_counted_without_leaking(self):
+        self.fake(402, [f"WINEPREFIX={self.prefixes['heroic']}",
+                        "API_TOKEN=SECRET_NEVER_OUTPUT"])
+        result = self.report("heroic", "gog-a")
+        self.assertEqual(result["state"], "ACTIVE")
+        self.assertEqual(result["matching_process_count"], 1)
+        self.assertEqual(result["wemod_process_name_inspected"], 0)
+        self.assertEqual(result["wemod_process_name_unreadable"], 1)
+        self.assertEqual(result["wemod_process_state"], "UNVERIFIED")
+        self.assertNotIn("SECRET_NEVER_OUTPUT", str(result))
+        self.unchanged()
+
     def test_no_processes_is_never_authorization_to_install(self):
         outcome = self.report()
         self.assertEqual(outcome["state"], "IDLE_CANDIDATE")
