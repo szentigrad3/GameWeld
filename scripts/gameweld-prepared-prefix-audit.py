@@ -100,7 +100,7 @@ def archive_report(path: Path, *, expected_sha256: str | None = None) -> str:
 
     lines = [
         "GAMEWELD — SHARED WEMOD PREFIX ARCHIVE SAFETY AUDIT",
-        "Scope: shared GameWeld-managed setup for Steam, Heroic and Lutris",
+        "Scope: reusable prefix template cache for Steam, Heroic and Lutris; actual game launch contexts remain separate",
         "Safety: read-only; no extraction, execution, installation or prefix modifications",
         f"Archive size: {size} bytes",
         f"Archive entries: {count}",
