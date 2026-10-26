@@ -2,7 +2,7 @@
 
 **Scope:** Steam, Heroic, Lutris, and future supported Windows-game providers.
 **Status:** Architecture + read-only catalog and archive audit implemented. Game integration, account migration, and verified trainer activation **not yet done**.
-Cache-only download code exists but is not enabled in the GUI.
+Cache-only download code and consent-driven GUI wiring exist; the discovery-only GUI deliberately disables downloads.
 
 ## User-visible goal
 
@@ -76,7 +76,7 @@ Global actions such as **Find prepared WeMod setup** and **Check prepared ZIP**
 must work without a selected game or AppID. Per-game installation and launch
 actions must require an unambiguous game and provider context.
 
-## Download-only cache stage (development code; not yet connected to GUI)
+## Download-only cache stage (development GUI; not a game installation)
 
 The helper \`scripts/gameweld-prepared-prefix-cache.py\` adds an opt-in
 **cache-only** download path for the user-approved release ZIP. It is disabled
@@ -97,13 +97,28 @@ from the future **Install** and **Play** actions.
   and **not installed**.
 - No archive is extracted, no WeMod account data is read, no Wine/Proton
   runtime is invoked, and no selected game's live prefix is modified.
-- The normal GUI currently exposes only **Find prepared WeMod setup**, a
-  release-metadata lookup. No cache download/install button is enabled yet.
+- After **Find prepared WeMod setup**, the GUI shows a bounded list of
+  candidate ZIP releases. A matching archive is **not** considered a
+  verified Proton/runtime fit or a working game trainer.
+- **No release is auto-selected.** Players must choose an archive themselves.
+  The normal UI deliberately avoids pages of low-level catalog diagnostics.
+- A separate **Download selected prepared setup (cache only)** action is
+  implemented for explicitly opted-in private functional builds and shows
+  a release-specific approval dialog. The usual **discovery-only GUI keeps
+  download and cancel disabled**.
+- In a functional test download, the helper sends bounded progress records
+  to the GUI for bytes transferred and ZIP checking. **Cancel cache download**
+  sends SIGINT to its managed subprocess; Python attempts to remove the
+  incomplete .part file. A forced termination cannot be guaranteed to clean
+  temporary files on every filesystem.
+- On successful verification, GameWeld stores the content-addressed ZIP in
+  the separate cache only, never in a game's prefix. It does not extract
+  it, configure WeMod, or claim working trainer support.
 
-**Before surfacing a download button:** verify the exact selected release
-against authoritative metadata, show source/size/compatibility cautions,
-require a click-through user confirmation, handle cancellation/progress, and
-ensure the setup cannot be confused with a finished game installation.
+**Before treating this as general user-ready functionality:** independently
+review publisher integrity and release applicability; validate live progress,
+cancel, restart and interrupted-download recovery on CachyOS, and complete a
+separately approved, reversible per-game install and trainer-attachment flow.
 
 ## Required transactional installer (not implemented)
 
