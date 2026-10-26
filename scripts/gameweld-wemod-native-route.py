@@ -240,7 +240,7 @@ def gui_summary(report: dict) -> str:
         )
     state = report.get("process_activity", {}).get("state", "UNKNOWN")
     activity = {
-        "ACTIVE": "ACTIVE — matching game session detected",
+        "ACTIVE": "ACTIVE — a process uses this prefix (game EXE not verified)",
         "UNKNOWN": "UNKNOWN — game closure not verified",
         "IDLE_CANDIDATE": "NO MATCH FOUND — game closure still unverified",
     }.get(state, "UNKNOWN — process inspection unavailable")
