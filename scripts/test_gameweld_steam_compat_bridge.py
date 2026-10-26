@@ -424,6 +424,10 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 side_effect=AssertionError("read-only inspection started a process")
             ):
                 report = bridge.preflight_report("3008130", game_dir=game)
+            self.assertEqual(
+                bridge.primary_ui_state("3008130", game_dir=game)[0],
+                "runtime"
+            )
             self.assertIn("Next action: INVESTIGATE WINDOWS .NET RUNTIME", report)
             self.assertIn("No installation or prefix repair was attempted", report)
             self.assertIn("registration entries found", report)
@@ -471,6 +475,63 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
             self.assertFalse(bridge.config_path().exists())
 
+    def test_isolated_netfx_plan_never_creates_a_prefix_or_runs_proton(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text(
+                '"appid" "3008130"'
+            )
+            live = self.steam / "steamapps/compatdata/3008130/pfx"
+            live.mkdir(parents=True)
+            existing = live / "user.reg"
+            existing.write_text("KEEP-ME")
+            cache = self.home / ".cache/gameweld/netfx-isolation/appid-3008130"
+            before = bridge.config_path().read_bytes()
+            with patch.object(bridge.subprocess, "Popen",
+                              side_effect=AssertionError("Proton must not execute")), \
+                 patch.object(bridge.subprocess, "call",
+                              side_effect=AssertionError("Winetricks must not execute")):
+                plan = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("PLAN ONLY (READ-ONLY", plan)
+            self.assertIn("Saved Proton executable:", plan)
+            self.assertIn("Workspace check: AVAILABLE FOR A FUTURE APPROVED TEST", plan)
+            self.assertIn("NOT SELECTED OR VERIFIED", plan)
+            self.assertIn("No automatic promotion/copying", plan)
+            self.assertFalse(cache.exists())
+            self.assertEqual(existing.read_text(), "KEEP-ME")
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+            self.assertFalse((self.steam / "config/config.vdf").exists())
+
+    def test_isolated_netfx_plan_blocks_occupied_and_symlinked_scratch(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            target = self.home / ".cache/gameweld/netfx-isolation/appid-3008130"
+            target.mkdir(parents=True)
+            self.assertIn("Workspace check: BLOCKED",
+                          bridge.netfx_isolation_plan("3008130", game))
+            target.rmdir()
+            target.symlink_to(self.steam / "steamapps", target_is_directory=True)
+            self.assertIn("Workspace check: BLOCKED",
+                          bridge.netfx_isolation_plan("3008130", game))
+            self.assertTrue(target.is_symlink())
+
+    def test_isolated_netfx_plan_rejects_wrong_game_and_unconfigured(self):
+        with patch.dict(os.environ, self.env):
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            with self.assertRaisesRegex(ValueError, "Configure this game"):
+                bridge.netfx_isolation_plan("3008130", game)
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            with self.assertRaisesRegex(ValueError, "matching AppID"):
+                bridge.netfx_isolation_plan("2353250", game)
+            self.assertFalse((self.home / ".cache").exists())
+
     def test_preflight_gui_wiring_stays_read_only(self):
         ui = (Path(__file__).resolve().parents[1] /
               "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
@@ -485,6 +546,14 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('strcmp(s, "Steam Bridge: Check selected game")', guard)
         self.assertIn('pc2_guard_button(w)', guard)
         self.assertIn('button("Check WeMod readiness","action")', ui)
+        self.assertIn('strcmp(s, "Plan safe .NET test (read-only)")', guard)
+        self.assertIn('button("Plan safe .NET test (read-only)","action")', ui)
+        self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
+        self.assertIn('!strcmp(job->result,"runtime")', ui)
+        self.assertIn('else if(!strcmp(state,"runtime"))title="Investigate .NET";', ui)
+        self.assertIn('else if(!strcmp(state,"runtime"))pc2_steam_bridge_action("netfx-plan");', ui)
+        self.assertIn('strcmp(action,"netfx-plan")', ui)
+        self.assertIn('strcmp(j->action,"netfx-plan")', ui)
         self.assertIn('pc2_steam_bridge_action("preflight");', ui)
         self.assertIn('strcmp(action,"preflight")', ui)
         self.assertIn('strcmp(j->action,"preflight")', ui)
