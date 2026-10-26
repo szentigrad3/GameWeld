@@ -263,12 +263,32 @@ def gui_summary(report: dict) -> str:
         "NOT_SEEN": "Not seen in selected prefix — not proof of absence",
         "UNVERIFIED": uncertain,
     }.get(wemod_state, uncertain)
+    # A same-prefix WeMod process is useful live-test evidence but cannot
+    # establish a trainer connection, the game's exact executable, or cheats.
+    # Never convert observational evidence into installer authorization.
+    live_candidate = (
+        state == "ACTIVE" and wemod_state == "CANDIDATE_VISIBLE"
+    )
+    next_step = (
+        "Next: In WeMod select this game, start the trainer and verify one "
+        "feature in-game (manual test only)"
+        if live_candidate else
+        "Next: Start the game normally and check for its WeMod process"
+        if state != "ACTIVE" else
+        "Next: Check whether WeMod is running in this game's prefix"
+    )
+    trainer = (
+        "Trainer: NOT VERIFIED — requires observed in-game activation"
+        if live_candidate else
+        "Trainer: NOT VERIFIED — setup not ready"
+    )
     return "\n".join([
         f"WeMod connection • {title} ({report['game_id']})",
         fields,
         "Game activity: " + activity,
         "WeMod process: " + wemod,
-        "Trainer: NOT VERIFIED — setup not ready",
+        trainer,
+        next_step,
         "Install: BLOCKED  |  Steam Bridge: not required",
         "No changes made to this game or its prefix.",
     ])
