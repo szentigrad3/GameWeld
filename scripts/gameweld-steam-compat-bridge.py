@@ -705,6 +705,54 @@ def steam_compat_selection(appid: str, *,
     return f"OTHER TOOL SELECTED (saved Steam mapping: {selected})"
 
 
+def netfx_clr_evidence(prefix: Path) -> list[str]:
+    """Check Windows .NET Framework v4 files without executing any runtime.
+
+    A Steam title may be assigned a different compatdata path. Treat missing
+    or symlinked candidate directories as inconclusive, not as proof of a
+    broken installation. Never guess or copy files from another game.
+    """
+    if prefix.is_symlink() or not prefix.is_dir():
+        return [".NET CLR files: INCONCLUSIVE (candidate prefix missing or symlinked)"]
+    windows = prefix / "drive_c/windows/Microsoft.NET"
+    if windows.is_symlink() or not windows.is_dir():
+        return [".NET CLR files: INCONCLUSIVE (Microsoft.NET directory unavailable)"]
+    report = []
+    missing = []
+    uncertain = False
+    for arch in ("Framework", "Framework64"):
+        folder = windows / arch / "v4.0.30319"
+        if folder.is_symlink() or not folder.is_dir():
+            report.append(f".NET CLR {arch}: INCONCLUSIVE (runtime folder unavailable)")
+            uncertain = True
+            continue
+        for dll in ("clr.dll", "mscorlib.dll"):
+            path = folder / dll
+            if path.is_symlink():
+                report.append(f".NET CLR {arch}/{dll}: INCONCLUSIVE (symlinked)")
+                uncertain = True
+            elif path.is_file():
+                try:
+                    report.append(f".NET CLR {arch}/{dll}: present ({path.stat().st_size} bytes)")
+                except OSError:
+                    report.append(f".NET CLR {arch}/{dll}: INCONCLUSIVE (unreadable)")
+                    uncertain = True
+            else:
+                report.append(f".NET CLR {arch}/{dll}: MISSING from candidate prefix")
+                missing.append((arch, dll))
+    missing_clr = sum(dll == "clr.dll" for _, dll in missing)
+    if missing_clr == 2 and not uncertain:
+        report.append("WARNING: both Windows .NET Framework v4 clr.dll files are missing; "
+                      "registration alone cannot establish a working CLR for WeMod.")
+    elif missing_clr:
+        report.append("WARNING: one or more Windows .NET Framework v4 CLR components "
+                      "are absent; this is not a successful runtime check.")
+    else:
+        report.append(".NET CLR assessment: file presence only; loading and WeMod "
+                      "compatibility NOT verified.")
+    return report
+
+
 def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
     """Bounded, read-only, game-scoped readiness summary for the GUI.
 
@@ -752,6 +800,7 @@ def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
                                      "do not install .NET based on this check alone")
                 else:
                     lines.append(".NET registry: INCONCLUSIVE (prefix or registry unavailable)")
+                lines.extend(netfx_clr_evidence(steamapps / "compatdata" / appid / "pfx"))
         except (OSError, ValueError):
             lines.append(".NET registry: INCONCLUSIVE (cannot inspect selected game)")
 
