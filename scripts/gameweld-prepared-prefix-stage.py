@@ -94,6 +94,22 @@ def stage_cached_archive(
              expected_sha256.lower() != archive.stem)):
         raise StageRefused("Supplied expected checksum does not match cache name")
 
+    source_record = None
+    record_file = downloads / (archive.stem + ".source.json")
+    if record_file.exists():
+        if record_file.is_symlink() or record_file.stat().st_size > 4096:
+            raise StageRefused("Cached archive source record is unsafe")
+        try:
+            source_record = json.loads(record_file.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise StageRefused("Cached source record is invalid") from exc
+        if (not isinstance(source_record, dict) or
+                source_record.get("sha256") != archive.stem or
+                source_record.get("source") != "DeckCheatz/BuiltPrefixes-dev" or
+                not isinstance(source_record.get("asset_name"), str) or
+                not source_record["asset_name"].lower().endswith(".zip") or
+                not isinstance(source_record.get("release_tag"), str)):
+            raise StageRefused("Cached source record does not identify this archive")
     audit = load_audit()
     if not 0 < archive.stat().st_size <= audit.MAX_ARCHIVE_BYTES:
         raise StageRefused("Invalid cached archive size")
@@ -175,6 +191,9 @@ def stage_cached_archive(
         result = {
             "stage_path": str(target),
             "source_archive_sha256": archive.stem,
+            "source_release": source_record.get("release_tag") if source_record else None,
+            "source_asset": source_record.get("asset_name") if source_record else None,
+            "source_repo": source_record.get("source") if source_record else None,
             "archive_entries": count,
             "unpacked_bytes": unpacked,
             "files": manifest_files,
