@@ -4500,6 +4500,7 @@ typedef struct {
 } PC2SteamBridgeJob;
 static int pc2_steam_bridge_busy=0;
 static GtkWidget *pc2_steam_bridge_status=NULL;
+static GtkWidget *pc2_shared_wemod_status=NULL;
 static const char *pc2_steam_bridge_helper(void){
     static char p[2048];const char *appdir=getenv("APPDIR");
     if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-steam-compat-bridge.py",appdir);
@@ -4516,7 +4517,9 @@ static gboolean pc2_steam_bridge_done(gpointer data){
     PC2SteamBridgeJob*j=data;
     pc2_steam_bridge_busy=0;
     const char *msg=j->output[0]?j->output:(j->ok?"Complete.":"Steam Bridge operation failed.");
-    if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,msg);
+    if(!strcmp(j->action,"prefix-catalog")){
+        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,msg);
+    }else if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,msg);
     if(pc2_steam_bridge_quick_upgrade &&
        (!strcmp(j->action,"preflight")||!strcmp(j->action,"upgrade"))){
         int selected_matches=G.selected>=0&&G.selected<G.game_count &&
@@ -4681,7 +4684,10 @@ static void pc2_steam_bridge_action(const char *action){
                  global_catalog?"Shared WeMod setup":"Installed GameWeld Bridge");
     }
     pc2_steam_bridge_busy=1;
-    if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
+    if(global_catalog){
+        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
+            "Checking prepared WeMod releases for a shared GameWeld setup…");
+    }else if(pc2_steam_bridge_status)set_label(pc2_steam_bridge_status,
         !strcmp(action,"play")?"Asking Steam to launch the selected game with its saved Compatibility setting…":
         !strcmp(action,"setup")?"Setting up a new game-only Steam Bridge configuration…":
         "Checking selected game's Steam Bridge configuration…");
@@ -5667,6 +5673,23 @@ static GtkWidget *build_settings(void){
         /* The Steam compatibility bridge is the validated PC2 Steam/WeMod
          * route. Put it first; keep the earlier failed live-host-Wine launch
          * experiments out of the everyday interface. */
+        GtkWidget*shared_card=box(GTK_ORIENTATION_VERTICAL,9);style(shared_card,"card");
+        pack(shared_card,label("Prepared WeMod setup — All game libraries","card-title"),0);
+        GtkWidget*shared_note=label(
+            "One shared GameWeld-managed WeMod environment for Steam, Heroic and Lutris. "
+            "Find a compatible prepared setup without selecting a game. "
+            "This currently checks releases only; installation, backup and rollback "
+            "are not yet enabled.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)shared_note,TRUE);
+        pack(shared_card,shared_note,0);
+        GtkWidget*ready_prefix=button("Find prepared WeMod setup","action");
+        g_signal_connect_data(ready_prefix,"clicked",(GCallback)on_pc2_bridge_prefix_catalog,NULL,NULL,0);
+        pack(shared_card,ready_prefix,0);
+        pc2_shared_wemod_status=label(
+            "No setup checked yet. No game files or settings will be changed.","muted");
+        gtk_label_set_line_wrap((GtkLabel*)pc2_shared_wemod_status,TRUE);
+        pack(shared_card,pc2_shared_wemod_status,0);
+        pack(deckpage,shared_card,0);
         GtkWidget*bridge_card=box(GTK_ORIENTATION_VERTICAL,9);style(bridge_card,"card");
         pack(bridge_card,label("Steam Bridge — Game + WeMod","card-title"),0);
         GtkWidget*bridge_note=label(
@@ -5720,9 +5743,6 @@ static GtkWidget *build_settings(void){
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
         pack(bridge_card,pc2_steam_bridge_status,0);
-        GtkWidget*ready_prefix=button("Find prepared WeMod setup","action");
-        g_signal_connect_data(ready_prefix,"clicked",(GCallback)on_pc2_bridge_prefix_catalog,NULL,NULL,0);
-        pack(bridge_card,ready_prefix,0);
         GtkWidget*netfx_plan=button("Plan safe .NET test (read-only)","action");
         g_signal_connect_data(netfx_plan,"clicked",(GCallback)on_pc2_bridge_netfx_plan,NULL,NULL,0);
         /* Keep the legacy .NET experiment plan under advanced maintenance;
