@@ -80,6 +80,31 @@ class PreparedPrefixCacheTests(unittest.TestCase):
         self.assertEqual(list((self.cache_root / "incoming").glob("*.part")), [])
         self.assert_game_untouched()
 
+    def test_cached_archive_keeps_release_version_metadata(self):
+        with patch.object(cache.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 5_000_000_000})()):
+            result = cache.acquire_to_cache(URL, declared_size=len(self.archive),
+                                            cache_root=self.cache_root, approved=True,
+                                            opener=self.opener)
+        source_file = Path(result["cache_path"]).with_suffix(".source.json")
+        self.assertTrue(source_file.is_file())
+        import json
+        record = json.loads(source_file.read_text())
+        self.assertEqual(record["asset_name"], "GE-Proton10-34.zip")
+        self.assertEqual(record["source"], "DeckCheatz/BuiltPrefixes-dev")
+        self.assertEqual(record["sha256"], result["sha256"])
+        self.assertEqual(record["publisher_authenticity"], "UNVERIFIED")
+        self.assert_game_untouched()
+
+    def test_source_symlinked_appdir_resolves_trusted_audit_helper(self):
+        fake = self.root / "dev-AppDir/usr/libexec/gameweld-prepared-prefix-cache.py"
+        fake.parent.mkdir(parents=True)
+        fake.symlink_to(SOURCE)
+        with patch.object(cache, "__file__", str(fake)):
+            audit = cache._load_zip_audit()
+        self.assertTrue(callable(audit.inspect_zip_members))
+        self.assert_game_untouched()
+
     def test_download_progress_is_monotonic_and_never_installs(self):
         updates = []
         with patch.object(cache.shutil, "disk_usage",
