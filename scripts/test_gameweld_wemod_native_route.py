@@ -228,7 +228,7 @@ class NativeRouteTests(unittest.TestCase):
         self.assertIn("WeMod process: Not verified", summary)
         self.assertIn("Trainer: NOT VERIFIED", summary)
         self.assertNotIn("verify one feature in-game", summary)
-        self.assertIn("Check whether WeMod is running", summary)
+        self.assertIn("Start the game normally and check for its WeMod process", summary)
 
     def test_live_game_unknown_wemod_explains_unreadable_matching_names(self):
         install = self.root / "steamapps/common/Test Game"
