@@ -801,7 +801,15 @@ def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
                                      "do not install .NET based on this check alone")
                 else:
                     lines.append(".NET registry: INCONCLUSIVE (prefix or registry unavailable)")
-                lines.extend(netfx_clr_evidence(steamapps / "compatdata" / appid / "pfx"))
+                clr_lines = netfx_clr_evidence(steamapps / "compatdata" / appid / "pfx")
+                lines.extend(clr_lines)
+                if state == "play" and any(line.startswith("WARNING:") for line in clr_lines):
+                    lines[1] = (
+                        "Next action: INVESTIGATE WINDOWS .NET RUNTIME — "
+                        "Steam Bridge is configured, but the selected prefix "
+                        "is missing native CLR components needed by some .NET apps. "
+                        "No installation or prefix repair was attempted."
+                    )
         except (OSError, ValueError):
             lines.append(".NET registry: INCONCLUSIVE (cannot inspect selected game)")
 
