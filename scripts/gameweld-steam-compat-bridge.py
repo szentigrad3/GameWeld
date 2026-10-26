@@ -506,6 +506,7 @@ def dotnet_prefix_status(appid: str, game_dir: Path) -> str:
                 evidence.append(line[:160])
     lines.append("Windows .NET Framework registry evidence: " +
                  ("; ".join(evidence[:12]) if evidence else "NOT FOUND / INCONCLUSIVE"))
+    lines.extend(netfx_clr_evidence(prefix))
     for name, dirname in (("Windows Desktop .NET runtime","Microsoft.WindowsDesktop.App"),
                           (".NET shared runtime","Microsoft.NETCore.App")):
         roots = [prefix / "drive_c/Program Files/dotnet/shared" / dirname,
