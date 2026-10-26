@@ -760,6 +760,9 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('button("Review prepared .NET prefix (read-only)","action")', ui)
         self.assertIn('button("Stage downloaded .NET prefix (isolated)","action")', ui)
         self.assertIn('pc2_steam_bridge_action("prefix-stage");', ui)
+        self.assertIn(
+            'if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage){'
+            '\n        snprintf(j->appid,sizeof j->appid', ui)
         self.assertIn('argv[n++]=pc2_prepared_prefix_stage_helper();', ui)
         self.assertIn('argv[n++]="--single-cached";', ui)
         self.assertIn('argv[n++]="--approve-stage";', ui)
