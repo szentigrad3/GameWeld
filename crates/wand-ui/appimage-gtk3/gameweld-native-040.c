@@ -4366,6 +4366,17 @@ static unsigned pc2_bridge_readiness_generation=0;
 /* The settings-level repair button is enabled only by a matching read-only
  * preflight reporting a verified launcher update. */
 static GtkWidget *pc2_steam_bridge_quick_upgrade=NULL;
+static void pc2_quick_upgrade_state(int update_available, int is_current){
+    if(!pc2_steam_bridge_quick_upgrade)return;
+    GtkWidget *button=pc2_steam_bridge_quick_upgrade;
+    GtkStyleContext *style=gtk_widget_get_style_context(button);
+    gtk_style_context_remove_class(style,"primary-action");
+    if(update_available)gtk_style_context_add_class(style,"primary-action");
+    gtk_button_set_label((GtkButton*)button,
+        update_available?"Update Steam Bridge":
+        is_current?"Steam Bridge is up to date":"Update Steam Bridge");
+    gtk_widget_set_sensitive(button,update_available);
+}
 
 static int pc2_bridge_has_stale_launcher(const char *state,const char *reason){
     /* Only this exact, source-verified failure routes to launcher-only repair.
@@ -4451,8 +4462,7 @@ static void pc2_bridge_readiness_for_game(Game *g){
         return;
     }
     snprintf(pc2_bridge_ready_appid,sizeof pc2_bridge_ready_appid,"%s",g->appid);
-    if(pc2_steam_bridge_quick_upgrade)
-        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,FALSE);
+    pc2_quick_upgrade_state(0,0);
     snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"checking");
     pc2_bridge_readiness_generation++;
     pc2_bridge_apply_primary("checking","Checking saved Steam Bridge configuration…");
@@ -4469,8 +4479,7 @@ static void pc2_bridge_readiness_for_game(Game *g){
     }
 }
 static void pc2_bridge_readiness_invalidate(void){
-    if(pc2_steam_bridge_quick_upgrade)
-        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,FALSE);
+    pc2_quick_upgrade_state(0,0);
     pc2_bridge_ready_appid[0]=0;
     pc2_bridge_ready_state[0]=0;
     pc2_bridge_readiness_generation++;
@@ -4505,7 +4514,10 @@ static gboolean pc2_steam_bridge_done(gpointer data){
             selected_matches &&
             strstr(j->output,"Next action: REPAIR")!=NULL &&
             strstr(j->output,"Installed Steam Bridge: UPDATE AVAILABLE (")!=NULL;
-        gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,update_available);
+        int is_current=!strcmp(j->action,"preflight")&&j->ok&&
+            selected_matches &&
+            strstr(j->output,"Installed Steam Bridge: UP TO DATE")!=NULL;
+        pc2_quick_upgrade_state(update_available,is_current);
     }
     log_line("Steam Bridge [%s] for %s (%s): %s — %.2000s",
         j->action,j->game,j->appid,j->ok?"OK":"FAILED",msg);
@@ -5683,7 +5695,7 @@ static GtkWidget *build_settings(void){
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
         pack(bridge_card,pc2_steam_bridge_status,0);
-        pc2_steam_bridge_quick_upgrade=button("Update Steam Bridge","primary-action");
+        pc2_steam_bridge_quick_upgrade=button("Update Steam Bridge","action");
         g_signal_connect_data(pc2_steam_bridge_quick_upgrade,"clicked",
             (GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);
         gtk_widget_set_sensitive(pc2_steam_bridge_quick_upgrade,FALSE);
