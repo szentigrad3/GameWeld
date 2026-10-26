@@ -390,7 +390,7 @@ def play_configured_game(appid: str, *, launch=None,
     return int(launch(appid))
 
 
-def primary_ui_state(appid: str) -> tuple[str, str]:
+def primary_ui_state(appid: str, *, game_dir: Path | None = None) -> tuple[str, str]:
     """Read-only and fail-closed primary action for one Steam game.
 
     This only describes the saved configuration. The actual game launch
@@ -432,6 +432,12 @@ def primary_ui_state(appid: str) -> tuple[str, str]:
             + launcher_state
             + ". Update the registered Bridge launcher in Advanced Providers; "
               "the game prefix and Steam settings do not need changing."
+        )
+    if game_dir is not None and netfx_registered_without_native_clr(appid, game_dir):
+        return "runtime", (
+            "Windows .NET registration exists, but the selected game prefix lacks "
+            "native CLR files. Check WeMod readiness and plan an isolated .NET test; "
+            "no game prefix or Steam setting was changed."
         )
     return "play", "Steam Bridge and WeMod are configured. Launch still requires confirmation."
 
@@ -754,6 +760,38 @@ def netfx_clr_evidence(prefix: Path) -> list[str]:
     return report
 
 
+def netfx_registered_without_native_clr(appid: str, game_dir: Path) -> bool:
+    """Advisory blocker only when a matching candidate prefix explicitly
+    claims .NET registration while *both* native Framework CLR DLLs are absent.
+
+    A directory scan does not establish actual runtime loading. Inconclusive
+    or unmatched game locations must not be mislabeled a broken native CLR.
+    """
+    try:
+        game = game_dir.expanduser().resolve(strict=True)
+        steamapps = game.parent.parent
+        manifest = steamapps / f"appmanifest_{appid}.acf"
+        if (not game.is_dir() or game.parent.name != "common" or
+                steamapps.name != "steamapps" or not manifest.is_file() or
+                manifest.is_symlink()):
+            return False
+        prefix = steamapps / "compatdata" / appid / "pfx"
+        registry = prefix / "system.reg"
+        if (registry.is_symlink() or not registry.is_file() or
+                registry.stat().st_size > 32 * 1024 * 1024):
+            return False
+        registry_text = registry.read_text(encoding="utf-8", errors="replace")
+        if "NET Framework Setup" not in registry_text:
+            return False
+        report = netfx_clr_evidence(prefix)
+        return any(
+            text.startswith("WARNING: both Windows .NET Framework v4 clr.dll files are missing")
+            for text in report
+        )
+    except (OSError, ValueError):
+        return False
+
+
 def netfx_isolation_plan(appid: str, game_dir: Path) -> str:
     """Plan (never execute) a separate .NET test away from the game's prefix.
 
@@ -822,11 +860,12 @@ def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
     """
     if not valid_appid(appid):
         raise ValueError("Select an installed Steam Windows game")
-    state, reason = primary_ui_state(appid)
+    state, reason = primary_ui_state(appid, game_dir=game_dir)
     entry = load_config().get(appid)
+    next_action = "INVESTIGATE WINDOWS .NET RUNTIME" if state == "runtime" else state.upper()
     lines = [
         f"GAMEWELD — WEMOD READINESS • Steam AppID {appid}",
-        f"Next action: {state.upper()} — {reason}",
+        f"Next action: {next_action} — {reason}",
     ]
     if not isinstance(entry, dict):
         lines += [
@@ -966,7 +1005,7 @@ def main() -> int:
         if args.action == "ui-state":
             if not args.appid:
                 raise ValueError("UI state requires --appid")
-            action, reason = primary_ui_state(args.appid)
+            action, reason = primary_ui_state(args.appid, game_dir=args.game_dir)
             print(action + "\t" + reason.replace("\t", " ").replace("\n", " "))
             return 0
         if args.action == "preflight":
