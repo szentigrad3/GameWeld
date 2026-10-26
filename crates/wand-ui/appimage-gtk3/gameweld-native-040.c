@@ -4988,7 +4988,7 @@ static void pc2_steam_bridge_action(const char *action){
     }
     PC2SteamBridgeJob*j=calloc(1,sizeof *j);if(!j)return;
     snprintf(j->action,sizeof j->action,"%s",action);
-    if(!global_upgrade&&!global_catalog&&!global_cache){
+    if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage){
         snprintf(j->appid,sizeof j->appid,"%s",(native_route&&!game_is_steam(g))?game_key(g):g->appid);
         if(native_route){
             snprintf(j->provider,sizeof j->provider,"%s",
