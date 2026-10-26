@@ -623,6 +623,7 @@ static void on_pc2_bridge_disable(GtkButton*,void*);
 static void on_pc2_bridge_gpu_off(GtkButton*,void*);
 static void on_pc2_bridge_gpu_on(GtkButton*,void*);
 static void on_pc2_bridge_netfx_status(GtkButton*,void*);
+static void on_pc2_bridge_netfx_plan(GtkButton*,void*);
 
 /* PC2 exploration mode is compiled in, never inferred from backend availability.
  * Connections below run before downstream clicked handlers; they cannot
@@ -666,7 +667,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -4355,7 +4356,7 @@ static void on_wand_detect(GtkButton *b,gpointer d){(void)b;(void)d;wand_detect_
  * Bridge state. A result from a previously selected game is never allowed to
  * update the current game's Play/Setup button. */
 typedef struct {
-    char appid[192],result[2048];
+    char appid[192],result[2048],game_dir[2048];
     unsigned generation;
     int ok;
 } PC2BridgeReadiness;
@@ -4392,6 +4393,7 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     else if(!strcmp(state,"setup"))title="Set Up WeMod";
     else if(!strcmp(state,"enable"))title="Enable WeMod";
     else if(!strcmp(state,"steam"))title="Finish Steam Setup";
+    else if(!strcmp(state,"runtime"))title="Investigate .NET";
     else if(pc2_bridge_has_stale_launcher(state,reason))title="Update Steam Bridge";
     else if(!strcmp(state,"repair"))title="Repair WeMod";
     else{title="Checking WeMod…";actionable=0;}
@@ -4418,7 +4420,8 @@ static gboolean pc2_bridge_readiness_done(gpointer data){
                 *sep=0;
                 if(!strcmp(job->result,"play")||!strcmp(job->result,"setup")||
                    !strcmp(job->result,"enable")||!strcmp(job->result,"steam")||
-                   !strcmp(job->result,"repair")){
+                   !strcmp(job->result,"repair")||
+                   !strcmp(job->result,"runtime")){
                     state=job->result;
                     snprintf(reason,sizeof reason,"%s",sep+1);
                     reason[strcspn(reason,"\r\n")]=0;
@@ -4445,7 +4448,8 @@ static void *pc2_bridge_readiness_worker(void *data){
         if(appdir&&*appdir)
             snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-steam-compat-bridge.py",appdir);
         else snprintf(helper,sizeof helper,"gameweld-steam-compat-bridge.py");
-        char *const args[]={"python3",helper,"ui-state","--appid",job->appid,NULL};
+        char *const args[]={"python3",helper,"ui-state","--appid",job->appid,
+            "--game-dir",job->game_dir,NULL};
         execvp("python3",args);
         _exit(127);
     }
@@ -4469,6 +4473,7 @@ static void pc2_bridge_readiness_for_game(Game *g){
     PC2BridgeReadiness *job=calloc(1,sizeof *job);
     if(!job)return;
     snprintf(job->appid,sizeof job->appid,"%s",g->appid);
+    snprintf(job->game_dir,sizeof job->game_dir,"%s",g->install_dir);
     job->generation=pc2_bridge_readiness_generation;
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_bridge_readiness_worker,job)==0)
@@ -4552,7 +4557,7 @@ static void *pc2_steam_bridge_worker(void *data){
         const char *argv[16];int n=0;
         argv[n++]="python3";argv[n++]=pc2_steam_bridge_helper();argv[n++]=j->action;
         if(j->appid[0]){argv[n++]="--appid";argv[n++]=j->appid;}
-        if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")||!strcmp(j->action,"preflight")||!strcmp(j->action,"netfx-status")){
+        if(!strcmp(j->action,"setup")||!strcmp(j->action,"status")||!strcmp(j->action,"preflight")||!strcmp(j->action,"netfx-plan")||!strcmp(j->action,"netfx-status")){
             if(j->game_dir[0]){
                 argv[n++]="--game-dir";argv[n++]=j->game_dir;
             }
@@ -4560,7 +4565,7 @@ static void *pc2_steam_bridge_worker(void *data){
                 argv[n++]="--steam-root";argv[n++]=j->steam_root;
             }
         }
-        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
+        if(strcmp(j->action,"status")&&strcmp(j->action,"preflight")&&strcmp(j->action,"netfx-plan")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm";
         argv[n]=NULL;
         execvp("python3",(char *const*)argv);_exit(127);
     }
@@ -4592,7 +4597,7 @@ static void pc2_steam_bridge_action(const char *action){
             return;
         }
     }
-    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-status")){
+    if(strcmp(action,"status")&&strcmp(action,"preflight")&&strcmp(action,"netfx-plan")&&strcmp(action,"netfx-status")){
         char question[1024];
         if(global_upgrade){
             snprintf(question,sizeof question,
@@ -4680,6 +4685,7 @@ static void on_pc2_bridge_primary(GtkButton*b,void*d){
     if(!strcmp(state,"play"))pc2_steam_bridge_action("play");
     else if(!strcmp(state,"setup"))pc2_steam_bridge_action("setup");
     else if(!strcmp(state,"enable"))pc2_steam_bridge_action("trainer-on");
+    else if(!strcmp(state,"runtime"))pc2_steam_bridge_action("netfx-plan");
     else if(pc2_bridge_has_stale_launcher(state,pc2_bridge_ready_reason))
         pc2_steam_bridge_action("upgrade"); /* Existing confirmation; no prefix changes. */
     else if(!strcmp(state,"steam")||!strcmp(state,"repair")){
@@ -4735,6 +4741,7 @@ static void on_pc2_bridge_disable(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_
 static void on_pc2_bridge_gpu_off(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-gpu-off");}
 static void on_pc2_bridge_gpu_on(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("trainer-gpu-on");}
 static void on_pc2_bridge_netfx_status(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("netfx-status");}
+static void on_pc2_bridge_netfx_plan(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("netfx-plan");}
 
 /* WeMod Enhancer is integrated into GameWeld PC2. The Linux release's
  * Python CLI is used, not its separate GUI or the Windows Wand WPF tool.
@@ -5695,6 +5702,9 @@ static GtkWidget *build_settings(void){
             "muted");
         gtk_label_set_line_wrap((GtkLabel*)pc2_steam_bridge_status,TRUE);
         pack(bridge_card,pc2_steam_bridge_status,0);
+        GtkWidget*netfx_plan=button("Plan safe .NET test (read-only)","action");
+        g_signal_connect_data(netfx_plan,"clicked",(GCallback)on_pc2_bridge_netfx_plan,NULL,NULL,0);
+        pack(bridge_card,netfx_plan,0);
         pc2_steam_bridge_quick_upgrade=button("Update Steam Bridge","action");
         g_signal_connect_data(pc2_steam_bridge_quick_upgrade,"clicked",
             (GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);
