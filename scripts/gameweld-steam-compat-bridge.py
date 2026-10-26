@@ -852,6 +852,40 @@ def discover_ge_proton10_candidates(steamapps: Path) -> list[Path]:
     return discovered
 
 
+def prepared_wemod_prefix_options(appid: str, game_dir: Path) -> str:
+    """Read-only prepared-prefix catalog, not an installation path."""
+    if not valid_appid(appid):
+        raise ValueError("Invalid Steam AppID")
+    game = game_dir.expanduser().resolve(strict=True)
+    steamapps = game.parent.parent
+    if (not game.is_dir() or game.parent.name != "common" or
+            steamapps.name != "steamapps" or
+            not (steamapps / f"appmanifest_{appid}.acf").is_file()):
+        raise ValueError("Selected Steam game/manifest mismatch")
+    entry = load_config().get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("Set up the selected game's Steam Bridge first")
+    proton = validate_proton(Path(entry["proton"]))
+    label = proton.parent.name
+    version = proton.parent / "version"
+    if version.is_file() and not version.is_symlink() and version.stat().st_size < 8192:
+        label += " " + version.read_text(encoding="utf-8", errors="replace")[:256]
+    source = Path(__file__).with_name("gameweld-deckcheatz-prefix-catalog.py")
+    if not source.is_file() or source.is_symlink():
+        raise ValueError("Prepared-prefix catalog helper is missing from this GameWeld build")
+    spec = importlib.util.spec_from_file_location("gameweld_prebuilt_catalog", source)
+    if not spec or not spec.loader:
+        raise ValueError("Prepared-prefix catalog cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    report = module.catalog_report(label)
+    return (
+        f"Selected game: AppID {appid} (Steam manifest matched)\n"
+        f"Existing game compatdata: {steamapps / 'compatdata' / appid} (NOT MODIFIED)\n"
+        + report
+    )
+
+
 def netfx_isolation_plan(
     appid: str,
     game_dir: Path,
@@ -1140,9 +1174,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "preflight", "netfx-status", "netfx-plan", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "preflight", "netfx-status", "netfx-plan", "prefix-catalog", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "preflight", "netfx-status", "netfx-plan", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "preflight", "netfx-status", "netfx-plan", "prefix-catalog", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -1164,6 +1198,11 @@ def main() -> int:
             if not args.appid:
                 raise ValueError("Preflight requires --appid")
             print(preflight_report(args.appid, game_dir=args.game_dir))
+            return 0
+        if args.action == "prefix-catalog":
+            if not args.appid or not args.game_dir:
+                raise ValueError("Prepared-prefix lookup requires --appid and --game-dir")
+            print(prepared_wemod_prefix_options(args.appid, args.game_dir))
             return 0
         if args.action == "netfx-plan":
             if not args.appid or not args.game_dir:
