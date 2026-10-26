@@ -293,6 +293,12 @@ route resolves its own source directory before loading the peer inspector.
 This works with the existing source runner and does not require Steam Bridge.
 Synthetic process/GUI-summary regression tests run in CI.
 
+The normal Settings screen now requests a **six-line concise summary**
+(`--format summary`) rather than filling the card with all diagnostic details.
+The detailed read-only report (`--format text`) and machine-readable JSON
+remain available for development/test evidence. The summary always says
+installation is BLOCKED and no changes were made.
+
 This is **read-only status integration**, NOT an installer, lock, trusted
 trainer compatibility check, or permission to change a live prefix.
 
