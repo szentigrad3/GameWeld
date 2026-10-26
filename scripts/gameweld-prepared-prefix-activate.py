@@ -192,13 +192,20 @@ def activate(
         os.rename(current, backup)
         try:
             os.rename(staging, current)
-        except OSError:
-            os.rename(backup, current)
+            data["state"] = "APPLIED"
+            update_journal(root, txid, data)
+        except Exception:
+            # Even if publishing the APPLIED journal fails after the swap,
+            # put the complete original back before returning an error.
+            # Never delete the failed candidate or user data.
+            recovered = parent / f".gameweld-failed-{appid}-{txid}"
+            if current.exists() and not recovered.exists():
+                os.rename(current, recovered)
+            if backup.exists() and not current.exists():
+                os.rename(backup, current)
             data["state"] = "ROLLED_BACK"
             update_journal(root, txid, data)
             raise
-        data["state"] = "APPLIED"
-        update_journal(root, txid, data)
         return {
             "txid": txid, "state": "APPLIED",
             "backup_preserved": True,
