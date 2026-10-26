@@ -230,14 +230,30 @@ def plan(
         "trainer_attachment_verified": False,
         "in_game_activation_verified": False,
     }
-    private = {"client": client, "compat": compat, "context": selected}
+    private = {"client": client, "compat": compat, "context": selected,
+               "appid": appid, "install_dir": install_dir}
     return report, private
 
 
 def launch(report: dict, private: dict, *, approved: bool,
-           state_root: Path | None = None) -> dict:
+           state_root: Path | None = None, proc_root: Path = Path("/proc"),
+           uid: int | None = None) -> dict:
     if not approved or not report["can_attempt_with_explicit_consent"]:
         raise AttachBlocked("Explicit approval and a clean live-session preflight are required")
+    # Recheck the selected game and live Proton environment immediately before
+    # requesting a client subprocess. Do not trust an earlier preview forever.
+    if validate_steam_game(private["appid"], private["install_dir"]) != private["compat"]:
+        raise AttachBlocked("Selected Steam game prefix changed since preview")
+    recent = live_context(private["appid"], private["compat"],
+                          proc_root=proc_root, uid=uid)
+    if (recent["matched_processes"] == 0 or recent["unreadable_processes"] or
+            recent["wemod_already_visible"] or len(recent["contexts"]) != 1 or
+            tuple(recent["contexts"]) != tuple([(
+                str(private["context"]["proton"]),
+                str(private["context"]["steam_root"].resolve(strict=True))
+            )])):
+        raise AttachBlocked("Steam session changed; re-run preview before client launch")
+    validate_client(private["client"])
     runtime = private["context"]
     client = private["client"]
     if runtime is None or client is None:
