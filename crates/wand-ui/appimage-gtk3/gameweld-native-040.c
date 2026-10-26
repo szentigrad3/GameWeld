@@ -4537,10 +4537,10 @@ static gboolean pc2_cache_progress_update(gpointer data){
 }
 static void pc2_cache_report_line(const char *line,char *result,
                                    size_t capacity,size_t *used){
-    if(!strncmp(line,"PROGRESS\\t",9)){
+    if(!strncmp(line,"PROGRESS\t",9)){
         char stage[16]={0};
         long long current=0,total=0;
-        if(sscanf(line+9,"%15[^\\t]\\t%lld\\t%lld",stage,&current,&total)==3
+        if(sscanf(line+9,"%15[^\t]\t%lld\t%lld",stage,&current,&total)==3
            &&total>0&&current>=0&&current<=total){
             PC2CacheProgressEvent *event=calloc(1,sizeof *event);
             if(event){
@@ -4555,7 +4555,7 @@ static void pc2_cache_report_line(const char *line,char *result,
     if(*used+n+2<capacity){
         memcpy(result+*used,line,n);
         *used+=n;
-        result[(*used)++]='\\n';
+        result[(*used)++]='\n';
         result[*used]=0;
     }
 }
@@ -4571,7 +4571,7 @@ static int pc2_cache_collect_output(pid_t pid,int fd,char *result,
             char block[4096];ssize_t n;
             while((n=read(fd,block,sizeof block))>0){
                 for(ssize_t i=0;i<n;i++){
-                    if(block[i]=='\\n'){
+                    if(block[i]=='\n'){
                         line[line_used]=0;
                         pc2_cache_report_line(line,result,capacity,&used);
                         line_used=0;
@@ -4600,7 +4600,7 @@ static int pc2_cache_collect_output(pid_t pid,int fd,char *result,
         char block[4096];ssize_t n;
         while((n=read(fd,block,sizeof block))>0){
             for(ssize_t i=0;i<n;i++){
-                if(block[i]=='\\n'){
+                if(block[i]=='\n'){
                     line[line_used]=0;
                     pc2_cache_report_line(line,result,capacity,&used);
                     line_used=0;
