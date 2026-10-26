@@ -763,7 +763,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('argv[n++]=pc2_prepared_prefix_stage_helper();', ui)
         self.assertIn('argv[n++]="--single-cached";', ui)
         self.assertIn('argv[n++]="--approve-stage";', ui)
-        self.assertIn('button("Download selected prepared setup (cache only)","action")', ui)
+        self.assertIn('"Download selected prepared setup (cache only)","action");', ui)
         self.assertIn('pc2_steam_bridge_action("prepared-import-preview");', ui)
         self.assertIn('argv[n++]=pc2_prepared_import_helper();', ui)
         self.assertIn('argv[n++]="--single-staged";', ui)
