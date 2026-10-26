@@ -402,6 +402,52 @@ change, or game execution based solely on a process name. A real observed
 trainer effect and separately proven native launch/attachment remain required
 for the first public WeMod integration milestone.
 
+## DeckCheatz tested .NET prefix import — first integration
+
+The original DeckCheatz 1.x launcher reuses a GE-Proton-compatible, tested
+prefix in place of rebuilding `dotnet48` with winetricks. Its exported ZIP
+intentionally excludes the `version` file; the Proton version is supplied by
+the release asset filename, e.g. `GE-Proton10.1.zip` (PfxVer10.1).
+GameWeld now retains the GitHub asset/tag metadata through cache → stage,
+matches GE-Proton major/minor to the selected game and rejects mismatches.
+The .wemod_installer marker and staged hashes are checked.
+
+**Normal source GUI workflow (development):**
+
+1. In Settings → WeMod & DeckCheatz choose **Find prepared WeMod setup**.
+2. Manually select an appropriate release; press **Download selected prepared
+   setup (cache only)** and approve the download. Nothing is installed.
+3. Select **Stage downloaded .NET prefix (isolated)**, confirm. This extracts
+   exactly one cached ZIP into the private GameWeld cache; does not touch
+   Steam's prefix. When there are multiple cached ZIPs, the automatic path
+   refuses to guess.
+4. With a selected Steam game, use **Review prepared .NET prefix (read-only)**
+   to compare actual game's compatdata/version against the staged template.
+   Exact GE-Proton major/minor match and verified template files are required.
+
+The developer-only CLI can then create a merged copy, independently of the
+game, using `gameweld-prepared-prefix-import.py --single-staged --appid <APPID> --install-dir <GAME_INSTALL_DIRECTORY> --prepare-isolated-copy --approve-isolated-copy`.
+It preserves the selected game's original registry/saves and fingerprints the
+game files before/after copying. In the **candidate only**, template registry
+files and .NET files may override collisions. It cannot be run as a normal
+public install command.
+
+`gameweld-prepared-prefix-activate.py` is a separate, **PRIVATE and
+DISABLED-BY-DEFAULT** experimental transaction prototype. It requires an
+explicit environment opt-in and three command-line approvals, first makes
+a same-filesystem copy, keeps the entire original compatdata directory as
+a backup, and can restore the backup. It also provides recovery for an
+interrupted directory swap. These mechanics currently have only synthetic
+regression tests. **Do not run it on personal game prefixes until the actual
+prepared archive, Proton version, backup, crash recovery and game launch have
+been verified together.** No Install/Play button invokes this prototype.
+
+A prepared prefix solves preconfigured dependencies; it does NOT guarantee
+that WeMod can connect to every game without the DeckCheatz launch wrapper.
+The Astrometica success was with `%command%` and
+`WINEDLLOVERRIDES=version=n,b`, which does not prove an
+option-free attachment. This is a separate remaining end-to-end test.
+
 ## Required transactional installer (not implemented)
 
 - Trusted upstream release origin and integrity verification. Metadata filename
