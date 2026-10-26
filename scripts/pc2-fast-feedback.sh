@@ -10,6 +10,7 @@ echo "GameWeld PC2 — FAST offline feedback (NOT a release qualification)"
 python3 -m py_compile \
   scripts/gameweld-wemod-native-route.py \
   scripts/gameweld-wemod-live-attach.py \
+  scripts/gameweld-prepared-prefix-import.py \
   scripts/gameweld-prefix-runtime-preflight.py \
   scripts/gameweld-deckcheatz-prefix-catalog.py \
   scripts/gameweld-prepared-prefix-audit.py \
@@ -33,6 +34,7 @@ suites=(
   test_gameweld_prefix_runtime_preflight.py
   test_gameweld_wemod_native_route.py
   test_gameweld_wemod_live_attach.py
+  test_gameweld_prepared_prefix_import.py
 )
 for suite in "${suites[@]}"; do
   echo "== $suite =="
