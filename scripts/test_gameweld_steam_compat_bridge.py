@@ -392,6 +392,72 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertEqual(bridge.config_path().read_bytes(), before_config)
             self.assertFalse((self.steam / "config/config.vdf").exists())
 
+    def test_missing_clr_both_architectures_warns_even_with_registry_claim(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            (self.client / "version.dll").write_bytes(b"fixture")
+            (self.client / "resources/app.asar.backup").write_bytes(b"fixture")
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir(parents=True)
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text(
+                '"appid" "3008130"'
+            )
+            prefix = self.steam / "steamapps/compatdata/3008130/pfx"
+            prefix.mkdir(parents=True)
+            registry = prefix / "system.reg"
+            registry.write_text(
+                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\\n'
+                '"Release"=dword:00082348\\n'
+            )
+            folder = prefix / "drive_c/windows/Microsoft.NET"
+            for arch in ("Framework", "Framework64"):
+                runtime = folder / arch / "v4.0.30319"
+                runtime.mkdir(parents=True)
+                (runtime / "mscorlib.dll").write_bytes(b"short-placeholder")
+            before = registry.read_bytes()
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ), patch.object(
+                bridge.subprocess, "Popen",
+                side_effect=AssertionError("read-only inspection started a process")
+            ):
+                report = bridge.preflight_report("3008130", game_dir=game)
+            self.assertIn("Next action: PLAY", report)
+            self.assertIn("registration entries found", report)
+            self.assertIn(".NET CLR Framework/clr.dll: MISSING", report)
+            self.assertIn(".NET CLR Framework64/clr.dll: MISSING", report)
+            self.assertIn("both Windows .NET Framework v4 clr.dll files are missing", report)
+            self.assertIn("registration alone cannot establish a working CLR", report)
+            self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
+            self.assertEqual(registry.read_bytes(), before)
+
+    def test_clr_evidence_present_is_not_proof_of_runtime(self):
+        with patch.dict(os.environ, self.env):
+            prefix = self.root / "independent-game/pfx"
+            for arch in ("Framework", "Framework64"):
+                runtime = prefix / "drive_c/windows/Microsoft.NET" / arch / "v4.0.30319"
+                runtime.mkdir(parents=True)
+                (runtime / "clr.dll").write_bytes(b"test-mock-dll")
+                (runtime / "mscorlib.dll").write_bytes(b"test-mock-mscorlib")
+            report = "\\n".join(bridge.netfx_clr_evidence(prefix))
+            self.assertIn("Framework/clr.dll: present", report)
+            self.assertIn("Framework64/clr.dll: present", report)
+            self.assertIn("loading and WeMod compatibility NOT verified", report)
+            self.assertNotIn("WARNING:", report)
+
+    def test_clr_evidence_missing_or_symlinked_prefix_is_inconclusive(self):
+        with patch.dict(os.environ, self.env):
+            absent = self.root / "missing/pfx"
+            self.assertIn("INCONCLUSIVE", "\\n".join(bridge.netfx_clr_evidence(absent)))
+            prefix = self.root / "working/pfx"
+            (prefix / "drive_c/windows/Microsoft.NET").mkdir(parents=True)
+            link = self.root / "prefix-link"
+            link.symlink_to(prefix, target_is_directory=True)
+            self.assertIn("INCONCLUSIVE", "\\n".join(bridge.netfx_clr_evidence(link)))
+            self.assertNotIn("WARNING:", "\\n".join(bridge.netfx_clr_evidence(link)))
+
     def test_preflight_unconfigured_does_not_run_installers(self):
         with patch.dict(os.environ, self.env):
             with patch.object(
