@@ -97,7 +97,8 @@ class LiveAttachTests(unittest.TestCase):
             called.append((argv, kwargs))
             return Child()
         with patch.object(helper.subprocess, "Popen", capture):
-            result = helper.launch(report, private, approved=True, state_root=self.root_state)
+            result = helper.launch(report, private, approved=True, state_root=self.root_state,
+                                   proc_root=self.proc, uid=os.getuid())
         self.assertEqual(result["pid"], 43210)
         self.assertEqual(len(called), 1)
         args, options = called[0]
@@ -182,6 +183,28 @@ class LiveAttachTests(unittest.TestCase):
         report, _ = self.plan()
         self.assertFalse(report["unique_proton_context"])
         self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.unchanged()
+
+    def test_session_closes_between_preview_and_launch(self):
+        report, private = self.plan()
+        (self.pid / "environ").unlink()
+        with patch.object(helper.subprocess, "Popen") as spawned:
+            with self.assertRaisesRegex(helper.AttachBlocked, "session changed"):
+                helper.launch(report, private, approved=True, state_root=self.root_state,
+                              proc_root=self.proc, uid=os.getuid())
+            spawned.assert_not_called()
+        self.assertFalse(self.root_state.exists())
+        self.unchanged()
+
+    def test_wemod_starts_between_preview_and_launch(self):
+        report, private = self.plan()
+        self.make_proc(client=True)
+        with patch.object(helper.subprocess, "Popen") as spawned:
+            with self.assertRaisesRegex(helper.AttachBlocked, "session changed"):
+                helper.launch(report, private, approved=True, state_root=self.root_state,
+                              proc_root=self.proc, uid=os.getuid())
+            spawned.assert_not_called()
+        self.assertFalse(self.root_state.exists())
         self.unchanged()
 
     def test_no_risky_steam_config_files_created(self):
