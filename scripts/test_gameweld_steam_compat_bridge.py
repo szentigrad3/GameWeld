@@ -762,6 +762,8 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('strcmp(s, "Legacy: Play using existing Steam Bridge")', guard)
         self.assertIn('argv[n++]=pc2_native_route_helper();', ui)
         self.assertIn('argv[n++]="--format";argv[n++]="summary";', ui)
+        self.assertIn('style(pc2_native_route_status,"game-connection-summary");', ui)
+        self.assertIn('.game-connection-summary{', ui)
         self.assertIn('strcmp(j->action,"native-route")', ui)
         self.assertIn('if(native_route)', ui)
         self.assertIn('if(!global_upgrade&&!global_catalog&&!global_cache)', ui)
