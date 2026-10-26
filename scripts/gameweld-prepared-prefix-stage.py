@@ -222,7 +222,9 @@ def stage_cached_archive(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--archive", required=True, type=Path)
+    parser.add_argument("--archive", type=Path)
+    parser.add_argument("--single-cached", action="store_true",
+                        help="Use only if exactly one managed downloaded ZIP exists")
     parser.add_argument("--cache-root", type=Path,
                         default=Path(os.environ.get("XDG_CACHE_HOME") or
                                      str(Path.home() / ".cache")) /
@@ -235,8 +237,22 @@ def main(argv: list[str] | None = None) -> int:
     def on_progress(stage: str, current: int, total: int) -> None:
         print(f"PROGRESS\t{stage}\t{current}\t{total}", flush=True)
     try:
+        if args.single_cached and args.archive is not None:
+            raise StageRefused("Specify one source: --archive or --single-cached")
+        if args.single_cached:
+            downloads = args.cache_root / "downloads"
+            if not downloads.is_dir() or downloads.is_symlink():
+                raise StageRefused("No managed prepared ZIP has been downloaded")
+            archives = list(downloads.glob("*.zip"))
+            if len(archives) != 1:
+                raise StageRefused("Exactly one cached ZIP is required for automatic staging")
+            archive_file = archives[0]
+        else:
+            if args.archive is None:
+                raise StageRefused("Select an archive or use --single-cached")
+            archive_file = args.archive
         result = stage_cached_archive(
-            args.archive, cache_root=args.cache_root,
+            archive_file, cache_root=args.cache_root,
             approved=args.approve_stage, expected_sha256=args.expected_sha256,
             progress=on_progress if args.progress else None
         )
