@@ -46,10 +46,11 @@ def fixture_root(root: Path) -> Path:
     if marker.is_symlink() or not marker.is_file() or marker.stat().st_size > 256:
         raise TransactionRefused("Synthetic fixture marker missing or unsafe")
     try:
-        if json.loads(marker.read_text(encoding="utf-8")) != MARKER:
-            raise TransactionRefused("This is not a valid synthetic fixture")
+        marker_value = json.loads(marker.read_text(encoding="utf-8"))
     except (ValueError, UnicodeError) as exc:
         raise TransactionRefused("Synthetic marker is invalid") from exc
+    if marker_value != MARKER:
+        raise TransactionRefused("This is not a valid synthetic fixture")
     return root
 
 
