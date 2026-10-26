@@ -104,6 +104,7 @@ def procfs_report(
     matches: list[int] = []
     wemod_candidates = 0
     wemod_name_unknown = 0
+    wemod_name_inspected = 0
     unreadable = 0
     scanned = 0
     if not proc_root.is_dir():
@@ -121,6 +122,8 @@ def procfs_report(
             "provider": provider, "game_id": game_id,
             "game_runtime_idle_verified": False,
             "wemod_process_candidates": 0,
+            "wemod_process_name_inspected": 0,
+            "wemod_process_name_unreadable": 0,
             "wemod_process_state": "UNVERIFIED",
             "trainer_attached": False,
             "installer_authorized": False, "reason": "Process count above inspection limit"
@@ -155,8 +158,11 @@ def procfs_report(
             process_name = is_wemod_process(pid)
             if process_name is True:
                 wemod_candidates += 1
+                wemod_name_inspected += 1
             elif process_name is None:
                 wemod_name_unknown += 1
+            else:
+                wemod_name_inspected += 1
     # A positive match blocks immediately. A negative result is advisory only.
     state = "ACTIVE" if matches else "UNKNOWN" if unreadable else "IDLE_CANDIDATE"
     wemod_state = (
@@ -170,6 +176,7 @@ def procfs_report(
         "matching_processes": matches[:50],
         "matching_process_count": len(matches),
         "wemod_process_candidates": wemod_candidates,
+        "wemod_process_name_inspected": wemod_name_inspected,
         "wemod_process_state": wemod_state,
         "wemod_process_name_unreadable": wemod_name_unknown,
         "trainer_attached": False,
