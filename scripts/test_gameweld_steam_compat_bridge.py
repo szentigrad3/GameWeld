@@ -586,6 +586,49 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             self.assertEqual(bridge.config_path().read_bytes(), before)
             self.assertFalse((self.home / ".cache").exists())
 
+    def test_ge_proton10_managed_runtime_is_discovered_without_running_it(self):
+        with patch.dict(os.environ, self.env):
+            managed = self.data / "gameweld/repair-runtimes/GE-Proton10-34"
+            managed.mkdir(parents=True)
+            exe = managed / "proton"
+            exe.write_text("#!/bin/sh\nexit 77\n")
+            exe.chmod(0o755)
+            (managed / "toolmanifest.vdf").write_text('"manifest" {}\n')
+            with patch.object(
+                bridge.subprocess, "Popen",
+                side_effect=AssertionError("candidate must never run"),
+            ), patch.object(
+                bridge.subprocess, "run",
+                side_effect=AssertionError("candidate must never run"),
+            ):
+                matches = bridge.discover_ge_proton10_candidates(
+                    self.steam / "steamapps"
+                )
+            self.assertEqual(matches, [exe.resolve()])
+
+    def test_ge_proton10_heroic_runtime_is_discovered_without_settings_change(self):
+        with patch.dict(os.environ, self.env):
+            heroic = self.home / ".config/heroic/tools/proton/GE-Proton10-34"
+            heroic.mkdir(parents=True)
+            exe = heroic / "proton"
+            exe.write_text("#!/bin/sh\nexit 77\n")
+            exe.chmod(0o755)
+            (heroic / "toolmanifest.vdf").write_text('"manifest" {}\n')
+            matches = bridge.discover_ge_proton10_candidates(self.steam / "steamapps")
+            self.assertEqual(matches, [exe.resolve()])
+            self.assertFalse(bridge.config_path().exists())
+
+    def test_ge_proton10_managed_runtime_rejects_missing_manifest(self):
+        with patch.dict(os.environ, self.env):
+            managed = self.data / "gameweld/repair-runtimes/GE-Proton10-34"
+            managed.mkdir(parents=True)
+            exe = managed / "proton"
+            exe.write_text("#!/bin/sh\nexit 77\n")
+            exe.chmod(0o755)
+            matches = bridge.discover_ge_proton10_candidates(self.steam / "steamapps")
+            self.assertEqual(matches, [])
+            self.assertTrue(exe.exists())
+
     def test_ge_proton10_candidate_skips_symlink_and_invalid_lookalikes(self):
         with patch.dict(os.environ, self.env):
             root = self.steam / "compatibilitytools.d"
