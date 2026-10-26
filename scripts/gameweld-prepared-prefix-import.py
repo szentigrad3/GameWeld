@@ -167,6 +167,60 @@ def staged_prefix(stage_dir: Path, cache_root: Path) -> tuple[Path, dict]:
     return payload, metadata
 
 
+
+def select_staged_release(cache_root: Path, release_url: str) -> Path:
+    """Select the staged template corresponding to the user's selected ZIP."""
+    import importlib.util
+    script = Path(__file__).resolve().with_name(
+        "gameweld-prepared-prefix-cache.py")
+    if script.is_symlink() or not script.is_file():
+        raise ImportBlocked("Selected-release validator unavailable")
+    spec = importlib.util.spec_from_file_location("gw_import_cache_validator", script)
+    if spec is None or spec.loader is None:
+        raise ImportBlocked("Cannot load release selection validator")
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    try:
+        tag, asset = validator.validate_release_url(release_url)
+    except (ValueError, OSError) as exc:
+        raise ImportBlocked("Invalid selected DeckCheatz release") from exc
+    root = private_root(cache_root, "prepared-wemod")
+    stages = root / "staging"
+    if stages.is_symlink() or not stages.is_dir():
+        raise ImportBlocked(
+            "Selected ZIP is not staged. Finish Step 2 — Stage downloaded "
+            ".NET prefix (isolated) first.")
+    candidates = list(stages.iterdir())
+    if len(candidates) > 256:
+        raise ImportBlocked("Too many staged templates to select safely")
+    matches = []
+    for folder in candidates:
+        if folder.is_symlink():
+            raise ImportBlocked("Unsafe symlinked staging directory")
+        if not folder.is_dir() or not DIGEST.fullmatch(folder.name):
+            continue
+        record = folder / "manifest.json"
+        if record.is_symlink() or not record.is_file() or record.stat().st_size > 16 * 1024**2:
+            raise ImportBlocked("Unsafe or missing staged manifest")
+        try:
+            info = json.loads(record.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise ImportBlocked("Invalid staged template metadata") from exc
+        if not isinstance(info, dict) or info.get("source_archive_sha256") != folder.name:
+            raise ImportBlocked("Staged archive identity mismatch")
+        if info.get("source_release") == tag and info.get("source_asset") == asset:
+            staged_prefix(folder, cache_root)
+            matches.append(folder)
+    if not matches:
+        raise ImportBlocked(
+            "The selected release has not been staged. Complete Step 2 "
+            "for this exact release before reviewing compatibility.")
+    if len(matches) != 1:
+        raise ImportBlocked(
+            "Several staged copies match the selected release; cannot choose safely")
+    return matches[0]
+
+
 def manifest_preflight(payload: Path, metadata: dict) -> tuple[int, int]:
     files = metadata.get("files")
     if not isinstance(files, list) or len(files) > 40_000:
@@ -326,6 +380,7 @@ def main(argv=None) -> int:
     parser.add_argument("--install-dir", type=Path, required=True)
     parser.add_argument("--stage-dir", type=Path)
     parser.add_argument("--single-staged", action="store_true")
+    parser.add_argument("--release-asset-url", help="Review exactly this staged release")
     parser.add_argument("--cache-root", type=Path, default=Path(
         os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
     ) / "gameweld/prepared-wemod")
@@ -340,7 +395,12 @@ def main(argv=None) -> int:
         if args.approve_isolated_copy and not args.prepare_isolated_copy:
             raise ImportBlocked("Approval is only valid for isolated-copy preparation")
         selected = args.stage_dir
-        if args.single_staged:
+        if sum((selected is not None, args.single_staged,
+                args.release_asset_url is not None)) != 1:
+            raise ImportBlocked("Select exactly one staged template or release")
+        if args.release_asset_url is not None:
+            selected = select_staged_release(args.cache_root, args.release_asset_url)
+        elif args.single_staged:
             if selected is not None:
                 raise ImportBlocked("Select a path or use automatic single-stage selection")
             stages = args.cache_root / "staging"
