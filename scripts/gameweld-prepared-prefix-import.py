@@ -177,11 +177,20 @@ def preview(appid: str, install: Path, stage: Path, *,
     private_root(state_root, "prefix-imports")
     payload, metadata = staged_prefix(stage, cache_root)
     actual = load_version(game / "version")
-    incoming = load_version(payload / "version")
     current = version_parts(actual)
-    downloaded = version_parts(incoming)
+    # DeckCheatz archives omit version; use recorded GitHub release asset name.
+    asset = metadata.get("source_asset")
+    release = metadata.get("source_release")
+    source_version = version_parts(asset) if isinstance(asset, str) else None
+    if not source_version and isinstance(release, str):
+        source_version = version_parts(release)
+    embedded_path = payload / "version"
+    embedded_version = version_parts(load_version(embedded_path)) if embedded_path.exists() else None
+    if source_version and embedded_version and source_version != embedded_version:
+        raise ImportBlocked("Prepared Proton version disagrees with asset metadata")
+    downloaded = embedded_version or source_version
     if not current or not downloaded:
-        raise ImportBlocked("Exact GE-Proton major/minor version is not recognizable")
+        raise ImportBlocked("GE-Proton version cannot be established from game and cache record")
     if current != downloaded:
         raise ImportBlocked("Prepared GE-Proton version does not match selected game's prefix")
     template_count, template_bytes = manifest_preflight(payload, metadata)
