@@ -83,6 +83,74 @@ class PreparedPrefixStageTests(unittest.TestCase):
         self.assertFalse((self.cache / "staging").exists())
         self.untouched()
 
+    def add_source_record(self, archive, tag="PfxVer10.1", asset="GE-Proton10.1.zip"):
+        import json
+        record = {
+            "sha256": archive.stem,
+            "source": "DeckCheatz/BuiltPrefixes-dev",
+            "release_tag": tag,
+            "asset_name": asset,
+            "bytes": archive.stat().st_size,
+            "publisher_authenticity": "UNVERIFIED",
+        }
+        path = archive.with_suffix(".source.json")
+        path.write_text(json.dumps(record))
+        return path
+
+    def selected_url(self, tag="PfxVer10.1", asset="GE-Proton10.1.zip"):
+        return (f"https://github.com/DeckCheatz/BuiltPrefixes-dev/"
+                f"releases/download/{tag}/{asset}")
+
+    def test_selected_release_chooses_matching_zip_among_multiple_cached(self):
+        self.add_source_record(self.archive)
+        other = self.make_zip([("pfx/unrelated.bin", b"UNRELATED")])
+        self.add_source_record(other, tag="PfxVer9.26", asset="GE-Proton9.26.zip")
+        chosen = stage.select_cached_release(self.cache, self.selected_url())
+        self.assertEqual(chosen, self.archive)
+        result = self.call(archive=chosen)
+        self.assertEqual(result["source_asset"], "GE-Proton10.1.zip")
+        self.assertFalse(result["installed_to_game"])
+        self.untouched()
+
+    def test_selected_release_not_downloaded_does_not_stage_other_version(self):
+        other = self.make_zip([("pfx/unrelated.bin", b"UNRELATED")])
+        self.add_source_record(other, tag="PfxVer9.26", asset="GE-Proton9.26.zip")
+        with self.assertRaisesRegex(stage.StageRefused, "Step 1"):
+            stage.select_cached_release(self.cache, self.selected_url())
+        self.assertFalse((self.cache / "staging").exists())
+        self.untouched()
+
+    def test_selected_release_fails_closed_on_corrupted_source_record(self):
+        record = self.add_source_record(self.archive)
+        import json
+        value = json.loads(record.read_text())
+        value["sha256"] = "0" * 64
+        record.write_text(json.dumps(value))
+        with self.assertRaisesRegex(stage.StageRefused, "inconsistent provenance"):
+            stage.select_cached_release(self.cache, self.selected_url())
+        self.untouched()
+
+    def test_selected_release_rejects_ambiguous_same_release(self):
+        self.add_source_record(self.archive)
+        second = self.make_zip([("pfx/second.bin", b"SECOND")])
+        self.add_source_record(second)
+        with self.assertRaisesRegex(stage.StageRefused, "Multiple cached copies"):
+            stage.select_cached_release(self.cache, self.selected_url())
+        self.untouched()
+
+    def test_selected_release_rejects_metadata_symlink(self):
+        record = self.add_source_record(self.archive)
+        record.unlink()
+        record.symlink_to(self.archive)
+        with self.assertRaisesRegex(stage.StageRefused, "Unsafe cached release metadata"):
+            stage.select_cached_release(self.cache, self.selected_url())
+        self.untouched()
+
+    def test_selected_release_rejects_foreign_url(self):
+        with self.assertRaisesRegex(stage.StageRefused, "Invalid selected"):
+            stage.select_cached_release(self.cache, "https://evil.example/prefix.zip")
+        self.untouched()
+
     def test_approval_required_and_no_staging_directory_created(self):
         with self.assertRaisesRegex(stage.StageRefused, "Explicit"):
             self.call(approved=False)
