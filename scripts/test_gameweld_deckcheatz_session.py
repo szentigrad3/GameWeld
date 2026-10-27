@@ -210,7 +210,7 @@ class SingleSessionTests(unittest.TestCase):
                        '" { "LaunchOptions" "' + escaped +
                        '" } } } } } }', encoding="utf-8")
         original = cfg.read_bytes()
-        with self.assertRaises(session.SessionBlocked):
+        with self.assertRaisesRegex(ValueError, "Need one Steam account"):
             session.verify_steam_option(
                 self.appid, wrapper=launcher,
                 steam_root=self.root / "no-such-steam")
