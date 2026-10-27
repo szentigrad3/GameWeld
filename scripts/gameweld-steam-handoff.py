@@ -61,7 +61,8 @@ def associated_process_count(appid: str, root: str = "/proc") -> int:
 
 
 def run_launch(appid: str, *, steam: str | None = None,
-               duration: float = OBSERVE_SECONDS) -> int:
+               duration: float = OBSERVE_SECONDS,
+               require_idle_before_launch: bool = False) -> int:
     executable = steam or shutil.which("steam")
     if not executable:
         print("Steam executable: NOT FOUND on GameWeld's PATH.", flush=True)
@@ -71,6 +72,10 @@ def run_launch(appid: str, *, steam: str | None = None,
     previous = associated_process_count(appid)
     if previous:
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
+    if require_idle_before_launch and previous:
+        print("Launch result: FAILED (this Steam AppID already has a running associated process).", flush=True)
+        print("The game and any WeMod session must be closed before requesting a new wrapper launch.", flush=True)
+        return 3
     # The running Steam client may accept IPC and return immediately; stdout
     # therefore goes to an ephemeral file, not a pipe that keeps GameWeld
     # waiting forever because a game inherited the file descriptor.
@@ -117,6 +122,8 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "launch"))
     parser.add_argument("--appid", required=True)
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--require-idle-before-launch", action="store_true",
+                        help="Fail before launching if the exact AppID has an existing process")
     args = parser.parse_args()
     if not valid_appid(args.appid):
         parser.error("Invalid decimal Steam App ID")
@@ -131,7 +138,8 @@ def main() -> int:
         return 0
     if not args.confirm:
         parser.error("Steam launch requires an explicit --confirm from GameWeld's user dialog")
-    return run_launch(args.appid)
+    return run_launch(args.appid,
+                      require_idle_before_launch=args.require_idle_before_launch)
 
 
 if __name__ == "__main__":
