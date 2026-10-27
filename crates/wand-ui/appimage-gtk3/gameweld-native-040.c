@@ -5611,9 +5611,9 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         return;
     }
     char *preview=calloc(1,65536),*saved=calloc(1,65536);
-    char *original=calloc(1,18000),*merged=calloc(1,36000),*confirmed=calloc(1,36000);
+    char *original=calloc(1,18000),*merged=calloc(1,36000),*confirmed=calloc(1,36000),*confirmed_original=calloc(1,18000);
     char *decision=calloc(1,100);
-    if(!preview||!saved||!original||!merged||!confirmed||!decision){
+    if(!preview||!saved||!original||!merged||!confirmed||!confirmed_original||!decision){
         log_line("Steam option protection: cannot allocate bounded inspection output.");
         goto done;
     }
@@ -5677,7 +5677,9 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         goto done;
     }
     json_string(saved,"proposed_launch_option",confirmed,36000);
-    if(strcmp(merged,confirmed) || !strstr(saved,"\"ORIGINAL_BACKUP_SAVED\"")){
+    json_string(saved,"original_launch_option",confirmed_original,18000);
+    if(strcmp(original,confirmed_original) || strcmp(merged,confirmed) ||
+       !strstr(saved,"\"ORIGINAL_BACKUP_SAVED\"")){
         pc2_steam_option_message("Steam options changed during preparation",
             "The proposed command no longer matches the preview. "
             "No replacement has been copied. Steam remains unchanged.",NULL);
@@ -5692,7 +5694,7 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         "GameWeld has not edited Steam.",merged);
     log_line("Saved exact original Steam options for AppID %s; copied safe combined command. Steam itself unchanged.",g->appid);
 done:
-    free(preview);free(saved);free(original);free(merged);free(confirmed);free(decision);
+    free(preview);free(saved);free(original);free(merged);free(confirmed);free(confirmed_original);free(decision);
 }
 static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     (void)b;(void)d;
