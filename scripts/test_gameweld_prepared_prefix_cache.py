@@ -214,6 +214,7 @@ class PreparedPrefixCacheTests(unittest.TestCase):
         report = cache.rejected_cache_status(self.cache_root)
         self.assertIn("Source metadata receipt present", report)
         self.assertIn("case_collision: 1", report)
+        self.assertIn("Additional ZIP metadata safety check: PASS", report)
         self.assertIn("Collision payloads different_payload: 1", report)
         self.assertIn("cannot be staged", report)
         self.assertIn("pfx/Drive_C", report)
