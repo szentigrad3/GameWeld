@@ -117,6 +117,7 @@ class WineCaseRehearsalTests(unittest.TestCase):
         out = rehearsal.run_creation_order_matrix(
             self.root, runner=self.fake_wine, wine_exe="/synthetic-wine")
         self.assertIn("Order-dependent lookup groups: 0", out)
+        self.assertIn("CASE-COLLIDING ARCHIVES STILL BLOCKED", out)
         self.assertIn("EXACT CASE OK IN BOTH", out)
         self.assertIn("Real archive staging and installation: STILL BLOCKED", out)
         self.assert_safe()
@@ -135,6 +136,7 @@ class WineCaseRehearsalTests(unittest.TestCase):
             out = rehearsal.run_creation_order_matrix(self.root)
         self.assertEqual(flags, [False, True])
         self.assertIn("Order-dependent lookup groups: 2", out)
+        self.assertIn("RUNTIME VERDICT: CASE-AMBIGUOUS PATH RESOLUTION CHANGES", out)
         self.assertIn("ORDER-DEPENDENT", out)
         self.assertIn("Real archive staging and installation: STILL BLOCKED", out)
         self.assert_safe()
