@@ -27,6 +27,7 @@ APPID_RE = re.compile(r"[1-9][0-9]{0,9}\Z")
 DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 CHUNK = 1024 * 1024
 RESERVE = 512 * 1024 * 1024
+MAX_EXPLICIT_UNKNOWN_PROCESSES = 8
 SOURCE = "DeckCheatz/BuiltPrefixes-dev"
 EXPECTED = ("PfxVer10.1", "GE-Proton10.1.zip")
 EXPECTED_GROUPS = {
@@ -132,17 +133,39 @@ def status_report(appid: str, steamapps: Path) -> dict:
             state == "IDLE_CANDIDATE" and
             report.get("unreadable_same_user_processes", 0) == 0 and
             not has_backup and not has_tested,
+        "experimental_unknown_override_available":
+            may_override_unknown(report) and
+            not has_backup and not has_tested,
         "verdict": process_verdict(report),
         "prefix_modified": False,
         "note": "Read-only process preflight. No ZIP extraction or prefix swap.",
     }
 
 
-def check_idle(appid: str, current: Path) -> None:
+def may_override_unknown(report: dict) -> bool:
+    """Narrow explicit-risk exception. Never overridable on positive matches."""
+    return (
+        report.get("state") == "UNKNOWN" and
+        report.get("matching_process_count", 0) == 0 and
+        not report.get("matching_processes") and
+        type(report.get("unreadable_same_user_processes")) is int and
+        0 < report["unreadable_same_user_processes"] <= MAX_EXPLICIT_UNKNOWN_PROCESSES
+    )
+
+
+def check_idle(appid: str, current: Path, *,
+               allow_unreadable: bool = False) -> None:
     report = process_report(appid, current)
-    if (report.get("state") != "IDLE_CANDIDATE" or
-            report.get("unreadable_same_user_processes", 0)):
-        raise QuickTryBlocked(process_verdict(report))
+    if (report.get("state") == "IDLE_CANDIDATE" and
+            report.get("unreadable_same_user_processes", 0) == 0 and
+            report.get("matching_process_count", 0) == 0 and
+            not report.get("matching_processes")):
+        return
+    if allow_unreadable and may_override_unknown(report):
+        # User must also provide the regular closed-game acknowledgement
+        # and experimental-swap approval. Check again before changing paths.
+        return
+    raise QuickTryBlocked(process_verdict(report))
 
 
 def find_zip(cache_root: Path):
@@ -256,13 +279,17 @@ def extract_overlay(archive: Path, target: Path, max_bytes: int) -> int:
 
 def prepare(appid: str, steamapps: Path, cache_root: Path,
             *, acknowledge_closed: bool, accept: bool,
+            allow_unreadable: bool = False,
             idle_checker=check_idle):
     if not (acknowledge_closed and accept):
         raise QuickTryBlocked("Explicit closed-game and experimental-swap approvals required")
     current, backup, tested = check_steam(appid, steamapps)
     if backup.exists() or backup.is_symlink() or tested.exists() or tested.is_symlink():
         raise QuickTryBlocked("Another GameWeld quick try exists; restore/review it first")
-    idle_checker(appid, current)
+    if allow_unreadable:
+        idle_checker(appid, current, allow_unreadable=True)
+    else:
+        idle_checker(appid, current)
     archive = find_zip(cache_root)
     count, size = verify_archive(archive)
     importer = load("gw_quick_try_size", "gameweld-prepared-prefix-import.py")
@@ -274,8 +301,11 @@ def prepare(appid: str, steamapps: Path, cache_root: Path,
     try:
         shutil.copytree(current, candidate, symlinks=True)
         extracted = extract_overlay(archive, candidate, size)
-        # Check original is still idle and has not changed at top level.
-        idle_checker(appid, current)
+        # Recheck right before swapping; a positively detected game ALWAYS blocks.
+        if allow_unreadable:
+            idle_checker(appid, current, allow_unreadable=True)
+        else:
+            idle_checker(appid, current)
         if backup.exists() or backup.is_symlink() or not current.is_dir():
             raise QuickTryBlocked("Game prefix changed or backup appeared during preparation")
         os.rename(current, backup)
@@ -291,7 +321,9 @@ def prepare(appid: str, steamapps: Path, cache_root: Path,
             "launch": f"steam -applaunch {appid}",
             "restore": f"python3 scripts/gameweld-quick-try-prefix.py --restore "
                        f"--appid {appid} --steamapps '{steamapps}' "
-                       "--acknowledge-game-closed --accept-experimental-swap",
+                       "--acknowledge-game-closed --accept-experimental-swap" +
+                       (" --accept-unreadable-process-risk" if allow_unreadable else ""),
+            "unknown_process_override_used": allow_unreadable,
             "warning": "Experimental Wine case-ambiguous prefix; game/trainer may fail",
         }
     finally:
@@ -301,6 +333,7 @@ def prepare(appid: str, steamapps: Path, cache_root: Path,
 
 def restore(appid: str, steamapps: Path, *,
             acknowledge_closed: bool, accept: bool,
+            allow_unreadable: bool = False,
             idle_checker=check_idle):
     if not (acknowledge_closed and accept):
         raise QuickTryBlocked("Explicit closed-game and experimental-swap approvals required")
@@ -308,7 +341,10 @@ def restore(appid: str, steamapps: Path, *,
     if (backup.is_symlink() or not backup.is_dir() or
             tested.exists() or tested.is_symlink()):
         raise QuickTryBlocked("No unambiguous original backup available for restore")
-    idle_checker(appid, current)
+    if allow_unreadable:
+        idle_checker(appid, current, allow_unreadable=True)
+    else:
+        idle_checker(appid, current)
     os.rename(current, tested)
     try:
         os.rename(backup, current)
@@ -336,20 +372,27 @@ def main() -> int:
     parser.add_argument("--cache-root", type=Path, default=cache / "gameweld/prepared-wemod")
     parser.add_argument("--acknowledge-game-closed", action="store_true")
     parser.add_argument("--accept-experimental-swap", action="store_true")
+    parser.add_argument("--accept-unreadable-process-risk", action="store_true",
+                        help="Explicitly accept up to 8 inaccessible same-user "
+                             "processes ONLY when no game process is identified; "
+                             "never overrides ACTIVE")
     args = parser.parse_args()
     try:
         if args.status:
-            if args.acknowledge_game_closed or args.accept_experimental_swap:
+            if (args.acknowledge_game_closed or args.accept_experimental_swap or
+                    args.accept_unreadable_process_risk):
                 raise QuickTryBlocked("Read-only status cannot be combined with approval flags")
             out = status_report(args.appid, args.steamapps)
         elif args.prepare:
             out = prepare(args.appid, args.steamapps, args.cache_root,
                           acknowledge_closed=args.acknowledge_game_closed,
-                          accept=args.accept_experimental_swap)
+                          accept=args.accept_experimental_swap,
+                          allow_unreadable=args.accept_unreadable_process_risk)
         else:
             out = restore(args.appid, args.steamapps,
                           acknowledge_closed=args.acknowledge_game_closed,
-                          accept=args.accept_experimental_swap)
+                          accept=args.accept_experimental_swap,
+                          allow_unreadable=args.accept_unreadable_process_risk)
     except (QuickTryBlocked, OSError, ValueError, zipfile.BadZipFile) as exc:
         parser.exit(2, f"GameWeld experimental quick try: BLOCKED — {exc}\n")
     print(json.dumps(out, indent=2))
