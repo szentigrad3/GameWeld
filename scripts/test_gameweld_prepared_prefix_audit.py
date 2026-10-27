@@ -86,6 +86,32 @@ class PreparedPrefixArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(audit.UnsafePreparedPrefix, "invalid"):
             audit.archive_report(self.archive)
 
+    def test_case_collision_comparison_distinguishes_identical_and_different_bytes(self):
+        self.build([
+            ("pfx/Framework/InstallUtil.exe", b"same-binary"),
+            ("pfx/Framework/installutil.exe", b"same-binary"),
+            ("pfx/Framework/CONFIG/machine.config", b"one"),
+            ("pfx/Framework/Config/machine.config", b"two"),
+        ], compression=zipfile.ZIP_STORED)
+        original = self.archive.read_bytes()
+        with zipfile.ZipFile(self.archive) as z:
+            result = audit.compare_case_collision_bytes(z)
+        self.assertEqual(result["identical_payload"], 1)
+        self.assertEqual(result["different_payload"], 1)
+        self.assertEqual(result["size_mismatch"], 0)
+        self.assertEqual(result["comparison_skipped"], 0)
+        self.assertEqual(self.archive.read_bytes(), original)
+
+    def test_case_collision_comparison_skips_oversized_members_without_extraction(self):
+        self.build([
+            ("pfx/A", b"a" * 128),
+            ("pfx/a", b"b" * 129),
+        ], compression=zipfile.ZIP_STORED)
+        with zipfile.ZipFile(self.archive) as z:
+            result = audit.compare_case_collision_bytes(z)
+        self.assertEqual(result["size_mismatch"], 1)
+        self.assertFalse((self.root / "pfx").exists())
+
     def test_supplied_digest_does_not_prove_publisher_authenticity(self):
         self.build([("pfx/user.reg", b"test-data")])
         import hashlib
