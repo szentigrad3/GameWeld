@@ -79,6 +79,50 @@ def _load_zip_audit():
     return module
 
 
+def find_matching_rejected_release(
+    cache_root: Path, *, tag: str, filename: str, declared_size: int
+) -> str | None:
+    """Prevent automatic repeats of an already rejected release and size.
+
+    A quarantine receipt is evidence of a local previous rejection, NOT
+    publisher identity, a security attestation, or proof a remote URL has not
+    since changed. Operators may explicitly retry a republished asset.
+    """
+    directory = cache_root / "rejected"
+    if not directory.exists():
+        return None
+    if (directory.is_symlink() or not directory.is_dir() or
+            stat.S_IMODE(directory.stat().st_mode) & 0o077):
+        raise CacheRefused("Rejected archive directory is unsafe")
+    records = sorted(directory.glob("*.rejected.json"))
+    if len(records) > 16:
+        raise CacheRefused("Too many rejected release records; inspect cache manually")
+    for record in records:
+        if (record.is_symlink() or not record.is_file() or
+                record.stat().st_size > 4096):
+            raise CacheRefused("Unsafe rejected release metadata")
+        try:
+            entry = json.loads(record.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError, OSError) as exc:
+            raise CacheRefused("Unreadable rejected release metadata") from exc
+        if not isinstance(entry, dict):
+            raise CacheRefused("Invalid rejected release metadata")
+        sha = record.name.removesuffix(".rejected.json")
+        if (len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha) or
+                entry.get("sha256") != sha):
+            raise CacheRefused("Inconsistent rejected release checksum metadata")
+        candidate = directory / (sha + ".zip")
+        if (entry.get("source") == SOURCE_REPO and
+                entry.get("status") == "REJECTED_NOT_STAGEABLE" and
+                entry.get("release_tag") == tag and
+                entry.get("asset_name") == filename and
+                entry.get("bytes") == declared_size and
+                candidate.is_file() and not candidate.is_symlink() and
+                candidate.stat().st_size == declared_size):
+            return sha[:12]
+    return None
+
+
 def acquire_to_cache(
     url: str,
     *,
@@ -87,6 +131,7 @@ def acquire_to_cache(
     approved: bool,
     opener=urlopen,
     progress: Callable[[str, int, int], None] | None = None,
+    retry_rejected: bool = False,
 ) -> dict:
     """Acquire and inspect untrusted ZIP bytes; never unpack or run them."""
     tag, filename = validate_release_url(url)
@@ -95,6 +140,15 @@ def acquire_to_cache(
     if type(declared_size) is not int or not 1_000_000 <= declared_size <= MAX_DOWNLOAD_BYTES:
         raise CacheRefused("Declared asset size is outside accepted bounds")
     root = safe_cache_root(cache_root)
+    previously_rejected = find_matching_rejected_release(
+        root, tag=tag, filename=filename, declared_size=declared_size)
+    if previously_rejected and not retry_rejected:
+        raise CacheRefused(
+            "This selected release and size were already rejected for ZIP filename "
+            "collisions (archive " + previously_rejected + "). NO DOWNLOAD STARTED. "
+            "Its files cannot be merged safely based on names; select an upstream "
+            "corrected release. Only an independently confirmed reupload under the "
+            "same tag/size should be retried with explicit --retry-rejected.")
     existing = next((part for part in (root, *root.parents) if part.exists()), None)
     if existing is None:
         raise CacheRefused("No existing parent filesystem for cache")
@@ -305,6 +359,12 @@ def rejected_cache_status(cache_root: Path) -> str:
         lines.extend(f"Collision payloads {kind}: {count}"
                      for kind, count in payload_comparison.items())
         lines.extend("Collision example: " + example for example in examples)
+        if counts["case_collision"] and (
+                payload_comparison["different_payload"] or
+                payload_comparison["size_mismatch"]):
+            lines.append("VERDICT: UPSTREAM ARCHIVE INCOMPATIBLE. Conflicting "
+                         "case-only paths have different contents or sizes; "
+                         "do NOT merge, rename, or stage. Request a corrected release.")
         lines.append("Comparison is read-only; identical payloads are NOT approval to stage.")
     lines.append("No archive installed, extracted, executed, or approved for staging.")
     return "\n".join(lines)
@@ -316,6 +376,9 @@ def main() -> int:
     parser.add_argument("--release-asset-url")
     parser.add_argument("--declared-size", type=int)
     parser.add_argument("--approve-cache-download", action="store_true")
+    parser.add_argument("--retry-rejected", action="store_true",
+                        help="Only for independently confirmed same-tag reuploads; "
+                             "retains the old rejected ZIP")
     parser.add_argument("--progress", action="store_true",
                         help="Emit progress records for a parent GUI; no installation")
     default_cache = Path(os.environ.get("XDG_CACHE_HOME") or
@@ -326,7 +389,8 @@ def main() -> int:
                         help="Inspect quarantined ZIP filenames locally (read only)")
     args = parser.parse_args()
     if args.rejected_status:
-        if args.release_asset_url or args.declared_size is not None or args.approve_cache_download or args.progress:
+        if (args.release_asset_url or args.declared_size is not None or
+                args.approve_cache_download or args.retry_rejected or args.progress):
             parser.error("--rejected-status cannot start a download")
         try:
             print(rejected_cache_status(args.cache_root))
@@ -335,6 +399,8 @@ def main() -> int:
         return 0
     if not args.release_asset_url or args.declared_size is None:
         parser.error("download requires --release-asset-url and --declared-size")
+    if args.retry_rejected and not args.approve_cache_download:
+        parser.error("--retry-rejected also requires explicit --approve-cache-download")
     def cancel_download(signum, frame):
         raise CacheRefused("Cancelled by user; incomplete download discarded")
     if args.progress:
@@ -348,6 +414,7 @@ def main() -> int:
             approved=args.approve_cache_download,
             cache_root=args.cache_root,
             progress=print_progress if args.progress else None,
+            retry_rejected=args.retry_rejected,
         )
     except (CacheRefused, OSError, ValueError) as exc:
         parser.exit(2, f"Prepared prefix cache: BLOCKED — {exc}\n")
