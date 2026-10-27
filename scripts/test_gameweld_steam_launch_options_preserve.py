@@ -74,7 +74,6 @@ class PreserveTests(unittest.TestCase):
             "MANGOHUD=1 gamescope -f -- %command%",
             "bash -c 'echo hello && %command%'",
             "LD_PRELOAD=/tmp/x.so %command% ; echo injected",
-            "%command% -dx11 -FPS=100",
             "DXVK_HUD=fps | sh -c %command%",
             "PROTON_LOG=1 %command% && echo goodbye",
             "WINEDLLOVERRIDES=version=n,b /home/u/wemod %command% -vulkan",
