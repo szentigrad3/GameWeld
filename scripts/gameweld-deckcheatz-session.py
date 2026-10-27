@@ -230,7 +230,7 @@ def install_wrapper(*, destination: Path | None = None,
                     source: Path | None = None) -> dict:
     """Explicit opt-in copy to a persistent user-owned path, NEVER Steam."""
     dest = destination or installed_wrapper_path()
-    source = source or Path(__file__).absolute()
+    source = source if source is not None else Path(__file__).resolve(strict=True)
     if source.is_symlink() or not source.is_file() or not dest.is_absolute():
         raise SessionBlocked("Session wrapper source/destination is unsafe")
     if dest.parent.is_symlink():
