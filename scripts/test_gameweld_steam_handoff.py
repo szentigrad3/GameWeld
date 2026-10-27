@@ -3,7 +3,10 @@
 import contextlib
 import importlib.util
 import io
+import gc
 import os
+import time
+import warnings
 from pathlib import Path
 import subprocess
 import sys
@@ -63,6 +66,27 @@ class SteamHandoffTests(unittest.TestCase):
         self.assertEqual(status, 2, report)
         self.assertIn("Launch result: UNCONFIRMED", report)
         self.assertNotIn("STEAM_ASSOCIATION_OBSERVED", report)
+
+    def test_running_steam_handoff_is_reaped_without_forced_termination(self):
+        # A command can remain alive after the observation window. This is
+        # legitimate Steam IPC behaviour, not a reason to kill Steam.
+        marker = self.root / "steam-completed"
+        self.fake_steam('sleep 0.2\\nprintf done > "' + str(marker) + '"\\n')
+        with patch.object(steam, "associated_process_count", return_value=0):
+            with warnings.catch_warnings(record=True) as recorded:
+                warnings.simplefilter("always", ResourceWarning)
+                status, report = self.capture(
+                    "2353250", steam=str(self.command), duration=0)
+                gc.collect()
+            self.assertEqual(status, 2, report)
+            self.assertIn("STILL RUNNING", report)
+            self.assertFalse(any(
+                "subprocess" in str(w.message) and "still running" in str(w.message)
+                for w in recorded), recorded)
+        deadline = time.monotonic() + 2
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(marker.read_text(), "done")
 
     def test_steam_handoff_observes_new_exact_process_association(self):
         # Mock one newly observed process after issuing the command. An
