@@ -170,7 +170,7 @@ class PreparedPrefixCacheTests(unittest.TestCase):
             z.writestr("../run.exe", os.urandom(1_200_000))
         with patch.object(cache.shutil, "disk_usage",
                           return_value=type("Disk", (), {"free": 5_000_000_000})()):
-            with self.assertRaisesRegex(cache.CacheRefused, "Unsafe or invalid"):
+            with self.assertRaisesRegex(cache.CacheRefused, "ZIP safety check failed: Path traversal"):
                 cache.acquire_to_cache(
                     URL, declared_size=len(bad_bytes.getvalue()),
                     cache_root=self.cache_root, approved=True,
