@@ -236,6 +236,33 @@ class PreserveTests(unittest.TestCase):
         self.assertEqual(self.file.read_bytes(), self.saved)
         self.assertFalse((checkout / "wemod.log").exists())
 
+    def test_one_time_session_recipe_requires_stable_installed_shim(self):
+        import importlib.util
+        script = Path(__file__).with_name("gameweld-deckcheatz-session.py")
+        spec = importlib.util.spec_from_file_location("gw_session_for_test", script)
+        one_shot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(one_shot)
+        data = self.root / "xdg-data"
+        data.mkdir()
+        with patch.dict("os.environ", {"XDG_DATA_HOME": str(data)}):
+            with self.assertRaisesRegex(options.Blocked, "Install or update"):
+                options.recipe_for(None, session_appid=APPID)
+            dest = one_shot.installed_wrapper_path()
+            one_shot.install_wrapper(destination=dest, source=script)
+            proposed = options.recipe_for(None, session_appid=APPID)
+            self.assertIn(f"run --appid {APPID} -- %command%", proposed)
+            self.assertIn(str(dest), proposed)
+            self.assertIn("/usr/bin/python3", proposed)
+            self.assertEqual(options.merge("", proposed),
+                             (proposed, "SAFE_EMPTY"))
+            original = "PROTON_LOG=1  %command% -dx11"
+            combined, status = options.merge(original, proposed)
+            self.assertEqual(status, "SAFE_ENV_AND_ARGUMENTS")
+            self.assertIn("PROTON_LOG=1", combined)
+            self.assertTrue(combined.endswith("%command% -dx11"))
+            self.assertIsNone(options.merge("mangohud %command%", proposed)[0])
+        self.unchanged()
+
     def test_multiple_accounts_never_guess_and_selector_is_explicit(self):
         second = self.steam / "userdata" / "24680/config/localconfig.vdf"
         second.parent.mkdir(parents=True)
