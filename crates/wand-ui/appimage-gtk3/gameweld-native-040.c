@@ -5549,7 +5549,8 @@ static int pc2_deckcheatz_find_launcher(char *target,size_t cap){
  * saves an exclusive private original-string backup after consent. Only then
  * does it copy a conservative, conflict-free merge to the clipboard. */
 static int pc2_steam_option_helper_run(const char *mode,const char *appid,
-                                     const char *launcher,char *out,size_t cap){
+                                     const char *launcher,char *out,size_t cap,
+                                     int verified_empty){
     if(!appid||!*appid||!mode||!*mode||cap<64)return 0;
     out[0]=0;
     const char *appdir=getenv("APPDIR");char helper[4096]={0};
@@ -5564,11 +5565,20 @@ static int pc2_steam_option_helper_run(const char *mode,const char *appid,
         close(fd[0]);setsid();
         dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);close(fd[1]);
         clear_desktop_activation_env();
-        if(launcher&&*launcher)
-            execlp("python3","python3",helper,mode,"--appid",appid,
-                   "--launcher",launcher,(char*)NULL);
-        else
-            execlp("python3","python3",helper,mode,"--appid",appid,(char*)NULL);
+        if(launcher&&*launcher){
+            if(verified_empty)
+                execlp("python3","python3",helper,mode,"--appid",appid,
+                       "--launcher",launcher,"--verified-empty-in-steam",(char*)NULL);
+            else
+                execlp("python3","python3",helper,mode,"--appid",appid,
+                       "--launcher",launcher,(char*)NULL);
+        }else{
+            if(verified_empty)
+                execlp("python3","python3",helper,mode,"--appid",appid,
+                       "--verified-empty-in-steam",(char*)NULL);
+            else
+                execlp("python3","python3",helper,mode,"--appid",appid,(char*)NULL);
+        }
         _exit(127);
     }
     close(fd[1]);
@@ -5617,7 +5627,8 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         log_line("Steam option protection: cannot allocate bounded inspection output.");
         goto done;
     }
-    if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,preview,65536)){
+    int verified_empty=0;
+    if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,preview,65536,0)){
         pc2_steam_option_message("Steam options inspection blocked",
             "GameWeld did NOT copy a replacement or edit Steam. "
             "The cause may be an unrecognized DeckCheatz launcher, Steam "
@@ -5626,6 +5637,35 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
             "remain unchanged.",
             preview);
         goto done;
+    }
+    /* An explicit empty ON-DISK LaunchOptions field does not prove Steam's
+     * running UI is empty. Do not copy or back it up until the user has
+     * checked this same game's CURRENT Steam Properties themselves. */
+    if(strstr(preview,"\"NEEDS_STEAM_UI_EMPTY_CHECK\"")){
+        GtkWidget*verify=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_WARNING,GTK_BUTTONS_YES_NO,
+            "Steam's saved file reports EMPTY Launch Options for %.140s.\n\n"
+            "But Steam may currently have different options in memory. "
+            "If this game already uses a working DeckCheatz command, "
+            "do NOT continue: select No and keep those options.\n\n"
+            "Open THIS game's Steam Properties > General > Launch Options "
+            "and verify that the field is CURRENTLY completely empty.\n\n"
+            "Did you personally confirm it is empty?",g->name);
+        int accepted=gtk_dialog_run((GtkDialog*)verify)==GTK_RESPONSE_YES;
+        gtk_widget_destroy(verify);
+        if(!accepted){
+            log_line("Steam on-disk options were empty but live UI was not verified. "
+                     "No original backup, clipboard change or Steam edit.");
+            goto done;
+        }
+        verified_empty=1;
+        if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,
+                                       preview,65536,verified_empty)){
+            pc2_steam_option_message("Could not verify Steam launch options",
+                "Steam's saved state changed or became unreadable. "
+                "No backup or clipboard changes were made.",preview);
+            goto done;
+        }
     }
     json_string(preview,"original_launch_option",original,18000);
     json_string(preview,"proposed_launch_option",merged,36000);
@@ -5648,8 +5688,9 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
         "Preserve and copy Steam Launch Options for %.140s?\n\n"
-        "GameWeld found existing options. It will FIRST save their exact "
-        "original text privately under ~/.local/state/gameweld/steam-option-backups, "
+        "After reviewing the ORIGINAL and PROPOSED commands, GameWeld "
+        "will FIRST save the disk original privately under "
+        "~/.local/state/gameweld/steam-option-backups, "
         "then copy the proposed combined text to your clipboard.\n\n"
         "Steam itself will NOT be modified. You must paste manually in Steam "
         "Properties > General > Launch Options. Continue?",g->name);
@@ -5672,7 +5713,8 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     int yes=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES;
     gtk_widget_destroy(dlg);
     if(!yes){log_line("Steam Launch Options merge cancelled; no backup or clipboard changes.");goto done;}
-    if(!pc2_steam_option_helper_run("--save-original",g->appid,launcher,saved,65536)){
+    if(!pc2_steam_option_helper_run("--save-original",g->appid,launcher,
+                                    saved,65536,verified_empty)){
         pc2_steam_option_message("Original-command backup not saved",
             "GameWeld refuses to overwrite an existing backup or copy an "
             "unprotected Steam replacement. Your Steam settings are unchanged.",saved);
@@ -5710,7 +5752,7 @@ static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     char *result=calloc(1,65536),*original=calloc(1,18000);
     if(!result||!original)goto done;
     if(!pc2_steam_option_helper_run("--restore-original",
-            G.games[G.selected].appid,NULL,result,65536)){
+            G.games[G.selected].appid,NULL,result,65536,0)){
         pc2_steam_option_message("Original launch options backup unavailable",
             "No matching GameWeld backup exists for the selected game and Steam account. "
             "Nothing was copied or changed.",result);
