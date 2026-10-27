@@ -284,6 +284,7 @@ def rejected_cache_status(cache_root: Path) -> str:
         try:
             with zipfile.ZipFile(path) as archive:
                 counts, examples = audit.classify_zip_collisions(archive)
+                payload_comparison = audit.compare_case_collision_bytes(archive)
         except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError,
                 audit.UnsafePreparedPrefix) as exc:
             lines.append("Rejected archive index cannot be safely inspected")
@@ -301,7 +302,10 @@ def rejected_cache_status(cache_root: Path) -> str:
                     source_record.get("status") == "REJECTED_NOT_STAGEABLE"):
                 lines.append("Source metadata receipt present (publisher authenticity unverified)")
         lines.extend(f"{kind}: {count}" for kind, count in counts.items())
+        lines.extend(f"Collision payloads {kind}: {count}"
+                     for kind, count in payload_comparison.items())
         lines.extend("Collision example: " + example for example in examples)
+        lines.append("Comparison is read-only; identical payloads are NOT approval to stage.")
     lines.append("No archive installed, extracted, executed, or approved for staging.")
     return "\n".join(lines)
 
