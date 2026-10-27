@@ -18,17 +18,27 @@ Electron GPU process failures (error_code=43) on the test machine.
 
        python3 scripts/gameweld-deckcheatz-steam-options.py
 
-3. In Steam, select the matching installed game, open
+3. The first click now **reads the selected game's existing Steam per-account**
+   LaunchOptions from localconfig.vdf without changing Steam. When the
+   existing command has a conservative, unambiguous merge (empty setting,
+   environment assignments and straightforward game flags), GameWeld shows
+   both original and proposed text. Confirm to save the **exact original**
+   in a private, exclusive 0600 GameWeld backup *before* the merged command
+   goes to your clipboard. An existing backup is never overwritten.
+   Other wrappers (Gamescope, MangoHud, GameMode, custom shell scripts),
+   multiple Steam accounts, or unsupported syntax block auto-merge; GameWeld
+   does not copy a potentially destructive replacement.
+4. In Steam, select the matching installed game, open
    Properties > General > Launch Options, and paste the generated line.
    Preserve any other required game options. The generated command
    includes WINEDLLOVERRIDES, WEMOD_LOG, the actual executable path
    of the DeckCheatz launcher, and %command%.
-4. Close the game and WeMod before asking GameWeld to launch. Enable
+5. Close the game and WeMod before asking GameWeld to launch. Enable
    the private source GUI's Steam launch gate for this invocation:
 
        bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
 
-5. Select that same Steam game in GameWeld. Click
+6. Select that same Steam game in GameWeld. Click
    **Play via Steam + DeckCheatz** and explicitly confirm that Steam's
    current per-game Launch Options contain the DeckCheatz wrapper.
 
@@ -40,6 +50,33 @@ register a Steam Bridge, or replace a game prefix during this operation.
 A read-only preview and user confirmation precede each launch. The
 Steam wrapper route blocks if an existing process is already identified
 with this AppID, to avoid launching the same game twice.
+
+
+
+## Review and restore existing Steam launch options
+
+In GameWeld, select the exact Steam game and use **Restore original Steam launch
+option** to retrieve the private backed-up original and copy it to your clipboard.
+A blank original setting is valid; paste/clear it in Steam Properties manually.
+
+For read-only inspection from the development checkout:
+
+    python3 scripts/gameweld-steam-launch-options-preserve.py --preview --appid 3008130
+
+Only after inspecting the report, explicitly save the unmodified original:
+
+    python3 scripts/gameweld-steam-launch-options-preserve.py --save-original --appid 3008130
+
+To print the preserved original for manual restore:
+
+    python3 scripts/gameweld-steam-launch-options-preserve.py --restore-original --appid 3008130 --format text
+
+The helper auto-detects one Steam localconfig.vdf. With multiple accounts, pass
+--steam-account ACCOUNT_ID explicitly. It does not guess the active account.
+Steam launch settings are **never edited by GameWeld**. Steam may rewrite
+localconfig.vdf while running, so all changes happen manually via Steam's UI.
+The private backup only snapshots the selected per-game Launch Options
+**text**, not Steam's entire configuration or every game.
 
 ## Validation boundaries
 
