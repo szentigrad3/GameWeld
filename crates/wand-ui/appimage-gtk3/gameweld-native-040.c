@@ -51,6 +51,7 @@ typedef struct _GtkNotebook GtkNotebook;
 typedef struct _GtkScrolledWindow GtkScrolledWindow;
 typedef struct _GtkTreeIter { int stamp; void *user_data; void *user_data2; void *user_data3; } GtkTreeIter;
 typedef struct _GtkDialog GtkDialog;
+typedef struct _GtkClipboard GtkClipboard;
 typedef struct _GtkFileChooser GtkFileChooser;
 typedef struct _GtkStyleContext GtkStyleContext;
 typedef struct _GtkCssProvider GtkCssProvider;
@@ -124,6 +125,10 @@ extern GtkWidget *gtk_dialog_get_content_area(GtkDialog *);
 extern char *gtk_file_chooser_get_filename(GtkFileChooser *);
 extern gboolean gtk_file_chooser_set_current_folder(GtkFileChooser *, const char *);
 extern void g_free(void *);
+extern gchar *g_shell_quote(const gchar *);
+extern void *gdk_atom_intern_static_string(const gchar *);
+extern GtkClipboard *gtk_clipboard_get(void *);
+extern void gtk_clipboard_set_text(GtkClipboard *, const gchar *, int);
 extern int g_mkdir_with_parents(const char *, int);
 extern GtkWidget *gtk_image_new(void);
 extern GtkWidget *gtk_image_new_from_pixbuf(const GdkPixbuf *);
@@ -619,6 +624,7 @@ static int pc2_steam_launch_allowed(void);
 static int bounded_child_output(pid_t pid,int fd,char *output,size_t capacity,int seconds);
 static void on_pc2_wemod_verify_selected(GtkButton*,void*);
 static void on_pc2_deckcheatz_detect(GtkButton*,void*);
+static void on_pc2_deckcheatz_copy_steam_option(GtkButton*,void*);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
 static void on_pc2_deckcheatz_install(GtkButton*,void*);
 static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
@@ -5489,6 +5495,65 @@ static int pc2_deckcheatz_find_launcher(char *target,size_t cap){
     }
     return 0;
 }
+/* Copy ONLY the official wrapper recipe validated on a real Steam game.
+ * Never edits Steam config, changes the live prefix or launches a process.
+ * This is a user-initiated clipboard write, not a silent Steam setting change.
+ * The separate runinprefix fallback is NOT the same as %command% wrapping. */
+static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
+    (void)b;(void)d;
+    char launcher[4096]={0},logpath[4096]={0},cmd[12288]={0};
+    if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
+        GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_CLOSE,
+            "DeckCheatz's installed 'wemod' wrapper was not found. Install "
+            "the managed DeckCheatz 1.x launcher before copying a Steam command.");
+        gtk_dialog_run((GtkDialog*)dlg);
+        gtk_widget_destroy(dlg);
+        return;
+    }
+    char *last=strrchr(launcher,'/');
+    if(!last||last==launcher ||
+       snprintf(logpath,sizeof logpath,"%.*s/wemod.log",
+                (int)(last-launcher),launcher)>=(int)sizeof(logpath)){
+        log_line("DeckCheatz Steam options: invalid managed launcher path.");
+        return;
+    }
+    gchar *quoted_launcher=g_shell_quote(launcher);
+    gchar *quoted_log=g_shell_quote(logpath);
+    if(!quoted_launcher||!quoted_log||
+       snprintf(cmd,sizeof cmd,
+                "WINEDLLOVERRIDES=\"version=n,b\" WEMOD_LOG=%s %s %%command%%",
+                quoted_log?quoted_log:"",quoted_launcher?quoted_launcher:"") >=
+                (int)sizeof(cmd)){
+        log_line("DeckCheatz Steam options: could not construct command.");
+        g_free(quoted_launcher);g_free(quoted_log);
+        return;
+    }
+    g_free(quoted_launcher);g_free(quoted_log);
+    GtkClipboard*clipboard=gtk_clipboard_get(
+        gdk_atom_intern_static_string("CLIPBOARD"));
+    if(clipboard)gtk_clipboard_set_text(clipboard,cmd,-1);
+    GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_CLOSE,
+        "DeckCheatz Steam launch option copied.\n\n"
+        "In Steam open this game's Properties > General > Launch Options and "
+        "paste the following command. Keep any other required game options.\n\n"
+        "GameWeld has NOT changed Steam settings, launched the game, "
+        "or changed any prefix. The wrapper must be invoked by Steam.");
+    GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);
+    GtkWidget*view=gtk_text_view_new();
+    gtk_widget_set_size_request(sc,740,95);
+    gtk_text_view_set_editable((GtkTextView*)view,FALSE);
+    gtk_text_view_set_cursor_visible((GtkTextView*)view,FALSE);
+    gtk_text_view_set_wrap_mode((GtkTextView*)view,2);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer((GtkTextView*)view),cmd,-1);
+    gtk_container_add(sc,view);
+    gtk_box_pack_start(gtk_dialog_get_content_area((GtkDialog*)dlg),sc,TRUE,TRUE,0);
+    gtk_widget_show_all(dlg);
+    gtk_dialog_run((GtkDialog*)dlg);
+    gtk_widget_destroy(dlg);
+}
+
 static gboolean pc2_deckcheatz_install_done(void *data){
     PC2DeckCheatzInstallJob *j=(PC2DeckCheatzInstallJob*)data;
     pc2_deckcheatz_install_busy=0;
@@ -6155,6 +6220,10 @@ static GtkWidget *build_settings(void){
         g_signal_connect_data(native_check,"clicked",
             (GCallback)on_pc2_native_route,NULL,NULL,0);
         pack(native_card,native_check,0);
+        GtkWidget*copy_steam_deckcheatz=button("Copy DeckCheatz Steam launch option","action");
+        g_signal_connect_data(copy_steam_deckcheatz,"clicked",
+            (GCallback)on_pc2_deckcheatz_copy_steam_option,NULL,NULL,0);
+        pack(native_card,copy_steam_deckcheatz,0);
         GtkWidget*live_attach_preview=button("Preview no-options WeMod handoff (read-only)","action");
         g_signal_connect_data(live_attach_preview,"clicked",
             (GCallback)on_pc2_live_attach_preview,NULL,NULL,0);
