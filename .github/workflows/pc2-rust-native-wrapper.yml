@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile and run isolated wand-runtime unit tests
-        run: cargo test -p wand-runtime --lib
+        run: cargo test -p wand-runtime --all-targets
       - name: Scope note
         run: |
           echo 'Compilation and fake game prefix tests do NOT verify actual Steam Runtime, DRM, Proton, or WeMod trainer attachment.'
