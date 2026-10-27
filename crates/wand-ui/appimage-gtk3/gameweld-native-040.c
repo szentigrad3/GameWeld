@@ -4525,14 +4525,17 @@ static gboolean pc2_cache_progress_update(gpointer data){
         char message[256];
         if(!strcmp(event->stage,"VERIFY"))
             snprintf(message,sizeof message,
-                "Download complete. Checking ZIP structure and CRC. No game files changed.");
+                "Transfer reached 100%%. Validating ZIP and CRC; NOT SAVED for staging yet.");
+        else if(!strcmp(event->stage,"CACHED"))
+            snprintf(message,sizeof message,
+                "ZIP verified and written to GameWeld cache. Finalizing download receipt...");
         else if(!strcmp(event->stage,"STAGE")||!strcmp(event->stage,"STAGED"))
             snprintf(message,sizeof message,
                 "Preparing isolated .NET template: %d%%. Original game prefix untouched.",
                 event->percent);
         else
             snprintf(message,sizeof message,
-                "Downloading prepared WeMod ZIP to cache: %d%%. No game files changed.",
+                "Transferring prepared ZIP: %d%%. Staging unavailable until validation completes.",
                 event->percent);
         set_label(pc2_shared_wemod_status,message);
     }
@@ -4768,7 +4771,7 @@ static gboolean pc2_steam_bridge_done(gpointer data){
             "No game prefix was changed.";
         if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
             (j->ok && !pc2_cache_cancel_requested) ?
-            "Step 1 complete — prepared WeMod ZIP downloaded and checked. "
+            "Step 1 complete — ZIP verified and saved to GameWeld's cache. "
             "Next: Step 2 — Stage downloaded .NET prefix (isolated). "
             "No game prefix has changed; publisher and compatibility are not verified." : msg);
     }else if(!strcmp(j->action,"prefix-stage")){
