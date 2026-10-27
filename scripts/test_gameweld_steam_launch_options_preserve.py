@@ -60,6 +60,16 @@ class PreserveTests(unittest.TestCase):
                          "PROTON_LOG=1 DXVK_HUD=fps " + RECIPE + " -dx11")
         self.unchanged()
 
+    def test_existing_working_quoted_steam_wrapper_is_not_replaced(self):
+        quoted = ('WINEDLLOVERRIDES="version=n,b" '
+                  'WEMOD_LOG="/home/u/wemod.log" '
+                  '"/home/u/wemod" %command%')
+        self.assertEqual(options.merge(quoted, RECIPE),
+                         (quoted, "ALREADY_CONFIGURED"))
+        self.make_config(quoted)
+        self.assertEqual(options.launch_option(self.file, APPID), quoted)
+        self.unchanged()
+
     def test_only_game_flags_can_be_appended(self):
         self.assertEqual(options.merge("-vulkan -novid", RECIPE),
                          (RECIPE + " -vulkan -novid", "SAFE_GAME_FLAGS"))
