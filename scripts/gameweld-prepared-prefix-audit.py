@@ -75,6 +75,42 @@ def inspect_zip_members(archive: zipfile.ZipFile) -> tuple[int, int]:
     return len(members), decompressed
 
 
+
+def classify_zip_collisions(archive: zipfile.ZipFile) -> tuple[dict[str, int], list[str]]:
+    """Classify filename conflicts without reading, executing or extracting members.
+
+    Examples are escaped and capped so untrusted ZIP filenames cannot inject
+    terminal control characters or flood the diagnostic display.
+    """
+    entries = archive.infolist()
+    if len(entries) > MAX_ENTRIES:
+        raise UnsafePreparedPrefix("Too many entries for collision inspection")
+    seen: dict[str, tuple[str, bool]] = {}
+    counts = {"exact_duplicate": 0, "case_collision": 0,
+              "unicode_collision": 0, "file_directory_conflict": 0}
+    examples: list[str] = []
+    for info in entries:
+        current = info.filename.rstrip("/")
+        key = unicodedata.normalize("NFC", current).casefold()
+        if key not in seen:
+            seen[key] = (current, info.is_dir())
+            continue
+        previous, previous_dir = seen[key]
+        if previous_dir != info.is_dir():
+            reason = "file_directory_conflict"
+        elif previous == current:
+            reason = "exact_duplicate"
+        elif unicodedata.normalize("NFC", previous) == unicodedata.normalize("NFC", current):
+            reason = "unicode_collision"
+        else:
+            reason = "case_collision"
+        counts[reason] += 1
+        if len(examples) < 5:
+            # A filename is untrusted input, not a command or formatted path.
+            examples.append(f"{reason}: {ascii(previous)[:160]} vs {ascii(current)[:160]}")
+    return counts, examples
+
+
 def archive_report(path: Path, *, expected_sha256: str | None = None) -> str:
     if path.is_symlink() or not path.is_file():
         raise UnsafePreparedPrefix("Use an existing regular non-symlinked ZIP file")
