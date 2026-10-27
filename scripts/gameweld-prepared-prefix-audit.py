@@ -111,6 +111,76 @@ def classify_zip_collisions(archive: zipfile.ZipFile) -> tuple[dict[str, int], l
     return counts, examples
 
 
+
+def compare_case_collision_bytes(archive: zipfile.ZipFile) -> dict[str, int]:
+    """Bounded read-only comparison of ZIP members with case-only name collisions.
+
+    A matching hash here proves ONLY that two ZIP member payloads match.
+    It never establishes publisher authenticity, compatibility, or permission
+    to stage/merge files. No members are extracted or written to disk.
+    """
+    limit_per_member = 32 * 1024 * 1024
+    limit_total_read = 256 * 1024 * 1024
+    entries = archive.infolist()
+    if len(entries) > MAX_ENTRIES:
+        raise UnsafePreparedPrefix("Too many ZIP entries to compare safely")
+    first: dict[str, zipfile.ZipInfo] = {}
+    result = {
+        "identical_payload": 0, "different_payload": 0,
+        "size_mismatch": 0, "comparison_skipped": 0,
+    }
+    used_bytes = 0
+
+    def digest(info: zipfile.ZipInfo) -> str:
+        nonlocal used_bytes
+        h = hashlib.sha256()
+        size = 0
+        with archive.open(info, "r") as stream:
+            while True:
+                data = stream.read(min(1024 * 1024, info.file_size - size + 1))
+                if not data:
+                    break
+                size += len(data)
+                used_bytes += len(data)
+                if size > info.file_size or used_bytes > limit_total_read:
+                    raise UnsafePreparedPrefix("Collision comparison exceeded size limit")
+                h.update(data)
+        if size != info.file_size:
+            raise UnsafePreparedPrefix("Collision member length mismatch")
+        return h.hexdigest()
+
+    for item in entries:
+        key = unicodedata.normalize("NFC", item.filename.rstrip("/")).casefold()
+        previous = first.get(key)
+        if previous is None:
+            first[key] = item
+            continue
+        if item.filename.rstrip("/") == previous.filename.rstrip("/"):
+            continue
+        if (item.is_dir() or previous.is_dir() or
+                ((item.external_attr >> 16) & 0o170000) not in (0, stat.S_IFREG) or
+                ((previous.external_attr >> 16) & 0o170000) not in (0, stat.S_IFREG) or
+                item.flag_bits & 1 or previous.flag_bits & 1):
+            result["comparison_skipped"] += 1
+            continue
+        if item.file_size != previous.file_size:
+            result["size_mismatch"] += 1
+            continue
+        if (item.file_size > limit_per_member or
+                previous.file_size > limit_per_member or
+                used_bytes + item.file_size + previous.file_size > limit_total_read):
+            result["comparison_skipped"] += 1
+            continue
+        # CRCs alone are insufficient: compare independent SHA-256 hashes.
+        try:
+            matching = digest(previous) == digest(item)
+        except (OSError, RuntimeError, EOFError, zipfile.BadZipFile, UnsafePreparedPrefix):
+            result["comparison_skipped"] += 1
+            continue
+        result["identical_payload" if matching else "different_payload"] += 1
+    return result
+
+
 def archive_report(path: Path, *, expected_sha256: str | None = None) -> str:
     if path.is_symlink() or not path.is_file():
         raise UnsafePreparedPrefix("Use an existing regular non-symlinked ZIP file")
