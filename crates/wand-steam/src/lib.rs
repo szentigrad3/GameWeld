@@ -490,9 +490,9 @@ fn unique_tool_matching(tools: &[ProtonTool], wanted: &str) -> Option<ProtonTool
                 .map(|name| name.eq_ignore_ascii_case(wanted)).unwrap_or(false)
     }).collect::<Vec<_>>();
     let first = *matches.first()?;
+    let first_path = fs::canonicalize(&first.proton_script).ok()?;
     let same_script = matches.iter().all(|tool|
-        fs::canonicalize(&tool.proton_script).ok()
-            == fs::canonicalize(&first.proton_script).ok());
+        fs::canonicalize(&tool.proton_script).ok().as_ref() == Some(&first_path));
     if same_script { Some(first.clone()) } else { None }
 }
 
