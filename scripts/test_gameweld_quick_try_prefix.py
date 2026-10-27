@@ -137,6 +137,50 @@ class QuickTryTests(unittest.TestCase):
                          b"ORIGINAL REGISTRY")
         self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
 
+    def test_status_distinguishes_active_game_from_unknown_processes(self):
+        active = {
+            "state": "ACTIVE", "matching_process_count": 2,
+            "matching_processes": [101, 102],
+            "unreadable_same_user_processes": 0,
+        }
+        with patch.object(trial, "process_report", return_value=active):
+            status = trial.status_report("123", self.steamapps)
+            self.assertEqual(status["matching_pids"], [101, 102])
+            self.assertFalse(status["can_attempt_prepare"])
+            self.assertIn("2 process(es) still reference", status["verdict"])
+            self.assertIn("101", status["verdict"])
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "Matching PIDs: 101, 102"):
+                trial.check_idle("123", self.current)
+        unknown = {
+            "state": "UNKNOWN", "matching_process_count": 0,
+            "matching_processes": [], "unreadable_same_user_processes": 3,
+        }
+        with patch.object(trial, "process_report", return_value=unknown):
+            status = trial.status_report("123", self.steamapps)
+            self.assertFalse(status["can_attempt_prepare"])
+            self.assertIn("3 same-user process(es) could not be", status["verdict"])
+            self.assertIn("does NOT prove", status["verdict"])
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "state UNKNOWN"):
+                trial.check_idle("123", self.current)
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(),
+                         b"ORIGINAL REGISTRY")
+        self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
+
+    def test_status_reports_candidate_only_when_processes_readable_and_no_backup(self):
+        idle = {"state": "IDLE_CANDIDATE", "matching_process_count": 0,
+                "matching_processes": [], "unreadable_same_user_processes": 0}
+        with patch.object(trial, "process_report", return_value=idle):
+            status = trial.status_report("123", self.steamapps)
+            self.assertTrue(status["can_attempt_prepare"])
+            self.assertFalse(status["prefix_modified"])
+            trial.check_idle("123", self.current)
+            (self.current.parent / ".gameweld-original-123").mkdir()
+            status = trial.status_report("123", self.steamapps)
+            self.assertFalse(status["can_attempt_prepare"])
+            self.assertTrue(status["original_backup_present"])
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(),
+                         b"ORIGINAL REGISTRY")
+
     def test_no_matching_appmanifest_blocks_before_swap(self):
         (self.steamapps / "appmanifest_123.acf").unlink()
         with self.assertRaisesRegex(trial.QuickTryBlocked, "manifest"):
