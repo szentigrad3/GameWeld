@@ -31,6 +31,13 @@ export APPDIR="$APPDIR_DEV"
 # accidentally from the shell. The normal source runner stays discovery-only.
 unset GAMEWELD_PC2_ENABLE_STEAM_LAUNCH
 unset GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER
+unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD
+if [[ "${1:-}" == "--enable-steam-wemod-test" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
+  printf '%s\n' 'PC2 STEAM-MANAGED WeMod test: Steam launches game, then optional client-only live attach; no Steam Launch Options or Bridge edits.'
+  set --
+fi
 unset GAMEWELD_NATIVE_WRAPPER_CLI
 if [[ "${1:-}" == "--enable-native-wrapper-test" && "$#" -eq 1 ]]; then
   command -v cargo >/dev/null || { echo "Rust cargo is required for native wrapper test mode." >&2; exit 1; }
