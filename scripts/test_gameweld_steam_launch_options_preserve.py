@@ -2,7 +2,10 @@
 """Offline Steam per-game launch-options preservation tests; NEVER edits Steam."""
 from __future__ import annotations
 import importlib.util
+import io
+import contextlib
 import json
+from unittest.mock import patch
 from pathlib import Path
 import stat
 import tempfile
@@ -48,6 +51,90 @@ class PreserveTests(unittest.TestCase):
         self.assertEqual(config, self.file)
         self.assertEqual(options.launch_option(config, APPID), "")
         self.assertEqual(options.merge("", RECIPE), (RECIPE, "SAFE_EMPTY"))
+        self.unchanged()
+
+    def test_missing_app_entry_is_unknown_not_an_empty_original(self):
+        # Previous code silently returned "", risking backup of a wrong
+        # original after the user successfully used a live Steam wrapper.
+        self.file.write_text(
+            '"UserLocalConfigStore" { "Software" { "Valve" { "Steam" {'
+            '"apps" { "333" { "LaunchOptions" "unrelated" } } } } } }',
+            encoding="utf-8")
+        self.saved = self.file.read_bytes()
+        with self.assertRaisesRegex(options.Blocked, "cannot verify original"):
+            options.launch_option(self.file, APPID)
+        self.unchanged()
+
+    def test_missing_launch_options_field_is_unknown_not_empty(self):
+        self.file.write_text(
+            '"UserLocalConfigStore" { "Software" { "Valve" { "Steam" {'
+            '"apps" { "' + APPID + '" { "LastPlayed" "123" } } } } } }',
+            encoding="utf-8")
+        self.saved = self.file.read_bytes()
+        with self.assertRaisesRegex(options.Blocked, "NOT proof"):
+            options.launch_option(self.file, APPID)
+        self.unchanged()
+
+    def run_main_with_fixture(self, *flags):
+        output = io.StringIO()
+        error = io.StringIO()
+        with patch.object(options, "recipe_for", return_value=RECIPE), \
+             patch.dict("os.environ", {"XDG_STATE_HOME": str(self.backups)}), \
+             contextlib.redirect_stdout(output), \
+             contextlib.redirect_stderr(error):
+            try:
+                returncode = options.main(
+                    [*flags, "--appid", APPID, "--steam-root", str(self.steam)])
+            except SystemExit as exc:
+                returncode = exc.code
+        return returncode, output.getvalue(), error.getvalue()
+
+    def test_explicit_empty_disk_requires_live_steam_ui_confirmation(self):
+        # The exact failure from real GUI testing: disk shows blank despite
+        # user's working Steam Launch Options in their live client.
+        rc, result, error = self.run_main_with_fixture("--preview")
+        self.assertEqual(rc, 0, error)
+        parsed = json.loads(result)
+        self.assertEqual(parsed["original_launch_option"], "")
+        self.assertIsNone(parsed["proposed_launch_option"])
+        self.assertEqual(parsed["merge_status"], "NEEDS_STEAM_UI_EMPTY_CHECK")
+        self.assertTrue(parsed["requires_manual_review"])
+        self.assertFalse(options.backup_file(APPID, ACCOUNT, self.backups).exists())
+        self.unchanged()
+
+        rc, result, error = self.run_main_with_fixture("--save-original")
+        self.assertEqual(rc, 2)
+        self.assertIn("Verify the CURRENT game's field", error)
+        self.assertFalse(options.backup_file(APPID, ACCOUNT, self.backups).exists())
+        self.unchanged()
+
+        # Only separate user confirmation can allow that EMPTY original.
+        rc, result, error = self.run_main_with_fixture(
+            "--preview", "--verified-empty-in-steam")
+        self.assertEqual(rc, 0, error)
+        parsed = json.loads(result)
+        self.assertEqual(parsed["merge_status"], "SAFE_EMPTY")
+        self.assertEqual(parsed["proposed_launch_option"], RECIPE)
+
+        rc, result, error = self.run_main_with_fixture(
+            "--save-original", "--verified-empty-in-steam")
+        self.assertEqual(rc, 0, error)
+        parsed = json.loads(result)
+        self.assertEqual(parsed["result"], "ORIGINAL_BACKUP_SAVED")
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), "")
+        self.unchanged()
+
+    def test_missing_field_refuses_even_with_manual_empty_confirmation(self):
+        self.file.write_text(
+            '"UserLocalConfigStore" { "Software" { "Valve" { "Steam" {'
+            '"apps" { "' + APPID + '" { "LastPlayed" "1" } } } } } }',
+            encoding="utf-8")
+        self.saved = self.file.read_bytes()
+        rc, _, error = self.run_main_with_fixture(
+            "--save-original", "--verified-empty-in-steam")
+        self.assertEqual(rc, 2)
+        self.assertIn("NOT proof", error)
+        self.assertFalse(options.backup_file(APPID, ACCOUNT, self.backups).exists())
         self.unchanged()
 
     def test_env_only_plus_arguments_preserves_existing_exact_text(self):
