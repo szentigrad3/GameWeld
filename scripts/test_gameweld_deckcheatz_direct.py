@@ -132,6 +132,22 @@ class DeckCheatzDirectTests(unittest.TestCase):
                                   "--experimental-direct-launch"])
                 process.assert_not_called()
 
+
+    def test_process_scan_refuses_unreadable_same_user_environment(self):
+        pid = self.root / "proc" / "12345"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(b"SteamAppId=2353250\\0")
+        with patch.object(backend.os, "getuid", return_value=os.getuid()):
+            with patch.object(Path, "open", autospec=True, side_effect=PermissionError("denied")):
+                with self.assertRaisesRegex(backend.Blocked, "Cannot verify"):
+                    backend.active_game_process("2353250", pid.parent)
+
+    def test_process_scan_ignores_vanished_pid(self):
+        pid = self.root / "proc" / "12345"
+        pid.mkdir(parents=True)
+        with patch.object(Path, "stat", autospec=True, side_effect=FileNotFoundError()):
+            self.assertFalse(backend.active_game_process("2353250", pid.parent))
+
     def test_no_arbitrary_executable_or_prefix(self):
         outside = self.root / "outside.exe"
         outside.write_bytes(b"MZ")
