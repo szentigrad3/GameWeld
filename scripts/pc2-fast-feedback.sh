@@ -18,6 +18,7 @@ python3 -m py_compile \
   scripts/gameweld-deckcheatz-prefix-catalog.py \
   scripts/gameweld-prepared-prefix-audit.py \
   scripts/gameweld-prepared-prefix-cache.py \
+  scripts/gameweld-remote-zip-directory.py \
   scripts/gameweld-prepared-prefix-stage.py \
   scripts/gameweld-prefix-backup.py \
   scripts/gameweld-prefix-restore-rehearsal.py \
@@ -30,6 +31,7 @@ suites=(
   test_gameweld_deckcheatz_prefix_catalog.py
   test_gameweld_prepared_prefix_audit.py
   test_gameweld_prepared_prefix_cache.py
+  test_gameweld_remote_zip_directory.py
   test_gameweld_prepared_prefix_stage.py
   test_gameweld_prefix_backup.py
   test_gameweld_prefix_restore_rehearsal.py
