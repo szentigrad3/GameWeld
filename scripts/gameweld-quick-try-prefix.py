@@ -123,6 +123,14 @@ def status_report(appid: str, steamapps: Path) -> dict:
     state = report.get("state")
     has_backup = backup.exists() or backup.is_symlink()
     has_tested = tested.exists() or tested.is_symlink()
+    saved_reusable = False
+    if has_tested:
+        try:
+            validate_saved_test_copy(tested)
+            saved_reusable = True
+        except (QuickTryBlocked, OSError):
+            pass
+    eligible_copy = not has_tested or saved_reusable
     return {
         "appid": appid,
         "process_state": state,
@@ -132,13 +140,14 @@ def status_report(appid: str, steamapps: Path) -> dict:
             report.get("unreadable_same_user_processes", 0),
         "original_backup_present": has_backup,
         "tested_copy_present": has_tested,
+        "saved_test_copy_reusable": saved_reusable,
         "can_attempt_prepare":
             state == "IDLE_CANDIDATE" and
             report.get("unreadable_same_user_processes", 0) == 0 and
-            not has_backup and not has_tested,
+            not has_backup and eligible_copy,
         "experimental_unknown_override_available":
             may_override_unknown(report) and
-            not has_backup and not has_tested,
+            not has_backup and eligible_copy,
         "verdict": process_verdict(report),
         "prefix_modified": False,
         "note": "Read-only process preflight. No ZIP extraction or prefix swap.",
