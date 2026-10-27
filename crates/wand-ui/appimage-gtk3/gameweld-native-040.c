@@ -691,7 +691,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2768,6 +2768,12 @@ static int pc2_steam_launch_allowed(void){
     const char*flag=getenv("GAMEWELD_PC2_ENABLE_STEAM_LAUNCH");
     return pc2_discovery_only()&&flag&&!strcmp(flag,"1");
 }
+/* Native Rust wrapper is a SEPARATE, explicitly opted-in private test path.
+ * It never uses the saved Steam Launch Options or legacy Bridge. */
+static int pc2_native_wrapper_allowed(void){
+    const char*flag=getenv("GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER");
+    return pc2_discovery_only()&&flag&&!strcmp(flag,"1");
+}
 /* A game-only Steam request must not be logged as successful until we can
  * inspect the Steam command's result and same-user process association.
  * This worker is opt-in and never starts any trainer or changes settings. */
@@ -2996,6 +3002,146 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
 static void on_pc2_steam_game_only(GtkButton*b,void*d){
     (void)b;(void)d;
     pc2_steam_launch_selected(0);
+}
+
+/* Isolated Rust wrapper preview and opt-in launch. Never edits Steam options,
+ * enables a legacy Play callback, or silently falls back to the Steam Bridge.
+ * A spawned child PID is NOT proof that WeMod or the game is working. */
+typedef struct {
+    char appid[32], game[256], wrapper[4096], cli[4096], output[4096];
+    int live, ok;
+} PC2NativeWrapperJob;
+static int pc2_native_wrapper_busy=0;
+static gboolean pc2_native_wrapper_done(gpointer data){
+    PC2NativeWrapperJob*j=(PC2NativeWrapperJob*)data;
+    pc2_native_wrapper_busy=0;
+    log_line("Native Rust wrapper %s for %s (AppID %s): %s",
+        j->live?"EXPERIMENTAL LAUNCH":"read-only preview",
+        j->game,j->appid,j->output[0]?j->output:"No helper output.");
+    if(G.selected>=0&&G.selected<G.game_count&&
+       !strcmp(G.games[G.selected].appid,j->appid)&&G.library_detail_status)
+        set_label(G.library_detail_status,j->ok?
+            (j->live?
+                "Native wrapper process spawned. Game and WeMod attachment NOT VERIFIED; see Activity.":
+                "Rust native wrapper PREVIEW PASSED. No game launched; see Activity.") :
+            "Rust native wrapper BLOCKED or failed. Check Activity for the exact reason.");
+    free(j);
+    return FALSE;
+}
+static void *pc2_native_wrapper_worker(void *data){
+    PC2NativeWrapperJob*j=(PC2NativeWrapperJob*)data;
+    int fd[2];if(pipe(fd)!=0){
+        snprintf(j->output,sizeof j->output,"Cannot create native wrapper output pipe.");
+        g_idle_add(pc2_native_wrapper_done,j);return NULL;
+    }
+    pid_t pid=fork();
+    if(pid==0){
+        setpgid(0,0);
+        close(fd[0]);
+        if(dup2(fd[1],STDOUT_FILENO)<0)_exit(127);
+        if(dup2(fd[1],STDERR_FILENO)<0)_exit(127);
+        close(fd[1]);
+        clear_desktop_activation_env();
+        const char*proton=getenv("GAMEWELD_NATIVE_PROTON");
+        if(j->live){
+            if(proton&&*proton)
+                execl(j->cli,j->cli,"--appid",j->appid,"--wrapper",j->wrapper,
+                    "--proton",proton,"--launch","--approve-experimental",
+                    "--acknowledge-game-closed",(char*)NULL);
+            else
+                execl(j->cli,j->cli,"--appid",j->appid,"--wrapper",j->wrapper,
+                    "--launch","--approve-experimental",
+                    "--acknowledge-game-closed",(char*)NULL);
+        }else{
+            if(proton&&*proton)
+                execl(j->cli,j->cli,"--appid",j->appid,"--wrapper",j->wrapper,
+                    "--proton",proton,"--preview",(char*)NULL);
+            else
+                execl(j->cli,j->cli,"--appid",j->appid,"--wrapper",j->wrapper,
+                    "--preview",(char*)NULL);
+        }
+        _exit(127);
+    }
+    close(fd[1]);
+    if(pid<0){
+        close(fd[0]);
+        snprintf(j->output,sizeof j->output,"Cannot start native Rust wrapper helper.");
+    }else{
+        j->ok=bounded_child_output(pid,fd[0],j->output,sizeof j->output,22);
+        if(!j->output[0])snprintf(j->output,sizeof j->output,
+            "Native Rust wrapper returned no output (possible failed execution).");
+    }
+    g_idle_add(pc2_native_wrapper_done,j);
+    return NULL;
+}
+static void pc2_native_wrapper_action(int live){
+    if(!pc2_native_wrapper_allowed())return;
+    if(G.selected<0||G.selected>=G.game_count){
+        log_line("Select a Steam game before using the native Rust wrapper.");return;
+    }
+    Game*g=&G.games[G.selected];
+    if(!game_is_steam(g)||game_is_steam_shortcut(g)){
+        log_line("Rust native wrapper currently requires an installed standard Steam game.");
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            "Native Rust wrapper is Steam-game-only; select an installed Steam game.");
+        return;
+    }
+    if(pc2_native_wrapper_busy){
+        log_line("Rust native wrapper check already running.");return;
+    }
+    char wrapper[4096]={0};
+    if(!pc2_deckcheatz_find_launcher(wrapper,sizeof wrapper)){
+        log_line("Native wrapper BLOCKED: existing DeckCheatz launcher not found. Detect the checkout in Settings.");
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            "DeckCheatz launcher not found. Detect or inspect your existing DeckCheatz checkout first.");
+        return;
+    }
+    const char*cli=getenv("GAMEWELD_NATIVE_WRAPPER_CLI");
+    if(!cli||cli[0]!='/'||access(cli,X_OK)!=0){
+        log_line("Native Rust wrapper CLI unavailable. Restart via --enable-native-wrapper-test.");
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            "Native Rust wrapper binary unavailable; restart with --enable-native-wrapper-test.");
+        return;
+    }
+    if(live){
+        GtkWidget*confirm=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_WARNING,GTK_BUTTONS_YES_NO,
+            "Experimental native DeckCheatz + Proton launch\n\n"
+            "%.140s (AppID %s)\n\n"
+            "This bypasses Steam's launch supervisor and may not work with "
+            "SteamAPI, DRM, runtime or overlay. It can modify your existing "
+            "game Proton prefix through upstream software.\n\n"
+            "Close the game and WeMod first. Do not continue without a separate "
+            "backup of that prefix. No Steam Launch Options are changed.\n\n"
+            "Confirm you accept this private test?",g->name,g->appid);
+        int response=gtk_dialog_run((GtkDialog*)confirm);
+        gtk_widget_destroy(confirm);
+        if(response!=GTK_RESPONSE_YES)return;
+    }
+    PC2NativeWrapperJob*j=calloc(1,sizeof *j);
+    if(!j){log_line("Could not allocate native wrapper check.");return;}
+    snprintf(j->appid,sizeof j->appid,"%s",g->appid);
+    snprintf(j->game,sizeof j->game,"%.240s",g->name);
+    snprintf(j->wrapper,sizeof j->wrapper,"%s",wrapper);
+    snprintf(j->cli,sizeof j->cli,"%s",cli);
+    j->live=live;
+    pc2_native_wrapper_busy=1;
+    pthread_t thread;
+    if(pthread_create(&thread,NULL,pc2_native_wrapper_worker,j)==0){
+        pthread_detach(thread);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            live?"Attempting opt-in native launch; outcome pending and attachment unverified.":
+                 "Checking native wrapper launch plan without starting a game…");
+    }else{
+        pc2_native_wrapper_busy=0;free(j);
+        log_line("Could not start native wrapper worker.");
+    }
+}
+static void on_pc2_native_wrapper_preview(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_native_wrapper_action(0);
+}
+static void on_pc2_native_wrapper_launch(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_native_wrapper_action(1);
 }
 static void on_pc2_steam_session_check(GtkButton*b,void*d){
     (void)b;(void)d;
@@ -3327,6 +3473,13 @@ static GtkWidget *build_library(void){
         G.pc2_deckcheatz_library_status=label("Select an installed Steam game to use WeMod.","muted");
         gtk_label_set_line_wrap((GtkLabel*)G.pc2_deckcheatz_library_status,TRUE);
         pack(inspect,G.pc2_deckcheatz_library_status,0);
+        if(pc2_native_wrapper_allowed()){
+            GtkWidget*npreview=button("Preview native Rust wrapper (no launch)","action");
+            GtkWidget*nlaunch=button("Launch native Rust wrapper + WeMod (experimental)","primary-action");
+            g_signal_connect_data(npreview,"clicked",(GCallback)on_pc2_native_wrapper_preview,NULL,NULL,0);
+            g_signal_connect_data(nlaunch,"clicked",(GCallback)on_pc2_native_wrapper_launch,NULL,NULL,0);
+            pack(inspect,npreview,0);pack(inspect,nlaunch,0);
+        }
         GtkWidget*advanced=gtk_expander_new("Advanced trainer / launch diagnostics");
         GtkWidget*tools=box(GTK_ORIENTATION_VERTICAL,8);
         gtk_container_add(advanced,tools);
