@@ -161,8 +161,13 @@ def acquire_to_cache(
                 entries, uncompressed = audit.inspect_zip_members(archive)
                 if archive.testzip() is not None:
                     raise CacheRefused("ZIP CRC check failed")
-        except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError,
-                audit.UnsafePreparedPrefix) as exc:
+        except audit.UnsafePreparedPrefix as exc:
+            # The archive inspector emits fixed, non-sensitive policy reasons.
+            # Preserve those diagnostics so a failed 900+ MiB download is
+            # actionable without weakening validation or showing member names.
+            raise CacheRefused(f"ZIP safety check failed: {exc}") from exc
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError) as exc:
+            # Low-level exceptions can include untrusted archive names/paths.
             raise CacheRefused("Unsafe or invalid prepared-prefix ZIP") from exc
 
         sha = digest.hexdigest()
