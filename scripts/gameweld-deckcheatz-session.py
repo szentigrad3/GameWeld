@@ -148,7 +148,7 @@ def arm(appid: str, launcher: Path, *, state_root=None, now=None) -> dict:
             "expires_in_seconds": ARM_TTL_SECONDS,
             "steam_launch_options_changed": False,
             "steam_game_launched": False,
-            "original_game_command_saved_by_steam": True,
+            "original_steam_launch_options_modified": False,
             "next_steam_launch_only": True}
 
 
