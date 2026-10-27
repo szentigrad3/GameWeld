@@ -108,7 +108,8 @@ def environment_for_test(folder: Path) -> dict[str, str]:
     return env
 
 
-def execute(command: list[str], *, env: dict[str, str], runner=subprocess.run):
+def execute(command: list[str], *, env: dict[str, str], runner=subprocess.run,
+            unresolved_on_failure: bool = False):
     try:
         result = runner(
             command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -116,8 +117,12 @@ def execute(command: list[str], *, env: dict[str, str], runner=subprocess.run):
     except subprocess.TimeoutExpired as exc:
         raise WineCaseRefused("Disposable Wine lookup exceeded the bounded timeout") from exc
     if result.returncode != 0:
+        if unresolved_on_failure:
+            # Missing/ambiguous paths are a valid negative Wine experiment.
+            # Do not turn a single failed lookup into a false global PASS.
+            return b""
         # Deliberately exclude potentially private paths and raw Wine logs.
-        raise WineCaseRefused("Disposable Wine command failed (exit status " +
+        raise WineCaseRefused("Disposable Wine initialization failed (exit status " +
                               str(result.returncode) + ")")
     if len(result.stdout) > 4096 or len(result.stderr) > 8192:
         raise WineCaseRefused("Unexpectedly large Wine diagnostic output")
@@ -143,7 +148,7 @@ def run_rehearsal(root: Path, *, runner=subprocess.run,
             for label, path, expected in WIN_TESTS:
                 output = execute(
                     [executable, "cmd", "/c", "type", path],
-                    env=env, runner=runner)
+                    env=env, runner=runner, unresolved_on_failure=True)
                 observed = result_token(output)
                 if observed == "UNRESOLVED":
                     interpretation = "UNRESOLVED"
