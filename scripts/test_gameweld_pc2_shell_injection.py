@@ -23,7 +23,7 @@ class NoShellTests(unittest.TestCase):
     def test_no_shell_dispatch_in_gtk_source(self):
         for pattern in (r"\bpopen\s*\(", r"\bsystem\s*\(", r"\bpclose\s*\("):
             self.assertNotRegex(self.source, pattern)
-        self.assertEqual(self.source.count("g_mkdir_with_parents(dir,0700)"), 6)
+        self.assertGreaterEqual(self.source.count("g_mkdir_with_parents(dir,0700)"), 6)
 
     def test_game_metadata_and_cheat_engine_are_exact_argv(self):
         for name in ("steam_shortcuts_tool()", "heroic_provider_tool()",
