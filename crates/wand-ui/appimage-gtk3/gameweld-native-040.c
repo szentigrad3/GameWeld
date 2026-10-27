@@ -77,6 +77,7 @@ extern GString *g_string_new(const gchar *);
 extern GString *g_string_append(GString *, const gchar *);
 extern GString *g_string_append_c(GString *, gchar);
 extern gchar *g_string_free(GString *, gboolean);
+extern int g_mkdir_with_parents(const char *, int);
 
 extern void gtk_init(int *, char ***);
 extern GtkWidget *gtk_window_new(int);
@@ -771,6 +772,40 @@ static const char *support_bundle_tool(void){static char p[2048];const char*a=ge
 static const char *steam_shortcuts_tool(void){static char p[2048];const char*a=getenv("APPDIR");if(a&&*a)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-steam-shortcuts.py",a);else snprintf(p,sizeof p,"gameweld-steam-shortcuts.py");return p;}
 static const char *steam_shortcut_live_launch_tool(void){static char p[2048];const char*a=getenv("APPDIR");if(a&&*a)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-steam-shortcut-live-launch.sh",a);else snprintf(p,sizeof p,"gameweld-steam-shortcut-live-launch.sh");return p;}
 
+/* Shell-free helper: paths and metadata are passed as exact argv tokens.
+ * Do not use popen/system with untrusted game IDs, APPDIR, or XDG paths. */
+static FILE *pc2_read_argv(const char *program,const char *arg1,
+                          const char *arg2,const char *arg3,pid_t *child){
+    if(child)*child=-1;
+    if(!program||!*program||!child)return NULL;
+    int fds[2];if(pipe(fds)!=0)return NULL;
+    pid_t pid=fork();
+    if(pid<0){close(fds[0]);close(fds[1]);return NULL;}
+    if(pid==0){
+        close(fds[0]);
+        if(dup2(fds[1],STDOUT_FILENO)<0)_exit(127);
+        close(fds[1]);
+        int dn=open("/dev/null",O_WRONLY);
+        if(dn>=0){dup2(dn,STDERR_FILENO);if(dn>2)close(dn);}
+        execlp(program,program,arg1,arg2,arg3,(char*)NULL);
+        _exit(127);
+    }
+    close(fds[1]);
+    FILE *stream=fdopen(fds[0],"r");
+    if(!stream){
+        close(fds[0]);int st=0;
+        while(waitpid(pid,&st,0)<0&&errno==EINTR){}
+        return NULL;
+    }
+    *child=pid;return stream;
+}
+static int pc2_close_read_argv(FILE *stream,pid_t child){
+    if(!stream||child<=0)return 0;
+    fclose(stream);int status=0;pid_t done;
+    do{done=waitpid(child,&status,0);}while(done<0&&errno==EINTR);
+    return done==child&&WIFEXITED(status)&&WEXITSTATUS(status)==0;
+}
+
 static void state_safe_id(const char *in,char *out,size_t cap){size_t j=0;if(!cap)return;for(size_t i=0;in&&in[i]&&j+1<cap;i++){unsigned char c=(unsigned char)in[i];out[j++]=(isalnum(c)||c=='_'||c=='.'||c=='-')?(char)c:'_';}out[j]=0;}
 static int heroic_runtime_repair_active_ui(const Game*g){
     if(!g||!game_is_heroic(g))return 0;
@@ -815,21 +850,21 @@ static int parse_games(const char *json) {
 }
 
 static int append_steam_shortcut_games(int start){
-    if(start>=MAX_GAMES)return start;char cmd[4096];snprintf(cmd,sizeof cmd,"python3 '%s' list 2>/dev/null",steam_shortcuts_tool());FILE*f=popen(cmd,"r");if(!f)return start;char line[16384];int count=start;
+    if(start>=MAX_GAMES)return start;pid_t read_pid=-1;FILE*f=pc2_read_argv("python3",steam_shortcuts_tool(),"list",NULL,&read_pid);if(!f)return start;char line[16384];int count=start;
     while(count<MAX_GAMES&&fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(!line[0]||line[0]!='{')continue;Game*g=&G.games[count];memset(g,0,sizeof *g);json_string(line,"appid",g->appid,sizeof g->appid);json_string(line,"gameid",g->launch_id,sizeof g->launch_id);json_string(line,"key",g->key,sizeof g->key);json_string(line,"provider",g->provider,sizeof g->provider);json_string(line,"runner",g->runner,sizeof g->runner);json_string(line,"name",g->name,sizeof g->name);json_string(line,"install_dir",g->install_dir,sizeof g->install_dir);json_string(line,"executable",g->executable,sizeof g->executable);json_string(line,"prefix",g->prefix,sizeof g->prefix);json_string(line,"compatdata",g->compatdata,sizeof g->compatdata);json_string(line,"steam_root",g->steam_root,sizeof g->steam_root);json_string(line,"launch_options",g->launch_options,sizeof g->launch_options);json_string(line,"target_kind",g->target_kind,sizeof g->target_kind);json_string(line,"compat_tool",g->compat_tool,sizeof g->compat_tool);json_string(line,"compat_tool_path",g->compat_tool_path,sizeof g->compat_tool_path);json_string(line,"compat_tool_source",g->compat_tool_source,sizeof g->compat_tool_source);json_string(line,"resolution_state",g->resolution_state,sizeof g->resolution_state);json_string(line,"resolution_label",g->resolution_label,sizeof g->resolution_label);json_string(line,"launch_uri",g->launch_uri,sizeof g->launch_uri);g->shortcut_runtime_resolved=json_bool(line,"runtime_resolved",0);g->shortcut_prefix_found=json_bool(line,"prefix_found",0);g->shortcut_runtime_found=json_bool(line,"runtime_found",0);g->shortcut_launch_supported=json_bool(line,"launch_supported",0);if(g->appid[0]&&g->name[0]&&g->key[0])count++;}
-    pclose(f);return count;
+    pc2_close_read_argv(f,read_pid);return count;
 }
 
 static int append_heroic_games(int start){
-    if(start>=MAX_GAMES)return start;char cmd[4096];snprintf(cmd,sizeof cmd,"python3 '%s' list 2>/dev/null",heroic_provider_tool());FILE*f=popen(cmd,"r");if(!f)return start;char line[16384];int count=start;
+    if(start>=MAX_GAMES)return start;pid_t read_pid=-1;FILE*f=pc2_read_argv("python3",heroic_provider_tool(),"list",NULL,&read_pid);if(!f)return start;char line[16384];int count=start;
     while(count<MAX_GAMES&&fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(!line[0]||line[0]!='{')continue;Game*g=&G.games[count];memset(g,0,sizeof *g);json_string(line,"appid",g->appid,sizeof g->appid);json_string(line,"key",g->key,sizeof g->key);json_string(line,"provider",g->provider,sizeof g->provider);json_string(line,"runner",g->runner,sizeof g->runner);json_string(line,"name",g->name,sizeof g->name);json_string(line,"install_dir",g->install_dir,sizeof g->install_dir);json_string(line,"executable",g->executable,sizeof g->executable);json_string(line,"prefix",g->prefix,sizeof g->prefix);json_string(line,"wine_type",g->wine_type,sizeof g->wine_type);json_string(line,"wine_bin",g->wine_bin,sizeof g->wine_bin);json_string(line,"wine_name",g->wine_name,sizeof g->wine_name);json_string(line,"art_path",g->art_path,sizeof g->art_path);json_string(line,"heroic_root",g->heroic_root,sizeof g->heroic_root);if(g->appid[0]&&g->name[0])count++;}
-    pclose(f);return count;
+    pc2_close_read_argv(f,read_pid);return count;
 }
 
 static int append_lutris_games(int start){
-    if(start>=MAX_GAMES)return start;char cmd[4096];snprintf(cmd,sizeof cmd,"python3 '%s' list 2>/dev/null",lutris_provider_tool());FILE*f=popen(cmd,"r");if(!f)return start;char line[16384];int count=start;
+    if(start>=MAX_GAMES)return start;pid_t read_pid=-1;FILE*f=pc2_read_argv("python3",lutris_provider_tool(),"list",NULL,&read_pid);if(!f)return start;char line[16384];int count=start;
     while(count<MAX_GAMES&&fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(!line[0]||line[0]!='{')continue;Game*g=&G.games[count];memset(g,0,sizeof *g);json_string(line,"appid",g->appid,sizeof g->appid);json_string(line,"key",g->key,sizeof g->key);json_string(line,"provider",g->provider,sizeof g->provider);json_string(line,"runner",g->runner,sizeof g->runner);json_string(line,"name",g->name,sizeof g->name);json_string(line,"install_dir",g->install_dir,sizeof g->install_dir);json_string(line,"executable",g->executable,sizeof g->executable);json_string(line,"prefix",g->prefix,sizeof g->prefix);json_string(line,"wine_type",g->wine_type,sizeof g->wine_type);json_string(line,"wine_bin",g->wine_bin,sizeof g->wine_bin);json_string(line,"wine_name",g->wine_name,sizeof g->wine_name);json_string(line,"art_path",g->art_path,sizeof g->art_path);json_string(line,"launch_uri",g->launch_uri,sizeof g->launch_uri);json_string(line,"compat_tool",g->compat_tool,sizeof g->compat_tool);json_string(line,"compat_tool_path",g->compat_tool_path,sizeof g->compat_tool_path);json_string(line,"compat_tool_source",g->compat_tool_source,sizeof g->compat_tool_source);json_string(line,"resolution_state",g->resolution_state,sizeof g->resolution_state);json_string(line,"resolution_label",g->resolution_label,sizeof g->resolution_label);json_string(line,"target_kind",g->target_kind,sizeof g->target_kind);g->shortcut_prefix_found=json_bool(line,"prefix_found",0);g->shortcut_runtime_found=json_bool(line,"runtime_found",0);g->shortcut_launch_supported=json_bool(line,"launch_supported",0);if(g->appid[0]&&g->name[0]&&!strcmp(g->provider,"lutris"))count++;}
-    pclose(f);return count;
+    pc2_close_read_argv(f,read_pid);return count;
 }
 
 static int refresh_model(char **err) {
@@ -904,7 +939,7 @@ static int load_local_trainer(const char *appid,char *out,size_t cap){
 }
 static int save_local_trainer(const char *appid,const char *trainer){
     if(!appid||!*appid)return 0;char path[2048],dir[2048];config_path(path,sizeof path);config_dir(dir,sizeof dir);
-    char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;
+    if(g_mkdir_with_parents(dir,0700)!=0)return 0;
     char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*out=fopen(tmp,"w");if(!out){if(in)fclose(in);return 0;}char line[4096];
     if(in){while(fgets(line,sizeof line,in)){char copy[4096];snprintf(copy,sizeof copy,"%s",line);char *tab=strchr(copy,'\t');if(tab){*tab=0;if(!strcmp(copy,appid))continue;}fputs(line,out);}fclose(in);}if(trainer&&*trainer)fprintf(out,"%s\t%s\n",appid,trainer);fclose(out);if(rename(tmp,path)!=0){unlink(tmp);return 0;}return 1;
 }
@@ -932,7 +967,7 @@ static int load_launch_profile(const char *key,char *out,size_t cap){
 }
 static int save_launch_profile(const char *key,const char *mode){
     if(!key||!*key||!launch_profile_mode_valid(mode))return 0;char path[2048],dir[2048];launch_profile_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;
-    char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*outf=fopen(tmp,"w");if(!outf){if(in)fclose(in);return 0;}char line[4096];
+    if(g_mkdir_with_parents(dir,0700)!=0)return 0;char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*outf=fopen(tmp,"w");if(!outf){if(in)fclose(in);return 0;}char line[4096];
     if(in){while(fgets(line,sizeof line,in)){char copy[4096];snprintf(copy,sizeof copy,"%s",line);char*tab=strchr(copy,'\t');if(tab){*tab=0;if(!strcmp(copy,key))continue;}fputs(line,outf);}fclose(in);}fprintf(outf,"%s\t%s\n",key,mode);fclose(outf);if(rename(tmp,path)!=0){unlink(tmp);return 0;}return 1;
 }
 static int delete_launch_profile(const char *key){
@@ -1519,16 +1554,16 @@ static int load_cheat_engine_installer(char *out,size_t cap){
     if(out&&cap)out[0]=0;char p[2048];cheat_engine_installer_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;char line[4096];if(!fgets(line,sizeof line,f)){fclose(f);return 0;}fclose(f);line[strcspn(line,"\r\n")]=0;if(!*line)return 0;snprintf(out,cap,"%.*s",(int)(cap?cap-1:0),line);return 1;
 }
 static int save_cheat_engine_installer(const char *exe){
-    char path[2048],dir[2048];cheat_engine_installer_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;
+    char path[2048],dir[2048];cheat_engine_installer_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;if(g_mkdir_with_parents(dir,0700)!=0)return 0;
     if(!exe||!*exe){unlink(path);return 1;}FILE*f=fopen(path,"w");if(!f)return 0;fprintf(f,"%s\n",exe);fclose(f);return 1;
 }
 static int readable_file(const char *path);
 static const char *cheat_engine_manager(void){static char p[2048];const char *appdir=getenv("APPDIR");if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-cheat-engine-manager.sh",appdir);else snprintf(p,sizeof p,"gameweld-cheat-engine-manager.sh");return p;}
 static int detect_managed_cheat_engine(const char *appid,char *out,size_t cap){
-    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%.*s",(int)(cap?cap-1:0),line);ok=1;}}pclose(f);return ok;
+    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;pid_t read_pid=-1;FILE*f=pc2_read_argv(cheat_engine_manager(),"detect",appid,NULL,&read_pid);if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){snprintf(out,cap,"%.*s",(int)(cap?cap-1:0),line);ok=1;}}pc2_close_read_argv(f,read_pid);return ok;
 }
 static int detect_managed_windows_ce(const char *appid,char *out,size_t cap){
-    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;char cmd[4096];snprintf(cmd,sizeof cmd,"'%s' windows-detect %s 2>/dev/null",cheat_engine_manager(),appid);FILE*f=popen(cmd,"r");if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){if(out&&cap&&strlen(line)<cap){memcpy(out,line,strlen(line)+1);ok=1;}}}pclose(f);return ok;
+    if(out&&cap)out[0]=0;if(!appid||!*appid)return 0;pid_t read_pid=-1;FILE*f=pc2_read_argv(cheat_engine_manager(),"windows-detect",appid,NULL,&read_pid);if(!f)return 0;char line[4096];int ok=0;if(fgets(line,sizeof line,f)){line[strcspn(line,"\r\n")]=0;if(*line&&readable_file(line)){if(out&&cap&&strlen(line)<cap){memcpy(out,line,strlen(line)+1);ok=1;}}}pc2_close_read_argv(f,read_pid);return ok;
 }
 static pid_t spawn_managed_ce_install(const char *appid,const char *installer){pid_t p=fork();if(p==0){execl(cheat_engine_manager(),cheat_engine_manager(),"install",appid,installer,(char*)NULL);_exit(127);}return p;}
 static pid_t spawn_managed_ce_download_install(const char *appid){pid_t p=fork();if(p==0){execl(cheat_engine_manager(),cheat_engine_manager(),"download-install",appid,(char*)NULL);_exit(127);}return p;}
@@ -1579,14 +1614,14 @@ static int load_cheat_table(const char *appid,char *out,size_t cap){
 }
 static int save_cheat_table(const char *appid,const char *table){
     if(!appid||!*appid)return 0;char path[2048],dir[2048];cheat_tables_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;
-    char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*out=fopen(tmp,"w");if(!out){if(in)fclose(in);return 0;}char line[4096];
+    if(g_mkdir_with_parents(dir,0700)!=0)return 0;char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*out=fopen(tmp,"w");if(!out){if(in)fclose(in);return 0;}char line[4096];
     if(in){while(fgets(line,sizeof line,in)){char copy[4096];snprintf(copy,sizeof copy,"%s",line);char *tab=strchr(copy,'\t');if(tab){*tab=0;if(!strcmp(copy,appid))continue;}fputs(line,out);}fclose(in);}if(table&&*table)fprintf(out,"%s\t%s\n",appid,table);fclose(out);if(rename(tmp,path)!=0){unlink(tmp);return 0;}return 1;
 }
 static int load_cheat_engine(char *out,size_t cap){
     if(out&&cap)out[0]=0;char p[2048];cheat_engine_path(p,sizeof p);FILE*f=fopen(p,"r");if(!f)return 0;char line[4096];if(!fgets(line,sizeof line,f)){fclose(f);return 0;}fclose(f);line[strcspn(line,"\r\n")]=0;if(!*line)return 0;if(!out||!cap||strlen(line)>=cap)return 0;memcpy(out,line,strlen(line)+1);return 1;
 }
 static int save_cheat_engine(const char *exe){
-    char path[2048],dir[2048];cheat_engine_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;
+    char path[2048],dir[2048];cheat_engine_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;if(g_mkdir_with_parents(dir,0700)!=0)return 0;
     if(!exe||!*exe){unlink(path);return 1;}FILE*f=fopen(path,"w");if(!f)return 0;fprintf(f,"%s\n",exe);fclose(f);return 1;
 }
 static const char *cheat_table_launcher(void){static char p[2048];const char *appdir=getenv("APPDIR");if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-cheat-table.sh",appdir);else snprintf(p,sizeof p,"gameweld-cheat-table.sh");return p;}
@@ -1603,7 +1638,7 @@ static int load_native_profile(const char *appid,char *out,size_t cap){
     char line[4096];int ok=0;while(fgets(line,sizeof line,f)){char*tab=strchr(line,'\t');if(!tab)continue;*tab=0;char*v=tab+1;v[strcspn(v,"\r\n")]=0;if(!strcmp(line,appid)&&*v){snprintf(out,cap,"%s",v);ok=1;break;}}fclose(f);return ok;
 }
 static int save_native_profile(const char *appid,const char *profile){
-    if(!appid||!*appid)return 0;char path[2048],dir[2048];native_profiles_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;char cmd[4096];snprintf(cmd,sizeof cmd,"mkdir -p -- '%s'",dir);if(system(cmd)!=0)return 0;char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*out=fopen(tmp,"w");if(!out){if(in)fclose(in);return 0;}char line[4096];
+    if(!appid||!*appid)return 0;char path[2048],dir[2048];native_profiles_path(path,sizeof path);snprintf(dir,sizeof dir,"%s",path);char*slash=strrchr(dir,'/');if(slash)*slash=0;if(g_mkdir_with_parents(dir,0700)!=0)return 0;char tmp[2100];snprintf(tmp,sizeof tmp,"%s.tmp",path);FILE*in=fopen(path,"r"),*out=fopen(tmp,"w");if(!out){if(in)fclose(in);return 0;}char line[4096];
     if(in){while(fgets(line,sizeof line,in)){char copy[4096];snprintf(copy,sizeof copy,"%s",line);char*tab=strchr(copy,'\t');if(tab){*tab=0;if(!strcmp(copy,appid))continue;}fputs(line,out);}fclose(in);}if(profile&&*profile)fprintf(out,"%s\t%s\n",appid,profile);fclose(out);if(rename(tmp,path)!=0){unlink(tmp);return 0;}return 1;
 }
 static const char *native_profile_launcher(void){static char p[2048];const char *appdir=getenv("APPDIR");if(appdir&&*appdir)snprintf(p,sizeof p,"%s/usr/libexec/gameweld-native-profile.sh",appdir);else snprintf(p,sizeof p,"gameweld-native-profile.sh");return p;}
