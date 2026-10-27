@@ -179,7 +179,7 @@ class PrefixActivationTests(unittest.TestCase):
         pid = self.processes / "712"
         pid.mkdir()
         (pid / "environ").write_bytes(
-            f"WINEPREFIX={self.compat / 'pfx'}\\0".encode()
+            f"WINEPREFIX={self.compat / 'pfx'}\0".encode()
         )
         with patch.dict(os.environ, {
             "GAMEWELD_PREFIX_IMPORT_EXPERIMENT": promote.EXPERIMENT
