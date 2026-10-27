@@ -34,9 +34,28 @@ def candidates(home: Path, data_home: Path) -> list[Path]:
 
 
 def validate_launcher(path: Path) -> Path:
-    if (not path.is_absolute() or path.name != "wemod" or
-            path.is_symlink() or not path.is_file() or
-            not stat.S_ISREG(path.stat().st_mode) or
+    if not path.is_absolute() or path.name != "wemod":
+        raise RecipeBlocked("Select an absolute path to the DeckCheatz 'wemod' wrapper")
+    # DeckCheatz 1.x deliberately supplies 'wemod' as a symlink to
+    # 'src/wemod.py'. The GameWeld GUI followed that link during discovery
+    # while this helper mistakenly refused ALL symlinks, including the
+    # official layout which the user had already proven works through Steam.
+    #
+    # Allow only that one in-checkout link, never an arbitrary symlink to
+    # another executable or a chain escaping the source checkout.
+    if path.is_symlink():
+        source = path.parent / "src" / "wemod.py"
+        if source.is_symlink() or not source.is_file():
+            raise RecipeBlocked("DeckCheatz symlink target must be src/wemod.py")
+        try:
+            root = path.parent.resolve(strict=True)
+            actual = path.resolve(strict=True)
+            expected = source.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise RecipeBlocked("Cannot safely resolve DeckCheatz launcher") from exc
+        if not expected.is_relative_to(root) or actual != expected:
+            raise RecipeBlocked("DeckCheatz wrapper symlink points outside its expected source")
+    if (not path.is_file() or not stat.S_ISREG(path.stat().st_mode) or
             not os.access(path, os.X_OK)):
         raise RecipeBlocked("Select an installed executable DeckCheatz 'wemod' wrapper")
     return path
