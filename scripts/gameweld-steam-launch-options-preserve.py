@@ -226,10 +226,20 @@ def backup_file(appid: str, account: str, root: Path | None):
     return state / "gameweld/steam-option-backups" / account / (appid + ".json")
 
 def save_backup(appid: str, account: str, old: str, root: Path | None = None):
+    if not APPID.fullmatch(appid) or not ACCOUNT.fullmatch(account):
+        raise Blocked("Invalid game/account backup identifiers")
     path = backup_file(appid, account, root)
-    if path.is_symlink() or path.parent.is_symlink():
+    for directory in (path.parent.parent.parent, path.parent.parent, path.parent):
+        if directory.is_symlink():
+            raise Blocked("Symlinked backup directory refused")
+        directory.mkdir(mode=0o700, exist_ok=True)
+    if path.is_symlink():
         raise Blocked("Symlinked backup location refused")
-    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    for directory in (path.parent.parent.parent, path.parent.parent, path.parent):
+        info = directory.stat()
+        if (info.st_uid != os.getuid() or
+                stat.S_IMODE(info.st_mode) & 0o077):
+            raise Blocked("Backup directory is not private to the current user")
     payload = {"version": 1, "appid": appid, "account": account, "original": old}
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
                  getattr(os, "O_NOFOLLOW", 0), 0o600)
