@@ -85,7 +85,7 @@ class SteamOptionsTests(unittest.TestCase):
         preferred = self.root / ".local/share"
         candidates = recipe.candidates(self.root, preferred)
         self.assertEqual(candidates[0], preferred / "gameweld/deckcheatz/wemod")
-        self.assertEqual(candidates[2], self.root / "wemod-launcher/wemod")
+        self.assertEqual(candidates[1], self.root / "wemod-launcher/wemod")
         self.assertEqual(len(set(candidates)), len(candidates))
 
     def test_no_steam_config_or_game_files_ever_created(self):
