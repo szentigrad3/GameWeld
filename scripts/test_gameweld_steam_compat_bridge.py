@@ -897,7 +897,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('pc2_steam_option_helper_run("--save-original"', ui)
         self.assertIn('NEEDS_STEAM_UI_EMPTY_CHECK', ui)
         self.assertIn('Did you personally confirm it is empty?', ui)
-        self.assertIn('Do NOT continue: select No', ui.replace('do NOT continue', 'Do NOT continue'))
+        self.assertIn('do NOT continue: select No', ui)
         self.assertIn('verified_empty=1;', ui)
         self.assertIn('"--verified-empty-in-steam"', ui)
         self.assertIn('pc2_steam_option_helper_run("--restore-original"', ui)
