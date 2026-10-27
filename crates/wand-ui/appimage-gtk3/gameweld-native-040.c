@@ -2774,6 +2774,13 @@ static int pc2_native_wrapper_allowed(void){
     const char*flag=getenv("GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER");
     return pc2_discovery_only()&&flag&&!strcmp(flag,"1");
 }
+/* Prefer Steam's own Proton, Steam Runtime and game launch supervisor.
+ * WeMod is a separate, consented client-only handoff after game detection. */
+static int pc2_steam_wemod_allowed(void){
+    const char*flag=getenv("GAMEWELD_PC2_ENABLE_STEAM_WEMOD");
+    return pc2_discovery_only()&&flag&&!strcmp(flag,"1")&&pc2_steam_launch_allowed();
+}
+static void pc2_steam_wemod_attach_selected(int live);
 /* A game-only Steam request must not be logged as successful until we can
  * inspect the Steam command's result and same-user process association.
  * This worker is opt-in and never starts any trainer or changes settings. */
@@ -2782,6 +2789,7 @@ typedef struct {
     int confirmed;
     int expect_deckcheatz;
     int session_mode;
+    int steam_managed_wemod;
     char deckcheatz_launcher[4096];
 } PC2SteamLaunchJob;
 static int pc2_steam_launch_busy=0;
@@ -2809,6 +2817,20 @@ static gboolean pc2_steam_launch_done(gpointer data){
             j->expect_deckcheatz?
             "Steam process detected; existing Launch Options may have run. WeMod not verified.":
             "Steam process association observed; game window and trainer still unverified.");
+    }
+    /* Only after Steam association was observed, preview the separate WeMod
+     * handoff. Do not launch a client or modify the prefix without consent. */
+    if(j->steam_managed_wemod && !strcmp(state,"ASSOCIATED PROCESS OBSERVED") &&
+       G.selected>=0 && G.selected<G.game_count &&
+       !strcmp(G.games[G.selected].appid,j->appid)){
+        pc2_steam_wemod_attach_selected(0);
+    }else if(j->steam_managed_wemod){
+        GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
+            "Steam launch not verified for %.140s.\n\n%.2100s\n\n"
+            "WeMod was NOT started. Use the separate WeMod button once the game is running.",
+            j->game_name,j->output);
+        gtk_dialog_run((GtkDialog*)notice);gtk_widget_destroy(notice);
     }
     free(j);return FALSE;
 }
@@ -2983,6 +3005,7 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
     snprintf(j->appid,sizeof j->appid,"%s",id);
     snprintf(j->game_name,sizeof j->game_name,"%.240s",g->name);
     j->expect_deckcheatz=expect_deckcheatz;
+    j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz;
     j->session_mode=session_mode;
     if(session_mode)snprintf(j->deckcheatz_launcher,
                              sizeof j->deckcheatz_launcher,"%s",launcher);
@@ -3368,7 +3391,8 @@ static GtkWidget *build_home(void){
     GtkWidget*idrow=box(GTK_ORIENTATION_HORIZONTAL,13);GtkWidget*cover=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(cover,"cover-frame");G.cover_image=gtk_image_new();gtk_widget_set_size_request(G.cover_image,155,220);pack(cover,G.cover_image,0);pack(idrow,cover,0);
     GtkWidget*ids=box(GTK_ORIENTATION_VERTICAL,7);G.hero_name=label("Select a game",NULL);gtk_widget_set_name(G.hero_name,"game-title");gtk_label_set_line_wrap((GtkLabel*)G.hero_name,TRUE);pack(ids,G.hero_name,0);G.hero_meta=label("Steam / Heroic • App ID —",NULL);gtk_widget_set_name(G.hero_meta,"meta");gtk_label_set_line_wrap((GtkLabel*)G.hero_meta,TRUE);pack(ids,G.hero_meta,0);pack(ids,meta_chip("LOCAL / SINGLE PLAYER"),0);G.game_detected_detail=label("Choose a game from Library to review its trainer, runtime and exact launch path before starting the session.","muted");gtk_label_set_line_wrap((GtkLabel*)G.game_detected_detail,TRUE);pack(ids,G.game_detected_detail,1);pack(idrow,ids,1);pack(copy,idrow,1);
     if(pc2_discovery_only()){
-        GtkWidget*direct=button(pc2_native_wrapper_allowed()?
+        GtkWidget*direct=button(pc2_steam_wemod_allowed()?
+            "Play via Steam + WeMod (private test)":pc2_native_wrapper_allowed()?
             "Launch native Rust wrapper + WeMod (experimental)":pc2_steam_launch_allowed()?
             "Play via Steam + DeckCheatz":"Set up one-session DeckCheatz","primary-action");
         G.pc2_deckcheatz_overview_play=direct;
@@ -3479,7 +3503,8 @@ static GtkWidget *build_library(void){
     GtkWidget*body=box(GTK_ORIENTATION_HORIZONTAL,14);
     GtkWidget*listpanel=box(GTK_ORIENTATION_VERTICAL,8);style(listpanel,"panel");pack(listpanel,label("GAMES","section-kicker"),0);GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_vexpand(sc,TRUE);G.game_list=gtk_list_box_new();g_signal_connect_data(G.game_list,"row-selected",(GCallback)selected_changed,NULL,NULL,0);
     for(int i=0;i<G.game_count;i++){GtkWidget*r=gtk_list_box_row_new();style(r,"library-row");G.game_rows[i]=r;GtkWidget*rb=box(GTK_ORIENTATION_HORIZONTAL,11);margins(rb,7);GtkWidget*thumb=gtk_image_new();style(thumb,"game-thumb");char art[2048]={0};if(!resolve_game_art(&G.games[i],1,art,sizeof art))resolve_game_art(&G.games[i],0,art,sizeof art);set_image_path(thumb,art[0]?art:NULL,52,70);pack(rb,thumb,0);GtkWidget*txt=box(GTK_ORIENTATION_VERTICAL,3);pack(txt,label(G.games[i].name,"game-row-title"),0);char x[384];if(game_is_steam_shortcut(&G.games[i]))snprintf(x,sizeof x,"Steam shortcut • %s",G.games[i].appid);else if(game_is_steam(&G.games[i]))snprintf(x,sizeof x,"Steam • %s",G.games[i].appid);else if(game_is_lutris(&G.games[i]))snprintf(x,sizeof x,"Lutris • %s",G.games[i].runner[0]?G.games[i].runner:"wine");else snprintf(x,sizeof x,"Heroic • %s",G.games[i].runner);pack(txt,label(x,"muted"),0);pack(rb,txt,1);GtkWidget*installed=label(game_is_lutris(&G.games[i])?"Discovery":"Ready",game_is_lutris(&G.games[i])?"muted":"good");gtk_widget_set_name(installed,"status-pill");pack(rb,installed,0);gtk_container_add(r,rb);gtk_list_box_insert((GtkListBox*)G.game_list,r,-1);}gtk_container_add(sc,G.game_list);pack(listpanel,sc,1);pack(body,listpanel,1);
-    GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,pc2_discovery_only()?350:410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());GtkWidget*session_check=button("Check Steam session (read-only)","action");GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);GtkWidget*deckcheatz_test=button(pc2_native_wrapper_allowed()?
+    GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,pc2_discovery_only()?350:410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());GtkWidget*session_check=button("Check Steam session (read-only)","action");GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);GtkWidget*deckcheatz_test=button(pc2_steam_wemod_allowed()?
+            "Play via Steam + WeMod (private test)":pc2_native_wrapper_allowed()?
             "Launch native Rust wrapper + WeMod (experimental)":pc2_steam_launch_allowed()?
             "Play via Steam + DeckCheatz":"Set up one-session DeckCheatz","primary-action");G.pc2_deckcheatz_library_play=deckcheatz_test;g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary,NULL,NULL,0);g_signal_connect_data(lb1,"clicked",(GCallback)on_play,NULL,NULL,0);g_signal_connect_data(lbct,"clicked",(GCallback)on_launch_with_cheat_table,NULL,NULL,0);g_signal_connect_data(lbw,"clicked",(GCallback)on_launch_with_wemod,NULL,NULL,0);g_signal_connect_data(lba,"clicked",(GCallback)on_launch_with_aurora,NULL,NULL,0);g_signal_connect_data(lbc,"clicked",(GCallback)on_launch_with_cheat_evolution,NULL,NULL,0);g_signal_connect_data(lbx,"clicked",(GCallback)on_launch_custom_trainer,NULL,NULL,0);g_signal_connect_data(lb2,"clicked",(GCallback)on_play_normal,NULL,NULL,0);g_signal_connect_data(lb3,"clicked",(GCallback)on_game_folder,NULL,NULL,0);g_signal_connect_data(preview,"clicked",(GCallback)on_steam_launch_preview,NULL,NULL,0);g_signal_connect_data(steam_only,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);g_signal_connect_data(session_check,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);if(pc2_discovery_only()){
         pack(inspect,deckcheatz_test,0);
@@ -4722,12 +4747,15 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     GtkWidget *buttons[]={G.pc2_deckcheatz_overview_play,G.pc2_deckcheatz_library_play};
     for(int i=0;i<2;i++)if(buttons[i]){
         gtk_button_set_label((GtkButton*)buttons[i],
+            pc2_steam_wemod_allowed()?"Play via Steam + WeMod (private test)":
             pc2_native_wrapper_allowed()?"Launch native Rust wrapper + WeMod (experimental)":
             pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam");
         gtk_widget_set_sensitive(buttons[i],TRUE);
     }
     if(G.pc2_deckcheatz_overview_status)
         set_label(G.pc2_deckcheatz_overview_status,
+            pc2_steam_wemod_allowed()?
+            "Steam launches normally; separate consented WeMod client handoff follows. Attachment unverified.":
             pc2_native_wrapper_allowed()?
             "Rust direct-wrapper test; bypasses Steam supervisor. Consent required; trainer unverified.":
             pc2_steam_launch_allowed()?
@@ -4735,6 +4763,8 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
             "Copy the DeckCheatz Steam launch option in Settings. No configuration modified.");
     if(G.pc2_deckcheatz_library_status)
         set_label(G.pc2_deckcheatz_library_status,
+            pc2_steam_wemod_allowed()?
+            "Steam-managed mode. No Steam Bridge or Proton selection; WeMod attachment not verified.":
             pc2_native_wrapper_allowed()?
             "Native Rust wrapper mode enabled. Steam Launch Options unchanged; game and trainer unverified.":
             pc2_steam_launch_allowed()?
@@ -5443,7 +5473,8 @@ static void on_pc2_bridge_primary(GtkButton*b,void*d){
     if(pc2_discovery_only()){
         /* Steam wraps %command% using the user-configured DeckCheatz launcher.
          * Use the established, confirmed Steam game-only handoff worker. */
-        if(pc2_native_wrapper_allowed())pc2_native_wrapper_action(1);
+        if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);
+        else if(pc2_native_wrapper_allowed())pc2_native_wrapper_action(1);
         else pc2_steam_launch_selected(1);
         return;
     }
