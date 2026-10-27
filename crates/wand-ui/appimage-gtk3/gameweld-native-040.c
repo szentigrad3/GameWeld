@@ -4649,6 +4649,7 @@ static void pc2_prepared_catalog_display(const char *raw){
     char *copy=g_strdup(raw ? raw : "");
     char *save=NULL;
     GString *summary=g_string_new("");
+    int skipped_rejected=0;
     for(char *line=strtok_r(copy,"\n",&save);line;line=strtok_r(NULL,"\n",&save)){
         if(!strncmp(line,"ASSET\t",6)){
             gchar **cols=g_strsplit(line,"\t",5);
@@ -4675,6 +4676,9 @@ static void pc2_prepared_catalog_display(const char *raw){
                 }
             }
             g_strfreev(cols);
+        }else if(!strncmp(line,"BLOCKED\t",8)){
+            /* Already rejected locally: intentionally NOT added to dropdown. */
+            skipped_rejected++;
         }else{
             g_string_append(summary,line);
             g_string_append_c(summary,'\n');
@@ -4691,11 +4695,18 @@ static void pc2_prepared_catalog_display(const char *raw){
         char concise[1024];
         if(pc2_prepared_choice_count)
             snprintf(concise,sizeof concise,
-                "%d possible prepared prefix release(s) found. Select one "
-                "manually to review its size and source. No version was "
-                "verified for this game. A ZIP is not an installed or "
-                "working trainer. No files downloaded.",
-                pc2_prepared_choice_count);
+                "%d possible prepared prefix release(s) found; %d previously "
+                "rejected release(s) excluded. Select manually to review "
+                "source and size. No release is runtime-verified; "
+                "GameWeld did not download or install anything.",
+                pc2_prepared_choice_count,skipped_rejected);
+        else if(skipped_rejected)
+            snprintf(concise,sizeof concise,
+                "%d previously rejected prepared release(s) excluded from "
+                "downloads because of unsafe case-only ZIP collisions. "
+                "No verified replacement available in this catalog result. "
+                "Do not retry the same archive; no files downloaded.",
+                skipped_rejected);
         else
             snprintf(concise,sizeof concise,
                 "No safe release choices found. The catalog may be offline "
