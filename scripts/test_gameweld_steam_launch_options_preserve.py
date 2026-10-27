@@ -127,6 +127,28 @@ class PreserveTests(unittest.TestCase):
             options.launch_option(self.file, APPID)
         self.unchanged()
 
+    def test_working_steam_symlink_integration_no_silent_replacement(self):
+        # Integration regression for a real working Steam DeckCheatz 1.x
+        # checkout, whose wemod entry is a symlink to src/wemod.py.
+        checkout = self.root / "GameWeld DeckCheatz"
+        src = checkout / "src"
+        src.mkdir(parents=True)
+        target = src / "wemod.py"
+        target.write_text("#!/usr/bin/env python3\n")
+        target.chmod(0o755)
+        wrapper = checkout / "wemod"
+        wrapper.symlink_to("src/wemod.py")
+        known = ('WINEDLLOVERRIDES="version=n,b" '
+                 'WEMOD_LOG="' + str(checkout / "wemod.log") + '" '
+                 '"' + str(wrapper) + '" %command%')
+        self.make_config(known)
+        original = options.launch_option(self.file, APPID)
+        proposed, state = options.merge(original, options.recipe_for(wrapper))
+        self.assertEqual(state, "ALREADY_CONFIGURED")
+        self.assertEqual(proposed, known)
+        self.assertEqual(self.file.read_bytes(), self.saved)
+        self.assertFalse((checkout / "wemod.log").exists())
+
     def test_multiple_accounts_never_guess_and_selector_is_explicit(self):
         second = self.steam / "userdata" / "24680/config/localconfig.vdf"
         second.parent.mkdir(parents=True)
