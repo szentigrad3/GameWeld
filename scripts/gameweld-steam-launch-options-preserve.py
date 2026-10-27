@@ -121,12 +121,16 @@ def launch_option(config: Path, appid: str) -> str:
             raise Blocked("Steam app entry has unexpected structure")
         tree = only(tree, key)
         if tree is None:
-            return ""
+            raise Blocked("Steam on-disk config has no " + key +
+                          " for this game/account; cannot verify original Launch Options. "
+                          "Check the current field in Steam Properties. No backup or copy made.")
     if not isinstance(tree, dict):
         raise Blocked("Steam game entry is not a VDF object")
     value = only(tree, "LaunchOptions")
     if value is None:
-        return ""
+        raise Blocked("Steam on-disk app entry has no LaunchOptions field; "
+                      "an absent field is NOT proof that Steam's live Launch Options are empty. "
+                      "Check the game in Steam Properties; no backup or copy made.")
     if not isinstance(value, str) or len(value) > MAX_OPTION:
         raise Blocked("Steam LaunchOptions value is invalid")
     return value
@@ -275,6 +279,9 @@ def main(argv=None):
     parser.add_argument("--steam-account")
     parser.add_argument("--launcher", type=Path)
     parser.add_argument("--format", choices=("text", "json"), default="json")
+    parser.add_argument("--verified-empty-in-steam", action="store_true",
+                        help="Only after manually checking that the CURRENT Steam Properties "
+                             "Launch Options field for the selected account/game is empty")
     args = parser.parse_args(argv)
     try:
         cfg, account = find_config(args.appid, args.steam_root, args.steam_account)
@@ -287,6 +294,11 @@ def main(argv=None):
         else:
             old = launch_option(cfg, args.appid)
             proposed, decision = merge(old, recipe_for(args.launcher))
+            # The running Steam client may hold a different, not-yet-persisted
+            # LaunchOptions value. Even an explicit empty string on disk does
+            # not prove the current Steam Properties field is empty.
+            if old == "" and not args.verified_empty_in_steam:
+                proposed, decision = None, "NEEDS_STEAM_UI_EMPTY_CHECK"
             result = {"result": "PREVIEW_ONLY" if args.preview else "ORIGINAL_BACKUP_SAVED",
                       "appid": args.appid, "steam_account": account,
                       "original_launch_option": old,
@@ -295,6 +307,13 @@ def main(argv=None):
                       "steam_launch_options_changed": False,
                       "steam_config_file": str(cfg)}
             if args.save_original:
+                if decision == "NEEDS_STEAM_UI_EMPTY_CHECK":
+                    raise Blocked("Steam on-disk LaunchOptions are empty. "
+                                  "Verify the CURRENT game's field in Steam Properties "
+                                  "is also empty, then explicitly confirm before backup.")
+                if proposed is None:
+                    raise Blocked("Steam Launch Options have unsupported syntax; "
+                                  "cannot safely back up an unverified merge.")
                 result["backup_file"] = str(save_backup(args.appid, account, old))
         if args.format == "text":
             print(result.get("proposed_launch_option") or result.get("original_launch_option") or "")
