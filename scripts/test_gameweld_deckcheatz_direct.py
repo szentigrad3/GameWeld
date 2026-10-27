@@ -142,6 +142,13 @@ class DeckCheatzDirectTests(unittest.TestCase):
                 with self.assertRaisesRegex(backend.Blocked, "Cannot verify"):
                     backend.active_game_process("2353250", pid.parent)
 
+    def test_process_scan_refuses_oversized_environment(self):
+        pid = self.root / "proc" / "12345"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(b"FILL=" + b"x" * (128 * 1024))
+        with self.assertRaisesRegex(backend.Blocked, "exceeds safe inspection limit"):
+            backend.active_game_process("2353250", pid.parent)
+
     def test_process_scan_ignores_vanished_pid(self):
         pid = self.root / "proc" / "12345"
         pid.mkdir(parents=True)
