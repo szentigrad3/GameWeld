@@ -3027,6 +3027,127 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
     pc2_steam_launch_selected(0);
 }
 
+/* Steam-managed WeMod: game launch is ALWAYS via Steam -applaunch; this
+ * worker handles only a separate, existing-game, client-only Proton handoff.
+ * A preview never spawns WeMod. A live attempt requires a fresh preview and
+ * separate user confirmation. Spawning WeMod is not trainer attachment. */
+typedef struct {
+    char appid[32], game[256], install_dir[2048], output[4096];
+    int live, ok;
+} PC2WemodAttachJob;
+static int pc2_steam_wemod_attach_busy=0;
+static gboolean pc2_steam_wemod_attach_done(gpointer data){
+    PC2WemodAttachJob*j=(PC2WemodAttachJob*)data;
+    pc2_steam_wemod_attach_busy=0;
+    const int matching = G.selected>=0&&G.selected<G.game_count &&
+        !strcmp(G.games[G.selected].appid,j->appid);
+    const int ready = j->ok && strstr(j->output,
+        "\"can_attempt_with_explicit_consent\": true")!=NULL;
+    log_line("Steam-managed WeMod %s for %.140s (AppID %s): %.2600s",
+        j->live?"client handoff":"read-only live preview",j->game,j->appid,
+        j->output[0]?j->output:"No report from helper.");
+    if(matching&&G.library_detail_status)
+        set_label(G.library_detail_status,
+            j->live?(j->ok?
+                "WeMod client process requested; game attachment NOT VERIFIED.":
+                "WeMod client handoff BLOCKED. No game or Steam settings changed by GameWeld.") :
+            ready?"Game is running; WeMod handoff prerequisites detected (client still NOT attached).":
+                "WeMod handoff not ready; see the exact blockers in the dialog.");
+    if(!j->live&&ready&&matching){
+        GtkWidget*confirm=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+            "Steam game session detected for %.140s.\n\n"
+            "Start the existing WeMod client in THIS game's Proton prefix?\n\n"
+            "This is EXPERIMENTAL. Proton or WeMod may change the existing "
+            "prefix. Only proceed if you have a backup. "
+            "Steam Launch Options will not be edited and no Steam Bridge is used.\n\n"
+            "Client startup is not proof that the trainer has attached.",
+            j->game);
+        int consent=gtk_dialog_run((GtkDialog*)confirm);
+        gtk_widget_destroy(confirm);
+        if(consent==GTK_RESPONSE_YES)pc2_steam_wemod_attach_selected(1);
+    }else{
+        GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,j->ok?GTK_MESSAGE_INFO:GTK_MESSAGE_QUESTION,
+            GTK_BUTTONS_OK,"WeMod %s\n\n%.2800s\n\n"
+            "Steam Launch Options unchanged. Trainer attachment UNVERIFIED.",
+            j->live?"handoff response":"preview",j->output[0]?j->output:"Helper returned no output.");
+        gtk_dialog_run((GtkDialog*)notice);
+        gtk_widget_destroy(notice);
+    }
+    free(j);
+    return FALSE;
+}
+static void *pc2_steam_wemod_attach_worker(void *data){
+    PC2WemodAttachJob*j=(PC2WemodAttachJob*)data;
+    int fds[2];if(pipe(fds)!=0){
+        snprintf(j->output,sizeof j->output,"Cannot start WeMod report: pipe unavailable.");
+        g_idle_add(pc2_steam_wemod_attach_done,j);return NULL;
+    }
+    pid_t pid=fork();
+    if(pid==0){
+        setpgid(0,0);close(fds[0]);
+        if(dup2(fds[1],STDOUT_FILENO)<0)_exit(127);
+        if(dup2(fds[1],STDERR_FILENO)<0)_exit(127);
+        close(fds[1]);
+        clear_desktop_activation_env();
+        const char*appdir=getenv("APPDIR");char helper[4096]={0};
+        if(appdir&&appdir[0]=='/')
+            snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-wemod-live-attach.py",appdir);
+        else snprintf(helper,sizeof helper,"gameweld-wemod-live-attach.py");
+        if(j->live)
+            execlp("python3","python3",helper,
+                "--appid",j->appid,"--install-dir",j->install_dir,
+                "--format","json","--launch-client","--approve-prefix-may-change",
+                "--approve-experimental-live-attach",(char*)NULL);
+        else
+            execlp("python3","python3",helper,
+                "--appid",j->appid,"--install-dir",j->install_dir,
+                "--format","json",(char*)NULL);
+        _exit(127);
+    }
+    close(fds[1]);
+    if(pid<0){
+        close(fds[0]);
+        snprintf(j->output,sizeof j->output,"Cannot fork WeMod client inspector.");
+    }else
+        j->ok=bounded_child_output(pid,fds[0],j->output,sizeof j->output,25);
+    g_idle_add(pc2_steam_wemod_attach_done,j);
+    return NULL;
+}
+static void pc2_steam_wemod_attach_selected(int live){
+    if(!pc2_steam_wemod_allowed())return;
+    if(pc2_steam_wemod_attach_busy){
+        log_line("Steam-managed WeMod inspection already in progress.");return;
+    }
+    if(G.selected<0||G.selected>=G.game_count)return;
+    Game*g=&G.games[G.selected];
+    if(!game_is_steam(g)||game_is_steam_shortcut(g)||
+       !g->appid[0]||g->install_dir[0]!='/'){
+        log_line("WeMod live handoff requires a standard installed Steam game.");return;
+    }
+    PC2WemodAttachJob*j=calloc(1,sizeof *j);
+    if(!j)return;
+    snprintf(j->appid,sizeof j->appid,"%s",g->appid);
+    snprintf(j->game,sizeof j->game,"%.240s",g->name);
+    snprintf(j->install_dir,sizeof j->install_dir,"%s",g->install_dir);
+    j->live=live;
+    pc2_steam_wemod_attach_busy=1;
+    pthread_t thread;
+    if(pthread_create(&thread,NULL,pc2_steam_wemod_attach_worker,j)==0){
+        pthread_detach(thread);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+            live?"Requesting WeMod client in current Steam game prefix; trainer not verified…":
+                "Inspecting running Steam game for safe WeMod client handoff…");
+    }else{
+        pc2_steam_wemod_attach_busy=0;free(j);
+        log_line("Cannot start WeMod live handoff inspector.");
+    }
+}
+static void on_pc2_steam_wemod_check(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_steam_wemod_attach_selected(0);
+}
+
 /* Isolated Rust wrapper preview and opt-in launch. Never edits Steam options,
  * enables a legacy Play callback, or silently falls back to the Steam Bridge.
  * A spawned child PID is NOT proof that WeMod or the game is working. */
@@ -3511,6 +3632,11 @@ static GtkWidget *build_library(void){
         G.pc2_deckcheatz_library_status=label("Select an installed Steam game to use WeMod.","muted");
         gtk_label_set_line_wrap((GtkLabel*)G.pc2_deckcheatz_library_status,TRUE);
         pack(inspect,G.pc2_deckcheatz_library_status,0);
+        if(pc2_steam_wemod_allowed()){
+            GtkWidget*manual=button("Check / start WeMod in running Steam game","action");
+            g_signal_connect_data(manual,"clicked",(GCallback)on_pc2_steam_wemod_check,NULL,NULL,0);
+            pack(inspect,manual,0);
+        }
         if(pc2_native_wrapper_allowed()){
             GtkWidget*npreview=button("Preview native Rust wrapper (no launch)","action");
             GtkWidget*nlaunch=button("Launch native Rust wrapper + WeMod (experimental)","primary-action");
