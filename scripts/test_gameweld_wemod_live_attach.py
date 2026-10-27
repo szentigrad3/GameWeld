@@ -116,6 +116,42 @@ class LiveAttachTests(unittest.TestCase):
         self.assertEqual(os.stat(result["log"]).st_mode & 0o777, 0o600)
         self.unchanged()
 
+    def test_electron_gpu_fallback_changes_only_wemod_argv(self):
+        report, private = self.plan()
+        captured = []
+        class Child:
+            pid = 43211
+        def capture(argv, **kwargs):
+            captured.append((argv, kwargs))
+            return Child()
+        with patch.object(helper.subprocess, "Popen", capture):
+            result = helper.launch(
+                report, private, approved=True, state_root=self.root_state,
+                proc_root=self.proc, uid=os.getuid(), disable_gpu=True)
+        self.assertEqual(len(captured), 1)
+        args, opts = captured[0]
+        self.assertEqual(args, [str(self.proton), "runinprefix",
+                               str(self.client / "WeMod.exe"), "--disable-gpu"])
+        self.assertEqual(opts["cwd"], self.client)
+        self.assertFalse(result["steam_bridge_used"])
+        self.assertFalse(result["new_game_launched"])
+        self.assertFalse(result["steam_launch_options_changed"])
+        self.assertTrue(result["wemod_gpu_disabled"])
+        self.assertFalse(result["trainer_attachment_verified"])
+        self.unchanged()
+
+    def test_default_client_handoff_leaves_gpu_enabled(self):
+        report, private = self.plan()
+        class Child:
+            pid = 43212
+        with patch.object(helper.subprocess, "Popen", return_value=Child()) as launch:
+            result = helper.launch(
+                report, private, approved=True, state_root=self.root_state,
+                proc_root=self.proc, uid=os.getuid())
+        self.assertFalse(result["wemod_gpu_disabled"])
+        self.assertNotIn("--disable-gpu", launch.call_args.args[0])
+        self.unchanged()
+
     def test_missing_approval_never_spawns(self):
         report, private = self.plan()
         with patch.object(helper.subprocess, "Popen") as popen:
