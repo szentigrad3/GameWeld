@@ -87,7 +87,7 @@ class QuickTryTests(unittest.TestCase):
         for group in trial.EXPECTED_GROUPS:
             for name in group:
                 self.assertTrue((self.current / name).exists())
-        with self.assertRaisesRegex(trial.QuickTryBlocked, "quick try exists"):
+        with self.assertRaisesRegex(trial.QuickTryBlocked, "original prefix backup already exists"):
             self.call_prepare()
         restored = self.call_restore()
         self.assertEqual(restored["result"], "ORIGINAL_PREFIX_RESTORED")
@@ -260,6 +260,106 @@ class QuickTryTests(unittest.TestCase):
                          b"ORIGINAL REGISTRY")
         self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
         self.assertEqual(list(self.current.parent.glob(".gameweld-preparing-*")), [])
+
+    def test_repeated_prepare_reuses_saved_copy_without_zip_or_copy(self):
+        self.call_prepare()
+        self.call_restore()
+        original = self.current / "pfx/user.reg"
+        self.assertEqual(original.read_bytes(), b"ORIGINAL REGISTRY")
+        with patch.object(trial, "verify_archive",
+                          side_effect=AssertionError("should not read existing ZIP")), \
+             patch.object(trial, "extract_overlay",
+                          side_effect=AssertionError("should not re-extract ZIP")), \
+             patch.object(trial.shutil, "copytree",
+                          side_effect=AssertionError("should not recopy prefix")):
+            reused = self.call_prepare()
+        self.assertEqual(reused["result"], "SAVED_TEST_PREFIX_REACTIVATED")
+        self.assertTrue(reused["reused_existing_test_copy"])
+        self.assertEqual(reused["downloaded_bytes"], 0)
+        self.assertEqual(reused["extracted_bytes"], 0)
+        self.assertEqual(original.read_bytes(), b"REPLACED IN TEST ONLY")
+        backup = self.current.parent / ".gameweld-original-123"
+        self.assertEqual((backup / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+        self.call_restore()
+        self.assertEqual(original.read_bytes(), b"ORIGINAL REGISTRY")
+        self.assertTrue((self.current.parent / ".gameweld-tested-123").exists())
+
+    def test_explicit_retest_uses_preserved_copy_and_status_reports_reusable(self):
+        self.call_prepare()
+        self.call_restore()
+        idle = {"state": "IDLE_CANDIDATE", "matching_process_count": 0,
+                "matching_processes": [], "unreadable_same_user_processes": 0}
+        with patch.object(trial, "process_report", return_value=idle):
+            state = trial.status_report("123", self.steamapps)
+        self.assertTrue(state["tested_copy_present"])
+        self.assertTrue(state["saved_test_copy_reusable"])
+        self.assertTrue(state["can_attempt_prepare"])
+        result = trial.retest("123", self.steamapps,
+                              acknowledge_closed=True, accept=True,
+                              idle_checker=NO_GAME)
+        self.assertEqual(result["result"], "SAVED_TEST_PREFIX_REACTIVATED")
+        self.assertFalse((self.current.parent / ".gameweld-tested-123").exists())
+        self.call_restore()
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+
+    def test_missing_test_marker_refuses_reuse_and_keeps_original(self):
+        self.call_prepare()
+        self.call_restore()
+        tested = self.current.parent / ".gameweld-tested-123"
+        (tested / "pfx/.wemod_installer").unlink()
+        with self.assertRaisesRegex(trial.QuickTryBlocked, "marker"):
+            self.call_prepare()
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+        self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
+        idle = {"state": "IDLE_CANDIDATE", "matching_process_count": 0,
+                "matching_processes": [], "unreadable_same_user_processes": 0}
+        with patch.object(trial, "process_report", return_value=idle):
+            self.assertFalse(trial.status_report("123", self.steamapps)
+                             ["saved_test_copy_reusable"])
+
+    def test_retest_refuses_missing_case_variant(self):
+        self.call_prepare()
+        self.call_restore()
+        tested = self.current.parent / ".gameweld-tested-123"
+        (tested / "pfx/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/installutil.exe").unlink()
+        with self.assertRaisesRegex(trial.QuickTryBlocked, "required case variant"):
+            self.call_prepare()
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+
+    def test_retest_restores_original_if_second_rename_fails(self):
+        self.call_prepare()
+        self.call_restore()
+        tested = self.current.parent / ".gameweld-tested-123"
+        real_rename = trial.os.rename
+
+        def selective_fail(source, destination):
+            if Path(source) == tested and Path(destination) == self.current:
+                raise OSError("simulated saved test copy rename failure")
+            return real_rename(source, destination)
+
+        with patch.object(trial.os, "rename", side_effect=selective_fail):
+            with self.assertRaisesRegex(OSError, "simulated"):
+                self.call_prepare()
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+        self.assertEqual((tested / "pfx/user.reg").read_bytes(),
+                         b"REPLACED IN TEST ONLY")
+        self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
+
+    def test_retest_active_process_still_blocks_even_with_unknown_override(self):
+        self.call_prepare()
+        self.call_restore()
+        active = {
+            "state": "ACTIVE", "matching_process_count": 1,
+            "matching_processes": [4141], "unreadable_same_user_processes": 4
+        }
+        with patch.object(trial, "process_report", return_value=active):
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "Matching PIDs: 4141"):
+                trial.retest("123", self.steamapps,
+                             acknowledge_closed=True, accept=True,
+                             allow_unreadable=True)
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+        self.assertTrue((self.current.parent / ".gameweld-tested-123").is_dir())
+        self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
 
     def test_no_matching_appmanifest_blocks_before_swap(self):
         (self.steamapps / "appmanifest_123.acf").unlink()
