@@ -2896,7 +2896,9 @@ static void *pc2_steam_launch_worker(void *data){
         if(appdir&&*appdir)
             snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-steam-handoff.py",appdir);
         else snprintf(helper,sizeof helper,"gameweld-steam-handoff.py");
-        if(j->expect_deckcheatz)
+        /* Never request another Steam launch for an already-running game.
+         * Running sessions use the separate read-only WeMod check button. */
+        if(j->expect_deckcheatz||j->steam_managed_wemod)
             execlp("python3","python3",helper,"launch","--appid",j->appid,
                    "--confirm","--require-idle-before-launch",(char*)NULL);
         else
