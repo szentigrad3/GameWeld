@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Offline Steam per-game launch-options preservation tests; NEVER edits Steam."""
+from __future__ import annotations
+import importlib.util
+import json
+from pathlib import Path
+import stat
+import tempfile
+import unittest
+
+SOURCE = Path(__file__).with_name("gameweld-steam-launch-options-preserve.py")
+SPEC = importlib.util.spec_from_file_location("gw_steam_options_preserve", SOURCE)
+assert SPEC and SPEC.loader
+options = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(options)
+
+APPID = "3008130"
+ACCOUNT = "123456789"
+RECIPE = 'WINEDLLOVERRIDES="version=n,b" WEMOD_LOG=/home/u/wemod.log /home/u/wemod %command%'
+
+class PreserveTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="gw-steam-preservation-")
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.steam = self.root / "Steam"
+        self.file = self.steam / "userdata" / ACCOUNT / "config/localconfig.vdf"
+        self.file.parent.mkdir(parents=True)
+        self.backups = self.root / "private"
+        self.make_config("")
+
+    def make_config(self, raw):
+        value = raw.replace("\\", "\\\\").replace('"', '\\"')
+        self.file.write_text(
+            '"UserLocalConfigStore" { "friends" { "dummy" "1" } '
+            '"Software" { "Valve" { "Steam" { '
+            '"apps" { "' + APPID + '" { "LaunchOptions" "' + value + '" } }'
+            ' } } } }', encoding="utf-8")
+        self.file.chmod(0o600)
+        self.saved = self.file.read_bytes()
+
+    def unchanged(self):
+        self.assertEqual(self.file.read_bytes(), self.saved)
+
+    def test_empty_game_option_matches_known_working_wrapper(self):
+        config, account = options.find_config(APPID, self.steam, None)
+        self.assertEqual(account, ACCOUNT)
+        self.assertEqual(config, self.file)
+        self.assertEqual(options.launch_option(config, APPID), "")
+        self.assertEqual(options.merge("", RECIPE), (RECIPE, "SAFE_EMPTY"))
+        self.unchanged()
+
+    def test_env_only_plus_arguments_preserves_existing_exact_text(self):
+        original = "PROTON_LOG=1 DXVK_HUD=fps  %command% -dx11"
+        self.make_config(original)
+        self.assertEqual(options.launch_option(self.file, APPID), original)
+        merged, status = options.merge(original, RECIPE)
+        self.assertEqual(status, "SAFE_ENV_AND_ARGUMENTS")
+        self.assertEqual(merged,
+                         "PROTON_LOG=1 DXVK_HUD=fps " + RECIPE + " -dx11")
+        self.unchanged()
+
+    def test_only_game_flags_can_be_appended(self):
+        self.assertEqual(options.merge("-vulkan -novid", RECIPE),
+                         (RECIPE + " -vulkan -novid", "SAFE_GAME_FLAGS"))
+        self.assertEqual(options.merge(RECIPE, RECIPE),
+                         (RECIPE, "ALREADY_CONFIGURED"))
+
+    def test_gamescope_mangohud_and_custom_scripts_are_never_reordered(self):
+        bad = [
+            "mangohud %command%",
+            "gamemoderun %command%",
+            "gamescope -f -- %command%",
+            "MANGOHUD=1 gamescope -f -- %command%",
+            "bash -c 'echo hello && %command%'",
+            "LD_PRELOAD=/tmp/x.so %command% ; echo injected",
+            "%command% -dx11 -FPS=100",
+            "DXVK_HUD=fps | sh -c %command%",
+            "PROTON_LOG=1 %command% && echo goodbye",
+            "WINEDLLOVERRIDES=version=n,b /home/u/wemod %command% -vulkan",
+            "%command% %command%",
+            "PROTON_LOG=1 $(touch /tmp/not-written) %command%",
+            "PROTON_LOG=1 /tmp/custom %command%",
+        ]
+        for original in bad:
+            with self.subTest(original=original):
+                proposed, state = options.merge(original, RECIPE)
+                self.assertIsNone(proposed)
+                self.assertTrue(state.startswith("MANUAL_"))
+        self.unchanged()
+
+    def test_parses_steam_vdf_comments_escapes_and_other_games(self):
+        source = (
+            '// Steam configuration\n'
+            '"UserLocalConfigStore" { "Software" { "Valve" { "Steam" {'
+            '"apps" { "333" { "LaunchOptions" "do nothing" }'
+            '"' + APPID + '" { /* comment */ "LaunchOptions" "PROTON_LOG=1 %command%" } }'
+            ' } } } }')
+        self.file.write_text(source, encoding="utf-8")
+        self.saved = self.file.read_bytes()
+        self.assertEqual(options.launch_option(self.file, APPID),
+                         "PROTON_LOG=1 %command%")
+        self.unchanged()
+
+    def test_duplicate_game_field_and_malformed_vdf_refused(self):
+        self.make_config("")
+        before = self.file.read_text()
+        self.file.write_text(before.replace(
+            '"LaunchOptions" ""', '"LaunchOptions" "a" "LaunchOptions" "b"'))
+        self.saved = self.file.read_bytes()
+        with self.assertRaisesRegex(options.Blocked, "Duplicate"):
+            options.launch_option(self.file, APPID)
+        self.file.write_text(' "UserLocalConfigStore" { "oops" "value"')
+        self.saved = self.file.read_bytes()
+        with self.assertRaisesRegex(options.Blocked, "Missing"):
+            options.launch_option(self.file, APPID)
+        self.unchanged()
+
+    def test_multiple_accounts_never_guess_and_selector_is_explicit(self):
+        second = self.steam / "userdata" / "24680/config/localconfig.vdf"
+        second.parent.mkdir(parents=True)
+        second.write_text(self.file.read_text())
+        with self.assertRaisesRegex(options.Blocked, "Need one Steam account"):
+            options.find_config(APPID, self.steam, None)
+        selected, account = options.find_config(APPID, self.steam, ACCOUNT)
+        self.assertEqual(selected, self.file)
+        self.assertEqual(account, ACCOUNT)
+        self.unchanged()
+
+    def test_private_original_backup_is_exclusive_and_nonoverwriting(self):
+        old = "PROTON_LOG=1 %command% -dx11"
+        self.make_config(old)
+        original = self.file.read_bytes()
+        backup = options.save_backup(APPID, ACCOUNT, old, self.backups)
+        self.assertEqual(stat.S_IMODE(backup.stat().st_mode), 0o600)
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), old)
+        with self.assertRaises(FileExistsError):
+            options.save_backup(APPID, ACCOUNT, RECIPE, self.backups)
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), old)
+        self.assertEqual(self.file.read_bytes(), original)
+
+    def test_symlinked_config_and_backup_refused(self):
+        self.file.unlink()
+        target = self.root / "sensitive.vdf"
+        target.write_text("private")
+        self.file.symlink_to(target)
+        with self.assertRaisesRegex(options.Blocked, "Unsafe"):
+            options.launch_option(self.file, APPID)
+        self.assertEqual(target.read_text(), "private")
+        path = options.backup_file(APPID, ACCOUNT, self.backups)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(target)
+        with self.assertRaisesRegex(options.Blocked, "Symlinked"):
+            options.save_backup(APPID, ACCOUNT, "orig", self.backups)
+
+    def test_duplicate_steam_root_symlink_is_deduplicated(self):
+        other = self.root / "alias"
+        other.symlink_to(self.steam, target_is_directory=True)
+        root, selected = options.find_config(APPID, other, ACCOUNT)
+        self.assertEqual((root, selected), (self.file, ACCOUNT))
+        self.unchanged()
+
+if __name__ == "__main__":
+    unittest.main()
