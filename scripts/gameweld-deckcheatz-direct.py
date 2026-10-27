@@ -167,10 +167,14 @@ def build_plan(args) -> tuple[dict, dict[str, str]]:
     overrides = {
         "STEAM_COMPAT_DATA_PATH": str(compat),
         "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(steam),
+        "STEAM_COMPAT_INSTALL_PATH": str(install),
         "STEAM_COMPAT_TOOL_PATHS": str(proton.parent),
         "SteamAppId": args.appid,
         "SteamGameId": args.appid,
+        "SteamOverlayGameId": args.appid,
         "STEAM_COMPAT_APP_ID": args.appid,
+        "WINEDLLOVERRIDES": "version=n,b",
+        "WEMOD_LOG": str(launcher.parent / "wemod.log"),
         "SELF_UPDATE": "False",
         "PACKAGEPREFIX": "false",
         "TROUBLESHOOT": "False",
@@ -189,6 +193,9 @@ def build_plan(args) -> tuple[dict, dict[str, str]]:
         "env_overrides": overrides,
         "steam_launch_options_modified": False,
         "will_invoke_steam_client": False,
+        "steam_runtime_container_reproduced": False,
+        "steam_api_overlay_drm_verified": False,
+        "steam_launch_options_applied": False,
         "prefix_can_be_modified_by_upstream_launcher": True,
         "warning": ("Experimental! Upstream DeckCheatz 1.x is intended as a Steam/Lutris command prefix. "
                     "Direct execution may not initialize SteamAPI or supported games correctly. "
