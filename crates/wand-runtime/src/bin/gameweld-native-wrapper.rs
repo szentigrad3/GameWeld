@@ -147,6 +147,45 @@ mod tests {
         assert!(args(&full).is_err());
     }
     #[test]
+    fn native_preview_with_synthetic_steam_does_not_write_or_spawn() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!(
+            "gw-native-preview-{}-{}", std::process::id(), unique));
+        let steam = root.join("Steam");
+        let library = steam.join("steamapps");
+        let game = library.join("common/Test Game");
+        let compat = library.join("compatdata/2353250/pfx");
+        let proton = steam.join("compatibilitytools.d/FakeProton/proton");
+        let wrapper = root.join("deckcheatz/wemod");
+        fs::create_dir_all(&game).unwrap();
+        fs::create_dir_all(&compat).unwrap();
+        fs::create_dir_all(proton.parent().unwrap()).unwrap();
+        fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+        fs::write(game.join("TestGame.exe"), b"MZ-test").unwrap();
+        fs::write(library.join("appmanifest_2353250.acf"),
+            "\"AppState\" { \"appid\" \"2353250\" \"name\" \"Test Game\" \"installdir\" \"Test Game\" }").unwrap();
+        fs::write(&proton, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::write(&wrapper, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&proton, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
+        let result = execute(Options {
+            appid: Some(2353250),
+            wrapper: Some(wrapper.clone()),
+            proton: Some(proton.display().to_string()),
+            steam_root: Some(steam),
+            preview: true,
+            ..Default::default()
+        });
+        assert!(result.is_ok(), "preview error: {:?}", result.err());
+        assert!(!wrapper.parent().unwrap().join("wemod.log").exists());
+        assert!(!root.join("Steam/userdata/config/localconfig.vdf").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn preview_rejects_launch_consent_and_unrecognized_flags() {
         assert!(args(&["--preview", "--appid", "2353250", "--wrapper", "/tmp/wemod",
             "--approve-experimental"]).is_err());
