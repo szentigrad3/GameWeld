@@ -3105,7 +3105,7 @@ static void pc2_native_wrapper_action(int live){
     }
     if(live){
         GtkWidget*confirm=gtk_message_dialog_new((GtkWindow*)G.window,
-            GTK_DIALOG_MODAL,GTK_MESSAGE_WARNING,GTK_BUTTONS_YES_NO,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
             "Experimental native DeckCheatz + Proton launch\n\n"
             "%.140s (AppID %s)\n\n"
             "This bypasses Steam's launch supervisor and may not work with "
