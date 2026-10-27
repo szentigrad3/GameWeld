@@ -80,6 +80,8 @@ class PreserveTests(unittest.TestCase):
             "%command% %command%",
             "PROTON_LOG=1 $(touch /tmp/not-written) %command%",
             "PROTON_LOG=1 /tmp/custom %command%",
+            "WINEDLLOVERRIDES=foo %command%",
+            "WEMOD_LOG=/tmp/old %command%",
         ]
         for original in bad:
             with self.subTest(original=original):
