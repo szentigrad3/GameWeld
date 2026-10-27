@@ -29,7 +29,9 @@ class UnsafePreparedPrefix(ValueError):
     pass
 
 
-def inspect_zip_members(archive: zipfile.ZipFile) -> tuple[int, int]:
+def _inspect_zip_members(archive: zipfile.ZipFile, *,
+                         diagnosis_only_ignore_collisions: bool) -> tuple[int, int]:
+    """Validate bounds and types. Diagnostic-only mode never authorizes extraction."""
     members = archive.infolist()
     if not members or len(members) > MAX_ENTRIES:
         raise UnsafePreparedPrefix("Empty archive or too many entries")
@@ -48,7 +50,7 @@ def inspect_zip_members(archive: zipfile.ZipFile) -> tuple[int, int]:
                        for part in parts)):
             raise UnsafePreparedPrefix("Path traversal, Windows reserved or invalid member")
         normalized = unicodedata.normalize("NFC", name.rstrip("/")).casefold()
-        if normalized in seen:
+        if normalized in seen and not diagnosis_only_ignore_collisions:
             raise UnsafePreparedPrefix("Duplicate/case-colliding archive entries")
         seen.add(normalized)
         if info.flag_bits & 1:
@@ -74,6 +76,22 @@ def inspect_zip_members(archive: zipfile.ZipFile) -> tuple[int, int]:
         raise UnsafePreparedPrefix("Excessive aggregate compression ratio")
     return len(members), decompressed
 
+
+def inspect_zip_members(archive: zipfile.ZipFile) -> tuple[int, int]:
+    """Fail-closed production ZIP validation. Case collisions always reject."""
+    return _inspect_zip_members(archive, diagnosis_only_ignore_collisions=False)
+
+
+def check_other_zip_safety_without_approving_collisions(
+    archive: zipfile.ZipFile,
+) -> tuple[int, int]:
+    """Read-only diagnostic check. NEVER use this method for caching or staging.
+
+    Still rejects traversal, special entries, encrypted members, expansion
+    limits and invalid paths; intentionally reports other faults even when
+    case-only collisions are present. It is NOT a full archive safety PASS.
+    """
+    return _inspect_zip_members(archive, diagnosis_only_ignore_collisions=True)
 
 
 def classify_zip_collisions(archive: zipfile.ZipFile) -> tuple[dict[str, int], list[str]]:
