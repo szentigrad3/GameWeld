@@ -5504,7 +5504,7 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     char launcher[4096]={0},logpath[4096]={0},cmd[12288]={0};
     if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
         GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
-            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_CLOSE,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
             "DeckCheatz's installed 'wemod' wrapper was not found. Install "
             "the managed DeckCheatz 1.x launcher before copying a Steam command.");
         gtk_dialog_run((GtkDialog*)dlg);
@@ -5534,7 +5534,7 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         gdk_atom_intern_static_string("CLIPBOARD"));
     if(clipboard)gtk_clipboard_set_text(clipboard,cmd,-1);
     GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
-        GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_CLOSE,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
         "DeckCheatz Steam launch option copied.\n\n"
         "In Steam open this game's Properties > General > Launch Options and "
         "paste the following command. Keep any other required game options.\n\n"
