@@ -4769,11 +4769,25 @@ static gboolean pc2_steam_bridge_done(gpointer data){
         if(pc2_cache_cancel_requested)msg="Cache download cancelled. "
             "Any incomplete temporary file should have been discarded. "
             "No game prefix was changed.";
-        if(pc2_shared_wemod_status)set_label(pc2_shared_wemod_status,
-            (j->ok && !pc2_cache_cancel_requested) ?
-            "Step 1 complete — ZIP verified and saved to GameWeld's cache. "
-            "Next: Step 2 — Stage downloaded .NET prefix (isolated). "
-            "No game prefix has changed; publisher and compatibility are not verified." : msg);
+        if(pc2_shared_wemod_status){
+            if(j->ok && !pc2_cache_cancel_requested){
+                const char *base=getenv("XDG_CACHE_HOME");
+                char fallback[1024]={0},saved[1664];
+                if(!base || !*base){
+                    const char *home=getenv("HOME");
+                    if(home && *home)
+                        snprintf(fallback,sizeof fallback,"%s/.cache",home);
+                    else snprintf(fallback,sizeof fallback,"%s","(unknown user cache)");
+                    base=fallback;
+                }
+                snprintf(saved,sizeof saved,
+                    "Step 1 complete — verified ZIP saved. Cache location: %.900s/"
+                    "gameweld/prepared-wemod/downloads. "
+                    "Next: Step 2 — Stage downloaded .NET prefix (isolated). "
+                    "Game prefixes and Steam settings unchanged.",base);
+                set_label(pc2_shared_wemod_status,saved);
+            }else set_label(pc2_shared_wemod_status,msg);
+        }
     }else if(!strcmp(j->action,"prefix-stage")){
 #ifdef GAMEWELD_PC2_GTK_ACTION_SMOKE
         fprintf(stderr, "PC2_GTK_SMOKE_PREFIX_STAGE_HELPER_DONE status=%d\n", j->ok);
