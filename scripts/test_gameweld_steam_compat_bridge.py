@@ -896,7 +896,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('pc2_steam_option_helper_run("--preview"', ui)
         self.assertIn('pc2_steam_option_helper_run("--save-original"', ui)
         self.assertIn('pc2_steam_option_helper_run("--restore-original"', ui)
-        self.assertIn('No replacement was copied.', ui.upper().replace('NO REPLACEMENT', 'No replacement'))
+        self.assertIn('NO replacement was copied.', ui)
         self.assertIn('Steam itself will NOT be modified.', ui)
         self.assertIn('proposed_launch_option', ui)
         self.assertIn('requires_manual_review', ui)
