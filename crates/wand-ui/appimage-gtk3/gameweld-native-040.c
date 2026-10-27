@@ -625,6 +625,7 @@ static int bounded_child_output(pid_t pid,int fd,char *output,size_t capacity,in
 static void on_pc2_wemod_verify_selected(GtkButton*,void*);
 static void on_pc2_deckcheatz_detect(GtkButton*,void*);
 static void on_pc2_deckcheatz_copy_steam_option(GtkButton*,void*);
+static int pc2_deckcheatz_find_launcher(char *,size_t);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
 static void on_pc2_deckcheatz_install(GtkButton*,void*);
 static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
@@ -687,7 +688,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2736,6 +2737,7 @@ static int pc2_steam_launch_allowed(void){
 typedef struct {
     char appid[32],game_name[256],output[4096];
     int confirmed;
+    int expect_deckcheatz;
 } PC2SteamLaunchJob;
 static int pc2_steam_launch_busy=0;
 static gboolean pc2_steam_launch_done(gpointer data){
@@ -2744,14 +2746,20 @@ static gboolean pc2_steam_launch_done(gpointer data){
     const char *state=strstr(j->output,"Launch result: FAILED")?"FAILED":
         strstr(j->output,"Launch result: STEAM_ASSOCIATION_OBSERVED")?"ASSOCIATED PROCESS OBSERVED":
         "UNCONFIRMED";
-    log_line("PC2 Steam launch [%s] %s (app %s): %.3000s",state,j->game_name,j->appid,
+    log_line("PC2 Steam %s [%s] %s (app %s): %.3000s",
+             j->expect_deckcheatz?"DeckCheatz wrapper route":"game-only launch",
+             state,j->game_name,j->appid,
              j->output[0]?j->output:"No launch-helper result.");
+    if(j->expect_deckcheatz)
+        log_line("Steam may execute saved Launch Options; DeckCheatz window, trainer attachment and effect remain UNVERIFIED.");
     if(G.selected>=0&&G.selected<G.game_count&&
        !strcmp(G.games[G.selected].appid,j->appid)&&G.library_detail_status){
         set_label(G.library_detail_status,!strcmp(state,"FAILED")?
             "Steam launch FAILED. Check Activity for the command error.":
             !strcmp(state,"UNCONFIRMED")?
             "Steam launch UNCONFIRMED. Check Steam's Downloads/game status and Activity.":
+            j->expect_deckcheatz?
+            "Steam process detected; existing Launch Options may have run. WeMod not verified.":
             "Steam process association observed; game window and trainer still unverified.");
     }
     free(j);return FALSE;
@@ -2789,10 +2797,12 @@ static void *pc2_steam_launch_worker(void *data){
     g_idle_add(pc2_steam_launch_done,j);
     return NULL;
 }
-static void on_pc2_steam_game_only(GtkButton*b,void*d){
-    (void)b;(void)d;
+static void pc2_steam_launch_selected(int expect_deckcheatz){
     if(!pc2_steam_launch_allowed()){
-        log_line("PC2 Steam game-only launch is disabled. Start with --enable-steam-game-launch to opt in.");
+        if(expect_deckcheatz){
+            log_line("DeckCheatz Steam setup only. Use --enable-steam-game-launch to opt into launches.");
+            on_pc2_deckcheatz_copy_steam_option(NULL,NULL);
+        }else log_line("PC2 Steam game-only launch is disabled. Start with --enable-steam-game-launch to opt in.");
         return;
     }
     if(G.selected<0||G.selected>=G.game_count){log_line("Select a Steam game first.");return;}
@@ -2800,6 +2810,14 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
     if(!game_is_steam(g)||game_is_steam_shortcut(g)){
         log_line("PC2 game-only launch currently supports standard installed Steam games, not shortcuts, Heroic or Lutris.");
         return;
+    }
+    if(expect_deckcheatz){
+        char launcher[4096]={0};
+        if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
+            log_line("Cannot launch through Steam wrapper: installed DeckCheatz wemod launcher not found.");
+            on_pc2_deckcheatz_copy_steam_option(NULL,NULL);
+            return;
+        }
     }
     const char*id=g->appid;
     if(!id[0]||id[0]=='0'||strlen(id)>10){log_line("Invalid Steam ID; launch blocked.");return;}
@@ -2826,6 +2844,13 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
     }
     GtkWidget*confirm=gtk_message_dialog_new(
         (GtkWindow*)G.window,GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        expect_deckcheatz?
+        "Launch using your EXISTING Steam DeckCheatz option?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "Confirm you already added the DeckCheatz wemod wrapper and "
+        "%%command%% to THIS game in Steam Properties > Launch Options. "
+        "GameWeld cannot verify these Steam settings. Game and WeMod must "
+        "be closed before launch. No Steam setting will be changed. Continue?":
         "Launch Steam game only?\n\n%.140s (Steam App ID %s)\n\n"
         "This will request Steam to launch ONLY the game. No trainer, WeMod, "
         "Cheat Engine, Proton setup or GameWeld configuration changes will be requested.\n\n"
@@ -2845,17 +2870,23 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
     if(!j){log_line("PC2 Steam launch FAILED: could not allocate helper state.");return;}
     snprintf(j->appid,sizeof j->appid,"%s",id);
     snprintf(j->game_name,sizeof j->game_name,"%.240s",g->name);
+    j->expect_deckcheatz=expect_deckcheatz;
     pthread_t thread;
     pc2_steam_launch_busy=1;
     if(pthread_create(&thread,NULL,pc2_steam_launch_worker,j)==0){
         pthread_detach(thread);
-        log_line("PC2 Steam launch check started for %.140s (app %s). Waiting for Steam command result; no trainer requested.",g->name,id);
+        log_line("PC2 Steam %s launch check for %.140s (app %s); Steam manages saved launch options.",
+                 expect_deckcheatz?"DeckCheatz-wrapper":"game-only",g->name,id);
         if(G.library_detail_status)set_label(G.library_detail_status,
             "Checking Steam launch response; a command request is not game startup confirmation.");
     }else{
         pc2_steam_launch_busy=0;free(j);
         log_line("PC2 Steam launch FAILED: could not start launch-check worker.");
     }
+}
+static void on_pc2_steam_game_only(GtkButton*b,void*d){
+    (void)b;(void)d;
+    pc2_steam_launch_selected(0);
 }
 static void on_pc2_steam_session_check(GtkButton*b,void*d){
     (void)b;(void)d;
@@ -3071,7 +3102,8 @@ static GtkWidget *build_home(void){
     GtkWidget*idrow=box(GTK_ORIENTATION_HORIZONTAL,13);GtkWidget*cover=box(GTK_ORIENTATION_VERTICAL,0);gtk_widget_set_name(cover,"cover-frame");G.cover_image=gtk_image_new();gtk_widget_set_size_request(G.cover_image,155,220);pack(cover,G.cover_image,0);pack(idrow,cover,0);
     GtkWidget*ids=box(GTK_ORIENTATION_VERTICAL,7);G.hero_name=label("Select a game",NULL);gtk_widget_set_name(G.hero_name,"game-title");gtk_label_set_line_wrap((GtkLabel*)G.hero_name,TRUE);pack(ids,G.hero_name,0);G.hero_meta=label("Steam / Heroic • App ID —",NULL);gtk_widget_set_name(G.hero_meta,"meta");gtk_label_set_line_wrap((GtkLabel*)G.hero_meta,TRUE);pack(ids,G.hero_meta,0);pack(ids,meta_chip("LOCAL / SINGLE PLAYER"),0);G.game_detected_detail=label("Choose a game from Library to review its trainer, runtime and exact launch path before starting the session.","muted");gtk_label_set_line_wrap((GtkLabel*)G.game_detected_detail,TRUE);pack(ids,G.game_detected_detail,1);pack(idrow,ids,1);pack(copy,idrow,1);
     if(pc2_discovery_only()){
-        GtkWidget*direct=button("Play with WeMod","primary-action");
+        GtkWidget*direct=button(pc2_steam_launch_allowed()?
+            "Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam","primary-action");
         G.pc2_deckcheatz_overview_play=direct;
         g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_primary,NULL,NULL,0);
         pack(copy,direct,0);
@@ -3180,7 +3212,8 @@ static GtkWidget *build_library(void){
     GtkWidget*body=box(GTK_ORIENTATION_HORIZONTAL,14);
     GtkWidget*listpanel=box(GTK_ORIENTATION_VERTICAL,8);style(listpanel,"panel");pack(listpanel,label("GAMES","section-kicker"),0);GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_vexpand(sc,TRUE);G.game_list=gtk_list_box_new();g_signal_connect_data(G.game_list,"row-selected",(GCallback)selected_changed,NULL,NULL,0);
     for(int i=0;i<G.game_count;i++){GtkWidget*r=gtk_list_box_row_new();style(r,"library-row");G.game_rows[i]=r;GtkWidget*rb=box(GTK_ORIENTATION_HORIZONTAL,11);margins(rb,7);GtkWidget*thumb=gtk_image_new();style(thumb,"game-thumb");char art[2048]={0};if(!resolve_game_art(&G.games[i],1,art,sizeof art))resolve_game_art(&G.games[i],0,art,sizeof art);set_image_path(thumb,art[0]?art:NULL,52,70);pack(rb,thumb,0);GtkWidget*txt=box(GTK_ORIENTATION_VERTICAL,3);pack(txt,label(G.games[i].name,"game-row-title"),0);char x[384];if(game_is_steam_shortcut(&G.games[i]))snprintf(x,sizeof x,"Steam shortcut • %s",G.games[i].appid);else if(game_is_steam(&G.games[i]))snprintf(x,sizeof x,"Steam • %s",G.games[i].appid);else if(game_is_lutris(&G.games[i]))snprintf(x,sizeof x,"Lutris • %s",G.games[i].runner[0]?G.games[i].runner:"wine");else snprintf(x,sizeof x,"Heroic • %s",G.games[i].runner);pack(txt,label(x,"muted"),0);pack(rb,txt,1);GtkWidget*installed=label(game_is_lutris(&G.games[i])?"Discovery":"Ready",game_is_lutris(&G.games[i])?"muted":"good");gtk_widget_set_name(installed,"status-pill");pack(rb,installed,0);gtk_container_add(r,rb);gtk_list_box_insert((GtkListBox*)G.game_list,r,-1);}gtk_container_add(sc,G.game_list);pack(listpanel,sc,1);pack(body,listpanel,1);
-    GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,pc2_discovery_only()?350:410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());GtkWidget*session_check=button("Check Steam session (read-only)","action");GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);GtkWidget*deckcheatz_test=button("Play with WeMod","primary-action");G.pc2_deckcheatz_library_play=deckcheatz_test;g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary,NULL,NULL,0);g_signal_connect_data(lb1,"clicked",(GCallback)on_play,NULL,NULL,0);g_signal_connect_data(lbct,"clicked",(GCallback)on_launch_with_cheat_table,NULL,NULL,0);g_signal_connect_data(lbw,"clicked",(GCallback)on_launch_with_wemod,NULL,NULL,0);g_signal_connect_data(lba,"clicked",(GCallback)on_launch_with_aurora,NULL,NULL,0);g_signal_connect_data(lbc,"clicked",(GCallback)on_launch_with_cheat_evolution,NULL,NULL,0);g_signal_connect_data(lbx,"clicked",(GCallback)on_launch_custom_trainer,NULL,NULL,0);g_signal_connect_data(lb2,"clicked",(GCallback)on_play_normal,NULL,NULL,0);g_signal_connect_data(lb3,"clicked",(GCallback)on_game_folder,NULL,NULL,0);g_signal_connect_data(preview,"clicked",(GCallback)on_steam_launch_preview,NULL,NULL,0);g_signal_connect_data(steam_only,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);g_signal_connect_data(session_check,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);if(pc2_discovery_only()){
+    GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,pc2_discovery_only()?350:410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());GtkWidget*session_check=button("Check Steam session (read-only)","action");GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);GtkWidget*deckcheatz_test=button(pc2_steam_launch_allowed()?
+            "Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam","primary-action");G.pc2_deckcheatz_library_play=deckcheatz_test;g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary,NULL,NULL,0);g_signal_connect_data(lb1,"clicked",(GCallback)on_play,NULL,NULL,0);g_signal_connect_data(lbct,"clicked",(GCallback)on_launch_with_cheat_table,NULL,NULL,0);g_signal_connect_data(lbw,"clicked",(GCallback)on_launch_with_wemod,NULL,NULL,0);g_signal_connect_data(lba,"clicked",(GCallback)on_launch_with_aurora,NULL,NULL,0);g_signal_connect_data(lbc,"clicked",(GCallback)on_launch_with_cheat_evolution,NULL,NULL,0);g_signal_connect_data(lbx,"clicked",(GCallback)on_launch_custom_trainer,NULL,NULL,0);g_signal_connect_data(lb2,"clicked",(GCallback)on_play_normal,NULL,NULL,0);g_signal_connect_data(lb3,"clicked",(GCallback)on_game_folder,NULL,NULL,0);g_signal_connect_data(preview,"clicked",(GCallback)on_steam_launch_preview,NULL,NULL,0);g_signal_connect_data(steam_only,"clicked",(GCallback)on_pc2_steam_game_only,NULL,NULL,0);g_signal_connect_data(session_check,"clicked",(GCallback)on_pc2_steam_session_check,NULL,NULL,0);if(pc2_discovery_only()){
         pack(inspect,deckcheatz_test,0);
         G.pc2_deckcheatz_library_status=label("Select an installed Steam game to use WeMod.","muted");
         gtk_label_set_line_wrap((GtkLabel*)G.pc2_deckcheatz_library_status,TRUE);
@@ -4413,15 +4446,20 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     (void)state;(void)reason;
     GtkWidget *buttons[]={G.pc2_deckcheatz_overview_play,G.pc2_deckcheatz_library_play};
     for(int i=0;i<2;i++)if(buttons[i]){
-        gtk_button_set_label((GtkButton*)buttons[i],"Check WeMod setup");
+        gtk_button_set_label((GtkButton*)buttons[i],
+            pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam");
         gtk_widget_set_sensitive(buttons[i],TRUE);
     }
     if(G.pc2_deckcheatz_overview_status)
         set_label(G.pc2_deckcheatz_overview_status,
-            "Native game setup requires verification; Steam Bridge is optional (legacy).");
+            pc2_steam_launch_allowed()?
+            "Uses Steam\x27s saved per-game Launch Options after consent. Trainer not yet verified.":
+            "Copy the DeckCheatz Steam launch option in Settings. No configuration modified.");
     if(G.pc2_deckcheatz_library_status)
         set_label(G.pc2_deckcheatz_library_status,
-            "Check native WeMod setup first; no game will be launched by this check.");
+            pc2_steam_launch_allowed()?
+            "Steam-managed wrapper launch enabled with explicit confirmation; no direct WeMod injection.":
+            "Configure DeckCheatz in Steam Properties before using Play via Steam.");
 }
 
 static gboolean pc2_bridge_readiness_done(gpointer data){
@@ -5122,7 +5160,12 @@ static void on_pc2_bridge_upgrade(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_
 static void on_pc2_bridge_play(GtkButton*b,void*d){(void)b;(void)d;pc2_steam_bridge_action("play");}
 static void on_pc2_bridge_primary(GtkButton*b,void*d){
     (void)b;(void)d;
-    /* No Steam-Bridge registration or setup action on the default path. */
+    if(pc2_discovery_only()){
+        /* Steam wraps %command% using the user-configured DeckCheatz launcher.
+         * Use the established, confirmed Steam game-only handoff worker. */
+        pc2_steam_launch_selected(1);
+        return;
+    }
     pc2_steam_bridge_action("native-route");
 }
 
