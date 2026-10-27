@@ -246,7 +246,8 @@ def plan(
 def launch(report: dict, private: dict, *, approved: bool,
            state_root: Path | None = None, proc_root: Path = Path("/proc"),
            uid: int | None = None,
-           accept_unreadable_risk: bool = False) -> dict:
+           accept_unreadable_risk: bool = False,
+           disable_gpu: bool = False) -> dict:
     if not approved or not report["can_attempt_with_explicit_consent"]:
         raise AttachBlocked("Explicit approval and a clean live-session preflight are required")
     # Recheck the selected game and live Proton environment immediately before
@@ -294,6 +295,10 @@ def launch(report: dict, private: dict, *, approved: bool,
         "WEMOD_LOG": str(log_path),
     })
     argv = [str(runtime["proton"]), "runinprefix", str(client / "WeMod.exe")]
+    # Electron's Chromium GPU subprocess may fail under Wine (error_code=43).
+    # This switch is scoped to WeMod.exe only, never the running game/Proton.
+    if disable_gpu:
+        argv.append("--disable-gpu")
     try:
         with os.fdopen(fd, "wb") as log:
             child = subprocess.Popen(argv, cwd=client, env=env, stdin=subprocess.DEVNULL,
@@ -309,6 +314,7 @@ def launch(report: dict, private: dict, *, approved: bool,
         "steam_launch_options_changed": False,
         "steam_bridge_used": False,
         "new_game_launched": False,
+        "wemod_gpu_disabled": disable_gpu,
         "trainer_attachment_verified": False,
         "in_game_activation_verified": False,
         "message": "Client subprocess requested; confirm WeMod connection and actual in-game effect manually."
@@ -348,6 +354,9 @@ def main(argv=None) -> int:
     parser.add_argument("--client-dir", type=Path)
     parser.add_argument("--format", choices=("json", "summary"), default="json")
     parser.add_argument("--launch-client", action="store_true")
+    parser.add_argument("--disable-gpu", action="store_true",
+                        help="Pass --disable-gpu only to WeMod Electron, "
+                             "not the Steam game; use for GPU process error_code=43")
     parser.add_argument("--approve-prefix-may-change", action="store_true")
     parser.add_argument("--approve-experimental-live-attach", action="store_true")
     parser.add_argument("--accept-unreadable-process-risk", action="store_true",
@@ -358,8 +367,8 @@ def main(argv=None) -> int:
     try:
         if not args.launch_client and (
                 args.approve_prefix_may_change or args.approve_experimental_live_attach or
-                args.accept_unreadable_process_risk):
-            raise AttachBlocked("Preview never accepts live launch approval flags")
+                args.accept_unreadable_process_risk or args.disable_gpu):
+            raise AttachBlocked("Preview never accepts launch-only flags")
         report, private = plan(args.appid, args.install_dir,
                                args.client_dir or default_client(),
                                accept_unreadable_risk=args.accept_unreadable_process_risk)
@@ -368,7 +377,8 @@ def main(argv=None) -> int:
                     args.approve_experimental_live_attach):
                 raise AttachBlocked("Both live-attach approvals are required")
             result = launch(report, private, approved=True,
-                            accept_unreadable_risk=args.accept_unreadable_process_risk)
+                            accept_unreadable_risk=args.accept_unreadable_process_risk,
+                            disable_gpu=args.disable_gpu)
         else:
             result = report
     except (AttachBlocked, OSError, ValueError) as exc:
