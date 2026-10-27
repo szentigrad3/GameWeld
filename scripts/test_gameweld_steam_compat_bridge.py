@@ -745,7 +745,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('pack(bridge_card,netfx_plan,0);', ui)
         self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
         self.assertIn('!strcmp(job->result,"runtime")', ui)
-        self.assertIn('pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam"', ui)
+        self.assertIn('pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn('strcmp(action,"netfx-plan")', ui)
         self.assertIn('strcmp(j->action,"netfx-plan")', ui)
@@ -852,7 +852,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('(GCallback)on_pc2_bridge_play,NULL,NULL,0);', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn(
-            'pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam"', ui
+            'pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui
         )
         self.assertNotIn('pack(deckpage,bridge_card,0);', ui)
         self.assertIn('GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui)
@@ -879,7 +879,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         guard = guard.split('static GtkWidget *box(', 1)[0]
         for label in (
             "Copy DeckCheatz Steam launch option",
-            "Set up DeckCheatz for Steam",
+            "Set up one-session DeckCheatz",
             "Play via Steam + DeckCheatz",
         ):
             self.assertIn(f'strcmp(s, "{label}")', guard)
@@ -888,6 +888,23 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('pc2_steam_launch_selected(1);', primary)
         self.assertNotIn('gameweld-wemod-live-attach.py', primary)
         self.assertNotIn('WeMod.exe', primary)
+
+    def test_one_session_gui_arm_on_exact_saved_wrapper_only(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('gameweld-deckcheatz-session.py', ui)
+        self.assertIn('pc2_session_configured_for_game(id)', ui)
+        self.assertIn('"session_wrapper_installed_in_saved_options\\": true', ui)
+        self.assertIn('j->session_mode=session_mode;', ui)
+        self.assertIn('pc2_deckcheatz_session_helper("arm"', ui)
+        self.assertIn('pc2_deckcheatz_session_helper("disarm"', ui)
+        self.assertIn('Set up one-session DeckCheatz', ui)
+        self.assertIn('on_pc2_deckcheatz_setup_session', ui)
+        self.assertIn('verified_empty,session_wrapper', ui)
+        self.assertIn('automatically revert to normal game execution', ui)
+        self.assertNotIn('localconfig.vdf', ui.split(
+            'static void *pc2_steam_launch_worker(void *data){', 1)[1].split(
+            'static void pc2_steam_launch_selected', 1)[0])
 
     def test_preserve_original_gui_requires_backup_before_clipboard_copy(self):
         ui = (Path(__file__).resolve().parents[1] /
