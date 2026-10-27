@@ -224,6 +224,11 @@ def run_creation_order_matrix(root: Path, *, runner=subprocess.run,
         result.append(f"{label}: normal={first}; reversed={second}; {classification}")
     result.extend([
         "Order-dependent lookup groups: " + str(len(changed)),
+        ("RUNTIME VERDICT: CASE-AMBIGUOUS PATH RESOLUTION CHANGES WITH "
+         "FILE CREATION ORDER — AUTOMATIC USE OF A COLLIDING ARCHIVE BLOCKED"
+         if changed else
+         "RUNTIME VERDICT: NO ORDER CHANGE OBSERVED IN THIS SMALL SYNTHETIC TEST; "
+         "CASE-COLLIDING ARCHIVES STILL BLOCKED"),
         "No order change does NOT prove Windows/.NET or Proton compatibility.",
         "Only host Wine cmd.exe, synthetic files, and private disposable prefixes tested.",
         "All temporary test prefixes cleaned; real rejected ZIP NEVER extracted or executed.",
