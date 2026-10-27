@@ -83,7 +83,7 @@ class RejectedZipIntegrityTests(unittest.TestCase):
     def test_crc_error_rejects_even_with_matching_local_digest_and_receipt(self):
         source = self.make_zip()
         self.assertEqual(source.count(b"UNIQUE-PAYLOAD-LOWER"), 1)
-        corrupted = source.replace(b"UNIQUE-PAYLOAD-LOWER", b"CHANGED-PAYLOAD-LOWER", 1)
+        corrupted = source.replace(b"UNIQUE-PAYLOAD-LOWER", b"BROKEN-PAYLOAD-LOWER", 1)
         self.assertEqual(len(corrupted), len(source))
         self.store(corrupted)  # filename SHA matches corrupt bytes but member CRC does not
         with self.assertRaisesRegex(integrity.IntegrityRefused, "CRC verification FAILED"):
