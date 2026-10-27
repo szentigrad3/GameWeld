@@ -2,8 +2,11 @@ use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 use wand_core::{
     GameInstall, LaunchPlan, ProcessInfo, ProcessProbe, ProcessRole, ProtonTool,
 };
@@ -859,6 +862,196 @@ fn one_session_state_dir() -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
         .join("wand")
         .join("one-session")
+}
+
+/// Experimental direct DeckCheatz/Proton route. The wrapper is first in argv
+/// just like DeckCheatz's Steam '%command%' recipe, but this does NOT recreate
+/// Steam's Linux Runtime container, Steam client supervisor, Steam API, or DRM.
+///
+/// Plan creation is READ ONLY. Refuse ambiguous game executables rather than
+/// silently choosing the top scoring .exe when Steam metadata is insufficient.
+pub fn build_native_wrapper_launch_plan(
+    game: &GameInstall,
+    steam_root: &Path,
+    proton: &ProtonTool,
+    wrapper: &Path,
+    wrapper_log: &Path,
+) -> Result<LaunchPlan> {
+    let wrapper = fs::canonicalize(wrapper)
+        .with_context(|| format!("wrapper does not exist: {}", wrapper.display()))?;
+    if !wrapper.is_file() || fs::metadata(&wrapper)?.permissions().mode() & 0o111 == 0 {
+        return Err(anyhow!(
+            "DeckCheatz wrapper must be an executable regular file: {}",
+            wrapper.display()
+        ));
+    }
+
+    if !proton.proton_script.is_file()
+        || fs::metadata(&proton.proton_script)?.permissions().mode() & 0o111 == 0
+    {
+        return Err(anyhow!(
+            "selected Proton launcher is missing or not executable: {}",
+            proton.proton_script.display()
+        ));
+    }
+    if !steam_root.join("steamapps").is_dir() {
+        return Err(anyhow!("Steam client root does not have steamapps: {}", steam_root.display()));
+    }
+    if !game.compatdata_dir.is_dir() || !game.prefix_dir.is_dir() {
+        return Err(anyhow!(
+            "Proton compatdata/prefix missing for AppID {}. Run it through Steam once first.",
+            game.app_id
+        ));
+    }
+    if !wrapper_log.is_absolute() || wrapper_log.file_name().is_none() {
+        return Err(anyhow!("DeckCheatz log must be an absolute file path"));
+    }
+    if wrapper_log.is_symlink() || wrapper_log.is_dir() {
+        return Err(anyhow!("Refusing symlinked or directory DeckCheatz log"));
+    }
+
+    let canonical_install = fs::canonicalize(&game.install_dir)
+        .context("resolving Steam game installation")?;
+    if std::env::var_os("WAND_GAME_EXE").is_none() {
+        let mut possible = Vec::new();
+        collect_game_exes(&game.install_dir, 0, &mut possible);
+        possible.retain(|file| {
+            file.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| !obvious_non_game_exe(name))
+                .unwrap_or(false)
+        });
+        if possible.len() > 1 {
+            return Err(anyhow!(
+                "more than one plausible Windows game executable ({} found). \
+                 Set WAND_GAME_EXE explicitly after reviewing the Steam game directory.",
+                possible.len()
+            ));
+        }
+    }
+    let game_exe = discover_game_executable(game)?;
+    if !game_exe.starts_with(&canonical_install)
+        || !game_exe.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case("exe"))
+            .unwrap_or(false)
+    {
+        return Err(anyhow!(
+            "Windows game executable must be within selected install directory: {}",
+            game_exe.display()
+        ));
+    }
+
+    let command = vec![
+        wrapper.display().to_string(),
+        proton.proton_script.display().to_string(),
+        "waitforexitandrun".into(),
+        game_exe.display().to_string(),
+    ];
+
+    let mut environment = proton_environment(game, steam_root);
+    environment.extend([
+        ("STEAM_COMPAT_TOOL_PATHS".into(), proton.root.display().to_string()),
+        ("SteamOverlayGameId".into(), game.app_id.to_string()),
+        ("WINEDLLOVERRIDES".into(), "version=n,b".into()),
+        ("WEMOD_LOG".into(), wrapper_log.display().to_string()),
+        ("WAND_WRAPPER_GAME_EXE".into(), game_exe.display().to_string()),
+    ]);
+    environment.sort_by(|left, right| left.0.cmp(&right.0));
+
+    Ok(LaunchPlan {
+        app_id: game.app_id,
+        game_name: game.name.clone(),
+        proton: proton.clone(),
+        compatdata_dir: game.compatdata_dir.clone(),
+        prefix_dir: game.prefix_dir.clone(),
+        trainer: wrapper,
+        command,
+        environment,
+    })
+}
+
+/// Returns None for a dry-run; no directories or log files are created.
+/// Launch is experimental and opt-in; the resulting PID is only the spawned
+/// wrapper, not confirmation that Steam API or WeMod attachment worked.
+pub fn run_native_wrapper_launch_plan(
+    plan: &LaunchPlan,
+    game_install_dir: &Path,
+    dry_run: bool,
+) -> Result<Option<u32>> {
+    let (program, args) = plan.command
+        .split_first()
+        .ok_or_else(|| anyhow!("native DeckCheatz wrapper plan has no command"))?;
+
+    if plan.command.len() < 4 || plan.command[2] != "waitforexitandrun"
+        || program != &plan.trainer.display().to_string()
+        || plan.command[1] != plan.proton.proton_script.display().to_string()
+    {
+        return Err(anyhow!("native DeckCheatz wrapper command has an unexpected layout"));
+    }
+    let canonical_install = fs::canonicalize(game_install_dir)
+        .context("selected Steam install directory is missing")?;
+    let game_exe = fs::canonicalize(&plan.command[3])
+        .context("planned Windows game executable no longer exists")?;
+    if !game_exe.starts_with(&canonical_install) {
+        return Err(anyhow!("selected game executable escaped the Steam installation"));
+    }
+    if dry_run {
+        return Ok(None);
+    }
+
+    if likely_game_running(plan.app_id) {
+        return Err(anyhow!(
+            "Steam AppID {} already has a running game; refusing duplicate direct launch",
+            plan.app_id
+        ));
+    }
+    let mut command = Command::new(program);
+    command.args(args);
+    let env: HashMap<_, _> = plan.environment.iter().cloned().collect();
+    command.envs(env);
+    command.current_dir(game_exe.parent().unwrap_or(&canonical_install));
+
+    let log_dir = one_session_state_dir().join("native-wrapper");
+    if log_dir.is_symlink() {
+        return Err(anyhow!("refusing symlinked native wrapper log directory"));
+    }
+    fs::create_dir_all(&log_dir)
+        .with_context(|| format!("creating {}", log_dir.display()))?;
+    let meta = fs::symlink_metadata(&log_dir)?;
+    if !meta.is_dir() || meta.uid() != unsafe { libc_geteuid() } {
+        return Err(anyhow!("native wrapper log directory has unexpected ownership/type"));
+    }
+    fs::set_permissions(&log_dir, fs::Permissions::from_mode(0o700))
+        .context("protecting native wrapper log directory")?;
+
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH)
+        .context("invalid clock for wrapper launch log")?.as_nanos();
+    let log_path = log_dir.join(format!(
+        "appid-{}-{}-{}.log", plan.app_id, std::process::id(), nanos
+    ));
+    let log = fs::OpenOptions::new().write(true).create_new(true).open(&log_path)
+        .with_context(|| format!("creating one-time log {}", log_path.display()))?;
+    let log_err = log.try_clone().context("cloning native wrapper log output")?;
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(log_err))
+        .env("WAND_WRAPPER_LAUNCH_LOG_PATH", &log_path)
+        // Separate process group: closing GameWeld will not signal the game.
+        .process_group(0);
+
+    let child = command.spawn().context("launching game via DeckCheatz + Proton")?;
+    Ok(Some(child.id()))
+}
+
+// POSIX process identity is only needed to validate ownership of log output.
+// Prefer libc's real/effective UID through the standard getuid environment
+// rather than hard-code a public-writable state directory.
+#[cfg(unix)]
+unsafe fn libc_geteuid() -> u32 {
+    extern "C" { fn geteuid() -> u32; }
+    geteuid()
 }
 
 pub fn build_one_proton_session_launch_plan(
