@@ -67,10 +67,65 @@ class SteamOptionsTests(unittest.TestCase):
         linked = self.root / "linked/wemod"
         linked.parent.mkdir()
         linked.symlink_to(self.launcher)
-        with self.assertRaisesRegex(recipe.RecipeBlocked, "executable"):
+        with self.assertRaisesRegex(recipe.RecipeBlocked, "symlink target"):
             recipe.build_recipe(linked)
         with self.assertRaisesRegex(recipe.RecipeBlocked, "executable"):
             recipe.build_recipe(self.root / "missing/wemod")
+
+    def test_official_deckcheatz_symlink_to_src_wemod_py_is_accepted(self):
+        # Real upstream 1.x checkout uses wemod -> src/wemod.py.
+        # Steam and the original GUI successfully use this same launcher.
+        src = self.launcher.parent / "src"
+        src.mkdir()
+        entry = src / "wemod.py"
+        entry.write_text("#!/usr/bin/env python3\n")
+        entry.chmod(0o755)
+        self.launcher.unlink()
+        self.launcher.symlink_to("src/wemod.py")
+        result = recipe.build_recipe(self.launcher)
+        self.assertEqual(result["mode"], "DECKCHEATZ_STEAM_LAUNCH_OPTION")
+        self.assertIn(str(self.launcher) + " %command%", result["launch_option"])
+        self.assertTrue(self.launcher.is_symlink())
+        self.assertFalse((self.launcher.parent / "wemod.log").exists())
+
+    def test_deckcheatz_wrapper_symlink_cannot_escape_checkout(self):
+        outside = self.root / "outside.py"
+        outside.write_text("#!/usr/bin/env python3\n")
+        outside.chmod(0o755)
+        src = self.launcher.parent / "src"
+        src.mkdir()
+        target = src / "wemod.py"
+        target.write_text("placeholder")
+        target.chmod(0o755)
+        self.launcher.unlink()
+        self.launcher.symlink_to(outside)
+        with self.assertRaisesRegex(recipe.RecipeBlocked, "outside"):
+            recipe.build_recipe(self.launcher)
+        self.assertTrue(self.launcher.is_symlink())
+        self.assertEqual(outside.read_text(), "#!/usr/bin/env python3\n")
+
+    def test_deckcheatz_nested_symlink_target_is_rejected(self):
+        src = self.launcher.parent / "src"
+        src.mkdir()
+        outside = self.root / "outside.py"
+        outside.write_text("#!/usr/bin/env python3\n")
+        outside.chmod(0o755)
+        (src / "wemod.py").symlink_to(outside)
+        self.launcher.unlink()
+        self.launcher.symlink_to("src/wemod.py")
+        with self.assertRaisesRegex(recipe.RecipeBlocked, "target"):
+            recipe.build_recipe(self.launcher)
+
+    def test_official_symlink_without_execute_permission_is_rejected(self):
+        src = self.launcher.parent / "src"
+        src.mkdir()
+        target = src / "wemod.py"
+        target.write_text("#!/usr/bin/env python3\n")
+        target.chmod(0o600)
+        self.launcher.unlink()
+        self.launcher.symlink_to("src/wemod.py")
+        with self.assertRaisesRegex(recipe.RecipeBlocked, "executable"):
+            recipe.build_recipe(self.launcher)
 
     def test_refuses_log_symlink(self):
         target = self.root / "private.txt"
