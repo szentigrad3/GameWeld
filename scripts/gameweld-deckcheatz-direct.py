@@ -151,7 +151,9 @@ def active_game_process(appid: str, proc_root: Path = Path("/proc")) -> bool:
                 continue
             # /proc/.../environ may reveal unrelated secrets; never log it.
             with (item / "environ").open("rb") as inp:
-                env = inp.read(128 * 1024)
+                env = inp.read(128 * 1024 + 1)
+            if len(env) > 128 * 1024:
+                raise Blocked("Process environment exceeds safe inspection limit")
             if any(key + appid.encode() in env.split(b"\x00") for key in
                    (b"SteamAppId=", b"SteamGameId=", b"STEAM_COMPAT_APP_ID=")):
                 return True
