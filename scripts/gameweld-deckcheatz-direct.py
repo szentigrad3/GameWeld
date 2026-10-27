@@ -155,8 +155,13 @@ def active_game_process(appid: str, proc_root: Path = Path("/proc")) -> bool:
             if any(key + appid.encode() in env.split(b"\x00") for key in
                    (b"SteamAppId=", b"SteamGameId=", b"STEAM_COMPAT_APP_ID=")):
                 return True
-        except (OSError, PermissionError):
+        except FileNotFoundError:
+            # A process can exit during scanning; a vanished PID is harmless.
             continue
+        except OSError as exc:
+            # Permission failures or other unreadable live processes must not
+            # turn an uncertain scan into authorization to launch.
+            raise Blocked("Cannot verify whether a game process is active") from exc
     return False
 
 
