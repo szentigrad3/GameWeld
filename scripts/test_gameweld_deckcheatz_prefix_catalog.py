@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -112,6 +113,69 @@ class PreparedPrefixCatalogTests(unittest.TestCase):
         self.assertIn("https://github.com/DeckCheatz/BuiltPrefixes-dev/", assets[0])
         self.assertIn("No archive downloaded; no files copied", output.getvalue())
         fetched.assert_called_once()
+
+    def test_rejected_local_asset_is_not_offered_again(self):
+        import contextlib
+        import io
+        import sys
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir) / "gameweld/prepared-wemod"
+            quarantine = root / "rejected"
+            quarantine.mkdir(parents=True, mode=0o700)
+            quarantine.chmod(0o700)
+            content = b"DIAGNOSTIC ZIP PLACEHOLDER" * 50000
+            sha = hashlib.sha256(content).hexdigest()
+            (quarantine / (sha + ".zip")).write_bytes(content)
+            (quarantine / (sha + ".rejected.json")).write_text(json.dumps({
+                "sha256": sha, "source": "DeckCheatz/BuiltPrefixes-dev",
+                "status": "REJECTED_NOT_STAGEABLE", "release_tag": "PfxVer10.1",
+                "asset_name": "GE-Proton10.1.zip", "bytes": len(content),
+            }))
+            rejected_asset = release("PfxVer10.1", "GE-Proton10.1.zip", size=len(content))
+            new_asset = release("PfxVer10.2", "GE-Proton10.2.zip", size=95_000_000)
+            offered, rejected = mod.filter_locally_rejected(
+                mod.list_release_assets([rejected_asset, new_asset], "GE-Proton10.1"),
+                root)
+            self.assertEqual([x["asset"] for x in offered], ["GE-Proton10.2.zip"])
+            self.assertEqual(rejected[0]["asset"], "GE-Proton10.1.zip")
+            output = io.StringIO()
+            with patch.object(mod, "fetch_release_metadata",
+                              return_value=[rejected_asset, new_asset]), \
+                 patch.object(sys, "argv", [
+                     "gameweld-deckcheatz-prefix-catalog.py",
+                     "--machine-lines", "--cache-root", str(root),
+                     "--proton-label", "GE-Proton10.1",
+                 ]), contextlib.redirect_stdout(output):
+                self.assertEqual(mod.main(), 0)
+            lines = output.getvalue().splitlines()
+            self.assertEqual(sum(line.startswith("BLOCKED\t") for line in lines), 1)
+            self.assertEqual(sum(line.startswith("ASSET\t") for line in lines), 1)
+            self.assertIn("BLOCKED\tPfxVer10.1\tGE-Proton10.1.zip\tCASE_COLLISIONS", lines)
+            self.assertIn("ASSET\tPfxVer10.2\tGE-Proton10.2.zip\t", output.getvalue())
+            self.assertIn("Known rejected releases excluded: 1", output.getvalue())
+            self.assertFalse((root / "downloads").exists())
+
+    def test_invalid_quarantine_metadata_blocks_catalog_choices(self):
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir) / "gameweld/prepared-wemod"
+            quarantine = root / "rejected"
+            quarantine.mkdir(parents=True, mode=0o700)
+            quarantine.chmod(0o700)
+            (quarantine / ("a" * 64 + ".rejected.json")).write_text("{not json")
+            result = mod.catalog_report("GE-Proton10.1", releases=[
+                release("PfxVer10.1", "GE-Proton10.1.zip")
+            ], cache_root=root)
+            self.assertIn("Local rejection records: UNAVAILABLE or UNSAFE.", result)
+            self.assertNotIn("Prepared prefix archives listed:", result)
+
+    def test_absent_quarantine_does_not_block_other_choices(self):
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir) / "gameweld/prepared-wemod"
+            result = mod.catalog_report("GE-Proton10.1", releases=[
+                release("PfxVer10.2", "GE-Proton10.2.zip")
+            ], cache_root=root)
+            self.assertIn("Prepared prefix archives listed: 1", result)
+            self.assertNotIn("Known rejected releases excluded:", result)
 
     def test_invalid_catalog_shape_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "list"):
