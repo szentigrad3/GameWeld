@@ -2924,6 +2924,15 @@ static void *pc2_steam_launch_worker(void *data){
     g_idle_add(pc2_steam_launch_done,j);
     return NULL;
 }
+/* Surface launch/preflight blockers; never leave the main Play control inert. */
+static void pc2_steam_launch_notice(const char *reason){
+    GtkWidget*dialog=gtk_message_dialog_new((GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
+        "GameWeld did not request a Steam launch.\n\n%.1000s",
+        reason?reason:"Unknown Steam launch blocker.");
+    gtk_dialog_run((GtkDialog*)dialog);
+    gtk_widget_destroy(dialog);
+}
 static void pc2_steam_launch_selected(int expect_deckcheatz){
     if(!pc2_steam_launch_allowed()){
         if(expect_deckcheatz){
@@ -2953,6 +2962,7 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
     char*body=NULL;int code=0;
     if(http_request("GET",request_path,NULL,&body,&code)<0||code!=200||!body){
         log_line("PC2 backend did not approve a safe preview for %s (HTTP %d). Nothing launched.",g->name,code);
+        pc2_steam_launch_notice("Local backend launch-preview unavailable. The game was not started; review GameWeld's backend startup.");
         free(body);return;
     }
     char mode[64]={0},provider[64]={0},reply_id[64]={0},uri[256]={0};
@@ -2965,6 +2975,7 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
     if(strcmp(mode,"preview_only")||strcmp(provider,"steam")||strcmp(reply_id,id)||
        strcmp(uri,expected_uri)||launch_enabled){
         log_line("PC2 backend preview mismatch. Launch blocked without side effects.");
+        pc2_steam_launch_notice("Steam game ID, provider, URI or launch-disabled state did not match the safe preview. Nothing launched.");
         return;
     }
     int session_mode=expect_deckcheatz && pc2_session_configured_for_game(id);
@@ -2985,10 +2996,18 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
         "%%command%% to THIS game in Steam Properties > Launch Options. "
         "GameWeld cannot verify these Steam settings. Game and WeMod must "
         "be closed before launch. No Steam setting will be changed. Continue?":
+        pc2_steam_wemod_allowed()?
+        "Play via Steam, then inspect WeMod handoff?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "Steam will choose Proton and use its EXISTING Launch Options. "
+        "GameWeld does not change those options or install a Steam Bridge.\n\n"
+        "After detecting the game, GameWeld will preview the WeMod client "
+        "handoff. Starting WeMod requires a second confirmation and may "
+        "change the existing game prefix.\n\nContinue?":
         "Launch Steam game only?\n\n%.140s (Steam App ID %s)\n\n"
-        "This will request Steam to launch ONLY the game. No trainer, WeMod, "
-        "Cheat Engine, Proton setup or GameWeld configuration changes will be requested.\n\n"
-        "Steam itself may update a game or runtime normally. Continue?",
+        "Steam launches using its existing Launch Options. No trainer or "
+        "GameWeld prefix modifications will be requested.\n\n"
+        "Steam may update the game or runtime normally. Continue?",
         g->name,id);
     int accepted=gtk_dialog_run((GtkDialog*)confirm);
     gtk_widget_destroy(confirm);
