@@ -27,15 +27,16 @@ class RuntimePreflightRefused(ValueError):
     pass
 
 
-def verify_prefix(provider: str, game_id: str, prefix: Path) -> Path:
+def verify_prefix(provider: str, game_id: str, prefix: Path, *, allow_missing: bool = False) -> Path:
     if provider not in ("steam", "heroic", "lutris"):
         raise RuntimePreflightRefused("Unsupported provider")
     identifier = STEAM_ID if provider == "steam" else OTHER_ID
     if not game_id or not identifier.fullmatch(game_id):
         raise RuntimePreflightRefused("Selected game ID is invalid")
     if (not prefix.is_absolute() or prefix.is_symlink() or
-            not prefix.is_dir() or
-            any(parent.is_symlink() for parent in prefix.parents)):
+            any(parent.is_symlink() for parent in prefix.parents) or
+            (not prefix.is_dir() and not (allow_missing and not prefix.exists()
+                                            and prefix.parent.is_dir()))):
         raise RuntimePreflightRefused("Choose an existing non-symlinked absolute prefix")
     return prefix
 
@@ -96,8 +97,9 @@ def procfs_report(
     *,
     proc_root: Path = Path("/proc"),
     current_uid: int | None = None,
+    allow_missing_prefix: bool = False,
 ) -> dict:
-    prefix = verify_prefix(provider, game_id, prefix)
+    prefix = verify_prefix(provider, game_id, prefix, allow_missing=allow_missing_prefix)
     uid = os.getuid() if current_uid is None else current_uid
     base = str(prefix)
     steam_compat = str(prefix.parent) if prefix.name == "pfx" else ""
