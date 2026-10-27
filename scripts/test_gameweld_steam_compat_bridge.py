@@ -745,7 +745,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('pack(bridge_card,netfx_plan,0);', ui)
         self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
         self.assertIn('!strcmp(job->result,"runtime")', ui)
-        self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],"Check WeMod setup");', ui)
+        self.assertIn('pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam"', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn('strcmp(action,"netfx-plan")', ui)
         self.assertIn('strcmp(j->action,"netfx-plan")', ui)
@@ -852,7 +852,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('(GCallback)on_pc2_bridge_play,NULL,NULL,0);', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn(
-            'gtk_button_set_label((GtkButton*)buttons[i],"Check WeMod setup");', ui
+            'pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up DeckCheatz for Steam"', ui
         )
         self.assertNotIn('pack(deckpage,bridge_card,0);', ui)
         self.assertIn('GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui)
@@ -861,6 +861,33 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
             ui
         )
         self.assertNotIn("Steam launch ASSOCIATION OBSERVED", ui)
+
+    def test_deckcheatz_primary_routes_through_confirmed_steam_not_direct_wemod(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('pc2_steam_launch_selected(1);', ui)
+        self.assertIn('pc2_steam_launch_selected(0);', ui)
+        self.assertIn('j->expect_deckcheatz=expect_deckcheatz;', ui)
+        self.assertIn('on_pc2_deckcheatz_copy_steam_option(NULL,NULL);', ui)
+        self.assertIn('Steam may execute saved Launch Options;', ui)
+        self.assertIn('GameWeld cannot verify these Steam settings.', ui)
+        self.assertIn('if(!pc2_steam_launch_allowed()){', ui)
+        self.assertIn('on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d)', ui)
+        self.assertIn('"Play via Steam + DeckCheatz"', ui)
+        self.assertIn('"Set up DeckCheatz for Steam"', ui)
+        guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
+        guard = guard.split('static GtkWidget *box(', 1)[0]
+        for label in (
+            "Copy DeckCheatz Steam launch option",
+            "Set up DeckCheatz for Steam",
+            "Play via Steam + DeckCheatz",
+        ):
+            self.assertIn(f'strcmp(s, "{label}")', guard)
+        primary = ui.split('static void on_pc2_bridge_primary(GtkButton*b,void*d){', 1)[1]
+        primary = primary.split('static void pc2_launch_with_steam_bridge', 1)[0]
+        self.assertIn('pc2_steam_launch_selected(1);', primary)
+        self.assertNotIn('gameweld-wemod-live-attach.py', primary)
+        self.assertNotIn('WeMod.exe', primary)
 
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
         with patch.dict(os.environ, self.env):
