@@ -37,7 +37,7 @@ class NativeWrapperGuiTests(unittest.TestCase):
         self.assertIn('pack(inspect,npreview,0)', self.ui)
         self.assertIn('pack(inspect,nlaunch,0)', self.ui)
         self.assertIn('g_idle_add(pc2_native_wrapper_done,j)', self.ui)
-        self.assertIn('Native Rust wrapper BLOCKED or failed.', self.ui)
+        self.assertIn('Rust native wrapper BLOCKED or failed.', self.ui)
 
     def test_live_launch_requires_confirmation_and_rust_cli_approvals(self):
         self.assertIn('if(response!=GTK_RESPONSE_YES)return;', self.ui)
