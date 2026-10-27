@@ -113,6 +113,48 @@ class WineCaseRehearsalTests(unittest.TestCase):
         self.assertIn("STILL BLOCKED", report)
         self.assert_safe()
 
+    def test_order_matrix_with_two_disposable_prefixes_cleans_everything(self):
+        out = rehearsal.run_creation_order_matrix(
+            self.root, runner=self.fake_wine, wine_exe="/synthetic-wine")
+        self.assertIn("Order-dependent lookup groups: 0", out)
+        self.assertIn("EXACT CASE OK IN BOTH", out)
+        self.assertIn("Real archive staging and installation: STILL BLOCKED", out)
+        self.assert_safe()
+
+    def test_order_matrix_reports_changing_ambiguous_resolution(self):
+        flags = []
+        def fake_report(root, *, reverse_creation_order=False, **kwargs):
+            flags.append(reverse_creation_order)
+            lines = []
+            for label, _, expected in rehearsal.WIN_TESTS:
+                token = (expected or (
+                    "lower_file" if reverse_creation_order else "upper_file"))
+                lines.append(f"{label}: {token} — simulated")
+            return "\n".join(lines)
+        with patch.object(rehearsal, "run_rehearsal", side_effect=fake_report):
+            out = rehearsal.run_creation_order_matrix(self.root)
+        self.assertEqual(flags, [False, True])
+        self.assertIn("Order-dependent lookup groups: 2", out)
+        self.assertIn("ORDER-DEPENDENT", out)
+        self.assertIn("Real archive staging and installation: STILL BLOCKED", out)
+        self.assert_safe()
+
+    def test_reverse_file_creation_keeps_distinct_synthetic_payloads(self):
+        prefix = self.root / "reverse-prefix"
+        (prefix / "drive_c").mkdir(parents=True)
+        rehearsal.synthetic_files(prefix, reverse_creation_order=True)
+        base = prefix / "drive_c/GWCaseProbe"
+        self.assertEqual(
+            (base / "InstallUtil.exe").read_bytes(),
+            rehearsal.TOKENS["upper_file"] + b"\r\n")
+        self.assertEqual(
+            (base / "installutil.exe").read_bytes(),
+            rehearsal.TOKENS["lower_file"] + b"\r\n")
+        self.assertEqual(
+            (base / "Config/machine.config").read_bytes(),
+            rehearsal.TOKENS["lower_dir"] + b"\r\n")
+        self.assert_safe()
+
     def test_rejects_prefix_root_under_game_prefix(self):
         unsafe = self.game / "gameweld/prepared-wemod"
         unsafe.mkdir(parents=True)
