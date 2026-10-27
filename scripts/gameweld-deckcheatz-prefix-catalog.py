@@ -165,7 +165,7 @@ def catalog_report(proton_label: str, *, releases: object | None = None,
         try:
             candidates, blocked = filter_locally_rejected(candidates, cache_root)
         except ValueError:
-            return "\\n".join(lines + [
+            return "\n".join(lines + [
                 "Local rejection records: UNAVAILABLE or UNSAFE.",
                 "No downloadable candidates offered until local state is checked.",
             ])
@@ -217,9 +217,9 @@ def main() -> int:
         for item in blocked:
             # The GUI can show why a versioned release is no longer offered.
             tag, asset = item["release"], item["asset"]
-            if all("\\t" not in field and "\\n" not in field and "\\r" not in field
+            if all("\t" not in field and "\n" not in field and "\r" not in field
                    for field in (tag, asset)):
-                print(f"BLOCKED\\t{tag}\\t{asset}\\tCASE_COLLISIONS")
+                print(f"BLOCKED\t{tag}\t{asset}\tCASE_COLLISIONS")
         for item in candidates[:4]:
             tag, asset = item["release"], item["asset"]
             # The format is a private, easily parsed UI protocol. Reject any
