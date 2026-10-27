@@ -203,7 +203,24 @@ def merge(original: str, recipe: str):
         return recipe + " " + old, "SAFE_GAME_FLAGS"
     return None, "MANUAL_UNKNOWN_COMMAND"
 
-def recipe_for(launcher: Path | None):
+def recipe_for(launcher: Path | None, *, session_appid: str | None = None):
+    if session_appid:
+        source = Path(__file__).with_name("gameweld-deckcheatz-session.py")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("gw_one_time_recipe", source)
+        if not spec or not spec.loader:
+            raise Blocked("GameWeld session wrapper helper unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        installed = module.installed_wrapper_path()
+        if (installed.is_symlink() or not installed.is_file() or
+                installed.read_bytes() != source.read_bytes()):
+            raise Blocked("Install or update the explicit GameWeld per-user session "
+                          "wrapper before preparing this Steam option")
+        proposal, reason = module.compose("", installed, session_appid)
+        if reason != "SAFE_EMPTY" or not proposal:
+            raise Blocked("Cannot create safe Steam session wrapper command")
+        return proposal
     module_path = Path(__file__).with_name("gameweld-deckcheatz-steam-options.py")
     spec = importlib.util.spec_from_file_location("gw_wrapped_steam_recipe", module_path)
     if not spec or not spec.loader:
@@ -287,6 +304,8 @@ def main(argv=None):
     parser.add_argument("--steam-account")
     parser.add_argument("--launcher", type=Path)
     parser.add_argument("--format", choices=("text", "json"), default="json")
+    parser.add_argument("--session-wrapper", action="store_true",
+                        help="Generate one-shot GameWeld Steam wrapper instead of permanent DeckCheatz")
     parser.add_argument("--verified-empty-in-steam", action="store_true",
                         help="Only after manually checking that the CURRENT Steam Properties "
                              "Launch Options field for the selected account/game is empty")
@@ -301,7 +320,9 @@ def main(argv=None):
                       "steam_launch_options_changed": False}
         else:
             old = launch_option(cfg, args.appid)
-            proposed, decision = merge(old, recipe_for(args.launcher))
+            proposed, decision = merge(
+                old, recipe_for(args.launcher,
+                                session_appid=args.appid if args.session_wrapper else None))
             # The running Steam client may hold a different, not-yet-persisted
             # LaunchOptions value. Even an explicit empty string on disk does
             # not prove the current Steam Properties field is empty.
@@ -313,6 +334,8 @@ def main(argv=None):
                       "proposed_launch_option": proposed,
                       "merge_status": decision, "requires_manual_review": proposed is None,
                       "steam_launch_options_changed": False,
+                      "launch_recipe_type": "single_session_shim" if args.session_wrapper
+                                            else "permanent_deckcheatz",
                       "steam_config_file": str(cfg)}
             if args.save_original:
                 if decision == "NEEDS_STEAM_UI_EMPTY_CHECK":
