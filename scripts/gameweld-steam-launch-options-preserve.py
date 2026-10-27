@@ -206,7 +206,6 @@ def merge(original: str, recipe: str):
 def recipe_for(launcher: Path | None, *, session_appid: str | None = None):
     if session_appid:
         source = Path(__file__).with_name("gameweld-deckcheatz-session.py")
-        import importlib.util
         spec = importlib.util.spec_from_file_location("gw_one_time_recipe", source)
         if not spec or not spec.loader:
             raise Blocked("GameWeld session wrapper helper unavailable")
