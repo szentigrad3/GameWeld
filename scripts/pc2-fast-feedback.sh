@@ -37,6 +37,7 @@ python3 -m py_compile \
 # dependency installation or private binary packaging.
 suites=(
   test_gameweld_steam_compat_bridge.py
+  test_gameweld_pc2_shell_injection.py
   test_gameweld_deckcheatz_prefix_catalog.py
   test_gameweld_deckcheatz_steam_options.py
   test_gameweld_deckcheatz_autodetect.py
