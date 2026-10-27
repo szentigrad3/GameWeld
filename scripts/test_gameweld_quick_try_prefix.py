@@ -181,6 +181,86 @@ class QuickTryTests(unittest.TestCase):
         self.assertEqual((self.current / "pfx/user.reg").read_bytes(),
                          b"ORIGINAL REGISTRY")
 
+    def test_explicit_unknown_override_is_narrow_and_active_cannot_override(self):
+        unknown = {
+            "state": "UNKNOWN", "matching_process_count": 0,
+            "matching_processes": [], "unreadable_same_user_processes": 4,
+        }
+        with patch.object(trial, "process_report", return_value=unknown):
+            status = trial.status_report("123", self.steamapps)
+            self.assertTrue(status["experimental_unknown_override_available"])
+            self.assertFalse(status["can_attempt_prepare"])
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "state UNKNOWN"):
+                trial.check_idle("123", self.current)
+            trial.check_idle("123", self.current, allow_unreadable=True)
+        for refusal in (
+            {"state": "ACTIVE", "matching_process_count": 1,
+             "matching_processes": [4141], "unreadable_same_user_processes": 4},
+            {"state": "UNKNOWN", "matching_process_count": 0,
+             "matching_processes": [], "unreadable_same_user_processes": 9},
+            {"state": "UNKNOWN", "matching_process_count": 0,
+             "matching_processes": [], "unreadable_same_user_processes": 0},
+            {"state": "IDLE_CANDIDATE", "matching_process_count": 1,
+             "matching_processes": [202], "unreadable_same_user_processes": 0},
+        ):
+            with self.subTest(refusal=refusal), \
+                 patch.object(trial, "process_report", return_value=refusal):
+                self.assertFalse(trial.may_override_unknown(refusal))
+                with self.assertRaises(trial.QuickTryBlocked):
+                    trial.check_idle("123", self.current, allow_unreadable=True)
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+
+    def test_unknown_override_still_backups_and_restores(self):
+        unknown = {
+            "state": "UNKNOWN", "matching_process_count": 0,
+            "matching_processes": [], "unreadable_same_user_processes": 4,
+        }
+        with patch.object(trial, "process_report", return_value=unknown):
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "state UNKNOWN"):
+                trial.prepare("123", self.steamapps, self.cache,
+                              acknowledge_closed=True, accept=True)
+            first = trial.prepare(
+                "123", self.steamapps, self.cache,
+                acknowledge_closed=True, accept=True,
+                allow_unreadable=True)
+            self.assertTrue(first["unknown_process_override_used"])
+            self.assertIn("--accept-unreadable-process-risk", first["restore"])
+            backup = self.current.parent / ".gameweld-original-123"
+            self.assertEqual((backup / "pfx/user.reg").read_bytes(), b"ORIGINAL REGISTRY")
+            self.assertEqual((self.current / "pfx/user.reg").read_bytes(),
+                             b"REPLACED IN TEST ONLY")
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "state UNKNOWN"):
+                trial.restore("123", self.steamapps,
+                              acknowledge_closed=True, accept=True)
+            restored = trial.restore(
+                "123", self.steamapps,
+                acknowledge_closed=True, accept=True,
+                allow_unreadable=True)
+            self.assertEqual(restored["result"], "ORIGINAL_PREFIX_RESTORED")
+            self.assertEqual((self.current / "pfx/user.reg").read_bytes(),
+                             b"ORIGINAL REGISTRY")
+            self.assertEqual(
+                (self.current.parent / ".gameweld-tested-123/pfx/user.reg").read_bytes(),
+                b"REPLACED IN TEST ONLY")
+        self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
+
+    def test_positive_active_during_second_check_never_swaps(self):
+        reports = [
+            {"state": "UNKNOWN", "matching_process_count": 0,
+             "matching_processes": [], "unreadable_same_user_processes": 4},
+            {"state": "ACTIVE", "matching_process_count": 1,
+             "matching_processes": [4141], "unreadable_same_user_processes": 0},
+        ]
+        with patch.object(trial, "process_report", side_effect=reports):
+            with self.assertRaisesRegex(trial.QuickTryBlocked, "Matching PIDs: 4141"):
+                trial.prepare("123", self.steamapps, self.cache,
+                              acknowledge_closed=True, accept=True,
+                              allow_unreadable=True)
+        self.assertEqual((self.current / "pfx/user.reg").read_bytes(),
+                         b"ORIGINAL REGISTRY")
+        self.assertFalse((self.current.parent / ".gameweld-original-123").exists())
+        self.assertEqual(list(self.current.parent.glob(".gameweld-preparing-*")), [])
+
     def test_no_matching_appmanifest_blocks_before_swap(self):
         (self.steamapps / "appmanifest_123.acf").unlink()
         with self.assertRaisesRegex(trial.QuickTryBlocked, "manifest"):
