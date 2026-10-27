@@ -112,6 +112,37 @@ class PreparedPrefixArchiveTests(unittest.TestCase):
         self.assertEqual(result["size_mismatch"], 1)
         self.assertFalse((self.root / "pfx").exists())
 
+    def test_rejected_diagnostic_does_not_authorize_case_collision_staging(self):
+        self.build([
+            ("pfx/windows/InstallUtil.exe", b"actual"),
+            ("pfx/windows/installutil.exe", b"different"),
+        ], compression=zipfile.ZIP_STORED)
+        before = self.archive.read_bytes()
+        with zipfile.ZipFile(self.archive) as z:
+            with self.assertRaisesRegex(audit.UnsafePreparedPrefix, "colliding"):
+                audit.inspect_zip_members(z)
+            count, unpacked = audit.check_other_zip_safety_without_approving_collisions(z)
+        self.assertEqual(count, 2)
+        self.assertEqual(unpacked, len(b"actual") + len(b"different"))
+        self.assertEqual(self.archive.read_bytes(), before)
+        self.assertFalse((self.root / "pfx").exists())
+
+    def test_diagnostic_still_rejects_traversal_and_links_alongside_collisions(self):
+        link = zipfile.ZipInfo("pfx/symlink")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        for third, reason in ((("../escape", b"escape"), "Path traversal"),
+                              ((link, b"other"), "Links")):
+            with self.subTest(reason=reason):
+                self.build([
+                    ("pfx/InstallUtil.exe", b"real"),
+                    ("pfx/installutil.exe", b"variant"),
+                    third,
+                ], compression=zipfile.ZIP_STORED)
+                with zipfile.ZipFile(self.archive) as z:
+                    with self.assertRaisesRegex(audit.UnsafePreparedPrefix, reason):
+                        audit.check_other_zip_safety_without_approving_collisions(z)
+
     def test_supplied_digest_does_not_prove_publisher_authenticity(self):
         self.build([("pfx/user.reg", b"test-data")])
         import hashlib
