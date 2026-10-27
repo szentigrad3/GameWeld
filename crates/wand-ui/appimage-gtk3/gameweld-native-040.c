@@ -5643,7 +5643,7 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
      * checked this same game's CURRENT Steam Properties themselves. */
     if(strstr(preview,"\"NEEDS_STEAM_UI_EMPTY_CHECK\"")){
         GtkWidget*verify=gtk_message_dialog_new((GtkWindow*)G.window,
-            GTK_DIALOG_MODAL,GTK_MESSAGE_WARNING,GTK_BUTTONS_YES_NO,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_YES_NO,
             "Steam's saved file reports EMPTY Launch Options for %.140s.\n\n"
             "But Steam may currently have different options in memory. "
             "If this game already uses a working DeckCheatz command, "
