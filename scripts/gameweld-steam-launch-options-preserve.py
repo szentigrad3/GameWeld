@@ -232,7 +232,7 @@ def save_backup(appid: str, account: str, old: str, root: Path | None = None):
     for directory in (path.parent.parent.parent, path.parent.parent, path.parent):
         if directory.is_symlink():
             raise Blocked("Symlinked backup directory refused")
-        directory.mkdir(mode=0o700, exist_ok=True)
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.is_symlink():
         raise Blocked("Symlinked backup location refused")
     for directory in (path.parent.parent.parent, path.parent.parent, path.parent):
