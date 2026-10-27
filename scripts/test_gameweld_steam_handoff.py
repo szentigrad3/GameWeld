@@ -94,6 +94,27 @@ class SteamHandoffTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(marker.exists())
 
+    def test_wrapper_only_gate_blocks_already_running_exact_appid(self):
+        marker = self.root / "steam-was-executed"
+        self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
+        with patch.object(steam, "associated_process_count", return_value=1):
+            status, report = self.capture(
+                "2353250", steam=str(self.command), duration=0,
+                require_idle_before_launch=True)
+        self.assertEqual(status, 3, report)
+        self.assertIn("already has a running associated process", report)
+        self.assertFalse(marker.exists())
+
+    def test_wrapper_only_gate_allows_idle_steam_request_not_trainer_claim(self):
+        self.fake_steam("exit 0\n")
+        with patch.object(steam, "associated_process_count", return_value=0):
+            status, report = self.capture(
+                "2353250", steam=str(self.command), duration=0.01,
+                require_idle_before_launch=True)
+        self.assertEqual(status, 2, report)
+        self.assertIn("Launch result: UNCONFIRMED", report)
+        self.assertNotIn("trainer attached", report.lower())
+
     def test_read_only_status_never_runs_steam(self):
         marker = self.root / "executed"
         self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
