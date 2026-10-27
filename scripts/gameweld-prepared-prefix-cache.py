@@ -338,6 +338,13 @@ def rejected_cache_status(cache_root: Path) -> str:
         try:
             with zipfile.ZipFile(path) as archive:
                 counts, examples = audit.classify_zip_collisions(archive)
+                # This diagnostic does not bypass the strict Step 1/Step 2
+                # validator. It only checks for additional rejection reasons.
+                noncollision_error = None
+                try:
+                    audit.check_other_zip_safety_without_approving_collisions(archive)
+                except audit.UnsafePreparedPrefix as exc:
+                    noncollision_error = str(exc)
                 payload_comparison = audit.compare_case_collision_bytes(archive)
         except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError,
                 audit.UnsafePreparedPrefix) as exc:
@@ -356,6 +363,12 @@ def rejected_cache_status(cache_root: Path) -> str:
                     source_record.get("status") == "REJECTED_NOT_STAGEABLE"):
                 lines.append("Source metadata receipt present (publisher authenticity unverified)")
         lines.extend(f"{kind}: {count}" for kind, count in counts.items())
+        if noncollision_error:
+            lines.append("Additional ZIP metadata safety check: BLOCKED - " +
+                         noncollision_error)
+        else:
+            lines.append("Additional ZIP metadata safety check: PASS "
+                         "(excluding case collisions; full CRC NOT checked)")
         lines.extend(f"Collision payloads {kind}: {count}"
                      for kind, count in payload_comparison.items())
         lines.extend("Collision example: " + example for example in examples)
@@ -363,8 +376,9 @@ def rejected_cache_status(cache_root: Path) -> str:
                 payload_comparison["different_payload"] or
                 payload_comparison["size_mismatch"]):
             lines.append("VERDICT: BLOCKED BY GAMEWELD'S CURRENT SAFE STAGING POLICY. "
-                         "Four case-only path pairs may coexist on Linux but "
-                         "have distinct contents or sizes, so no automatic "
+                         f"{counts['case_collision']} case-only path pair(s) may coexist "
+                         "on a case-sensitive filesystem but have distinct "
+                         "contents or sizes, so no automatic "
                          "merge or case-normalization is permitted. "
                          "Do NOT stage or install this archive until "
                          "runtime-safe handling is independently verified, "
