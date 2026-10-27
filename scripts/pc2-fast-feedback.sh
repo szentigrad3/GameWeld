@@ -17,6 +17,7 @@ python3 -m py_compile \
   scripts/gameweld-prefix-runtime-preflight.py \
   scripts/gameweld-deckcheatz-prefix-catalog.py \
   scripts/gameweld-deckcheatz-steam-options.py \
+  scripts/gameweld-deckcheatz-autodetect.py \
   scripts/gameweld-steam-launch-options-preserve.py \
   scripts/gameweld-deckcheatz-session.py \
   scripts/gameweld-steam-handoff.py \
@@ -38,6 +39,8 @@ suites=(
   test_gameweld_steam_compat_bridge.py
   test_gameweld_deckcheatz_prefix_catalog.py
   test_gameweld_deckcheatz_steam_options.py
+  test_gameweld_deckcheatz_autodetect.py
+  test_gameweld_deckcheatz_direct.py
   test_gameweld_steam_launch_options_preserve.py
   test_gameweld_deckcheatz_session.py
   test_gameweld_steam_handoff.py
