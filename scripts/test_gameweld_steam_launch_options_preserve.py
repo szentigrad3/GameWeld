@@ -247,6 +247,27 @@ class PreserveTests(unittest.TestCase):
         self.assertEqual(account, ACCOUNT)
         self.unchanged()
 
+    def test_unverified_legacy_empty_original_backup_cannot_clear_steam_options(self):
+        path = options.backup_file(APPID, ACCOUNT, self.backups)
+        path.parent.mkdir(parents=True, mode=0o700)
+        path.write_text(json.dumps(
+            {"version": 1, "appid": APPID, "account": ACCOUNT, "original": ""}
+        ))
+        path.chmod(0o600)
+        with self.assertRaisesRegex(options.Blocked, "unverified EMPTY original"):
+            options.load_backup(APPID, ACCOUNT, self.backups)
+        self.assertEqual(self.file.read_bytes(), self.saved)
+
+    def test_empty_backup_is_only_written_after_explicit_live_ui_check(self):
+        with self.assertRaisesRegex(options.Blocked, "verified in the live Steam UI"):
+            options.save_backup(APPID, ACCOUNT, "", self.backups)
+        self.assertFalse(options.backup_file(APPID, ACCOUNT, self.backups).exists())
+        path = options.save_backup(APPID, ACCOUNT, "", self.backups,
+                                   verified_empty=True)
+        self.assertEqual(json.loads(path.read_text())["live_empty_confirmed"], True)
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), "")
+        self.unchanged()
+
     def test_private_original_backup_is_exclusive_and_nonoverwriting(self):
         old = "PROTON_LOG=1 %command% -dx11"
         self.make_config(old)
