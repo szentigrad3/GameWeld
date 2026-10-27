@@ -1679,6 +1679,116 @@ pub fn terminate_owned_process(pid: u32) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn native_wrapper_fixture() -> (PathBuf, GameInstall, ProtonTool, PathBuf, PathBuf) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "gameweld-native-wrapper-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let steam = root.join("Steam");
+        let library = steam.join("steamapps");
+        let install = library.join("common/Test Game");
+        let compatdata = library.join("compatdata/3008130");
+        let prefix = compatdata.join("pfx");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&prefix).unwrap();
+        let exe = install.join("TestGame.exe");
+        fs::write(&exe, b"MZ-fake-windows-game").unwrap();
+        let wrapper = root.join("deckcheatz/wemod");
+        fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+        fs::write(&wrapper, b"#!/bin/sh\nexit 0\n").unwrap();
+        let proton_dir = steam.join("compatibilitytools.d/GE-Proton");
+        fs::create_dir_all(&proton_dir).unwrap();
+        let proton_script = proton_dir.join("proton");
+        fs::write(&proton_script, b"#!/bin/sh\nexit 0\n").unwrap();
+        for script in [&wrapper, &proton_script] {
+            fs::set_permissions(script, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let game = GameInstall {
+            app_id: 3008130,
+            name: "Test Game".into(),
+            install_dir: install,
+            library_root: steam.clone(),
+            manifest: library.join("appmanifest_3008130.acf"),
+            compatdata_dir: compatdata,
+            prefix_dir: prefix,
+        };
+        let proton = ProtonTool {
+            tool_id: "GE-Proton".into(),
+            display_name: "GE-Proton".into(),
+            root: proton_dir,
+            proton_script,
+            source: "test".into(),
+        };
+        let log = wrapper.parent().unwrap().join("wemod.log");
+        (root, game, proton, wrapper, log)
+    }
+
+    #[test]
+    fn direct_deckcheatz_plan_is_read_only_and_game_first_command_is_wrapped() {
+        let (root, game, proton, wrapper, log) = native_wrapper_fixture();
+        let steam = root.join("Steam");
+        let plan = build_native_wrapper_launch_plan(
+            &game, &steam, &proton, &wrapper, &log,
+        ).unwrap();
+        assert_eq!(plan.command, vec![
+            wrapper.display().to_string(),
+            proton.proton_script.display().to_string(),
+            "waitforexitandrun".into(),
+            game.install_dir.join("TestGame.exe").display().to_string(),
+        ]);
+        let env: HashMap<_, _> = plan.environment.iter().cloned().collect();
+        assert_eq!(env["WINEDLLOVERRIDES"], "version=n,b");
+        assert_eq!(env["WEMOD_LOG"], log.display().to_string());
+        assert_eq!(env["SteamAppId"], "3008130");
+        assert_eq!(env["SteamGameId"], "3008130");
+        assert_eq!(env["SteamOverlayGameId"], "3008130");
+        assert_eq!(env["STEAM_COMPAT_DATA_PATH"], game.compatdata_dir.display().to_string());
+        assert!(!log.exists());
+        assert_eq!(
+            run_native_wrapper_launch_plan(&plan, &game.install_dir, true).unwrap(),
+            None
+        );
+        assert!(!log.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn direct_deckcheatz_blocks_ambiguous_exe_and_untrusted_game_paths() {
+        let (root, game, proton, wrapper, log) = native_wrapper_fixture();
+        let steam = root.join("Steam");
+        let alt = game.install_dir.join("OtherGame.exe");
+        fs::write(&alt, b"MZ").unwrap();
+        let rejected = build_native_wrapper_launch_plan(
+            &game, &steam, &proton, &wrapper, &log,
+        ).unwrap_err();
+        assert!(rejected.to_string().contains("more than one plausible"));
+        fs::remove_file(&alt).unwrap();
+        let outside = root.join("outside.log");
+        let link = wrapper.parent().unwrap().join("wemod.log");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert!(build_native_wrapper_launch_plan(
+            &game, &steam, &proton, &wrapper, &link,
+        ).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn direct_deckcheatz_rejects_invalid_launch_plan_before_dry_run() {
+        let (root, game, proton, wrapper, log) = native_wrapper_fixture();
+        let mut plan = build_native_wrapper_launch_plan(
+            &game, &root.join("Steam"), &proton, &wrapper, &log,
+        ).unwrap();
+        plan.command.swap(0, 1);
+        assert!(run_native_wrapper_launch_plan(
+            &plan, &game.install_dir, true,
+        ).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn live_wine_environment_keeps_compatibility_state() {
         assert!(keep_live_wine_environment("WINEPREFIX"));
