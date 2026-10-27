@@ -2739,6 +2739,8 @@ typedef struct {
     char appid[32],game_name[256],output[4096];
     int confirmed;
     int expect_deckcheatz;
+    int session_mode;
+    char deckcheatz_launcher[4096];
 } PC2SteamLaunchJob;
 static int pc2_steam_launch_busy=0;
 static gboolean pc2_steam_launch_done(gpointer data){
@@ -2751,7 +2753,10 @@ static gboolean pc2_steam_launch_done(gpointer data){
              j->expect_deckcheatz?"DeckCheatz wrapper route":"game-only launch",
              state,j->game_name,j->appid,
              j->output[0]?j->output:"No launch-helper result.");
-    if(j->expect_deckcheatz)
+    if(j->session_mode)
+        log_line("One-shot DeckCheatz token was consumed by Steam shim or will expire automatically. "
+                 "Original game execution is the default for subsequent launches; Steam's one-time shim remains configured.");
+    else if(j->expect_deckcheatz)
         log_line("Steam may execute saved Launch Options; DeckCheatz window, trainer attachment and effect remain UNVERIFIED.");
     if(G.selected>=0&&G.selected<G.game_count&&
        !strcmp(G.games[G.selected].appid,j->appid)&&G.library_detail_status){
@@ -2765,9 +2770,54 @@ static gboolean pc2_steam_launch_done(gpointer data){
     }
     free(j);return FALSE;
 }
+static int pc2_deckcheatz_session_helper(const char *action,const char *appid,
+                                        const char *launcher,char *output,size_t cap){
+    if(!action||!appid||!output||cap<64)return 0;
+    int pipes[2];if(pipe(pipes)!=0)return 0;
+    pid_t pid=fork();
+    if(pid==0){
+        close(pipes[0]);setsid();
+        dup2(pipes[1],STDOUT_FILENO);dup2(pipes[1],STDERR_FILENO);close(pipes[1]);
+        clear_desktop_activation_env();
+        const char*appdir=getenv("APPDIR");char helper[4096]={0};
+        if(appdir&&*appdir)
+            snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-deckcheatz-session.py",appdir);
+        else snprintf(helper,sizeof helper,"gameweld-deckcheatz-session.py");
+        if(launcher&&*launcher)
+            execlp("python3","python3",helper,action,"--appid",appid,
+                   "--launcher",launcher,(char*)NULL);
+        else
+            execlp("python3","python3",helper,action,"--appid",appid,(char*)NULL);
+        _exit(127);
+    }
+    close(pipes[1]);
+    if(pid<0){close(pipes[0]);return 0;}
+    return bounded_child_output(pid,pipes[0],output,cap,12);
+}
+static int pc2_session_configured_for_game(const char *appid){
+    char result[4096]={0};
+    if(!pc2_deckcheatz_session_helper("verify",appid,NULL,result,sizeof result)){
+        return 0;
+    }
+    return strstr(result,"\"session_wrapper_installed_in_saved_options\": true")!=NULL;
+}
 static void *pc2_steam_launch_worker(void *data){
     PC2SteamLaunchJob*j=(PC2SteamLaunchJob*)data;
+    if(j->session_mode){
+        char armed[4096]={0};
+        int ok=pc2_deckcheatz_session_helper("arm",j->appid,
+                        j->deckcheatz_launcher,armed,sizeof armed);
+        if(!ok || !strstr(armed,"\"SINGLE_SESSION_ARMED\"")){
+            snprintf(j->output,sizeof j->output,
+                     "Launch result: FAILED (one-shot DeckCheatz was not armed): %.2700s",
+                     armed[0]?armed:"Session helper unavailable");
+            g_idle_add(pc2_steam_launch_done,j);return NULL;
+        }
+    }
     int pipes[2];if(pipe(pipes)<0){
+        if(j->session_mode){char ignored[2048]={0};
+            pc2_deckcheatz_session_helper("disarm",j->appid,NULL,
+                                          ignored,sizeof ignored);}
         snprintf(j->output,sizeof j->output,"Launch result: FAILED (could not create result pipe)");
         g_idle_add(pc2_steam_launch_done,j);return NULL;
     }
@@ -2799,6 +2849,10 @@ static void *pc2_steam_launch_worker(void *data){
         if(!j->output[0])snprintf(j->output,sizeof j->output,
             "Launch result: FAILED (helper exited without reporting a status)");
     }
+    if(j->session_mode && strstr(j->output,"Launch result: FAILED")){
+        char ignored[2048]={0};
+        pc2_deckcheatz_session_helper("disarm",j->appid,NULL,ignored,sizeof ignored);
+    }
     g_idle_add(pc2_steam_launch_done,j);
     return NULL;
 }
@@ -2816,13 +2870,11 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
         log_line("PC2 game-only launch currently supports standard installed Steam games, not shortcuts, Heroic or Lutris.");
         return;
     }
-    if(expect_deckcheatz){
-        char launcher[4096]={0};
-        if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
-            log_line("Cannot launch through Steam wrapper: installed DeckCheatz wemod launcher not found.");
-            on_pc2_deckcheatz_copy_steam_option(NULL,NULL);
-            return;
-        }
+    char launcher[4096]={0};
+    if(expect_deckcheatz && !pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
+        log_line("Cannot launch through Steam wrapper: installed DeckCheatz wemod launcher not found.");
+        on_pc2_deckcheatz_copy_steam_option(NULL,NULL);
+        return;
     }
     const char*id=g->appid;
     if(!id[0]||id[0]=='0'||strlen(id)>10){log_line("Invalid Steam ID; launch blocked.");return;}
@@ -2847,8 +2899,17 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
         log_line("PC2 backend preview mismatch. Launch blocked without side effects.");
         return;
     }
+    int session_mode=expect_deckcheatz && pc2_session_configured_for_game(id);
     GtkWidget*confirm=gtk_message_dialog_new(
         (GtkWindow*)G.window,GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        session_mode?
+        "Use DeckCheatz for JUST THIS Steam play session?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "GameWeld verified its one-shot session shim in the saved Steam "
+        "Launch Options. It will arm DeckCheatz for the NEXT launch only, "
+        "then automatically revert to normal game execution on future launches. "
+        "The shim stays in Steam until you manually restore the original text. "
+        "The game must be closed. Continue?":
         expect_deckcheatz?
         "Launch using your EXISTING Steam DeckCheatz option?\n\n"
         "%.140s (Steam App ID %s)\n\n"
@@ -2876,6 +2937,9 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
     snprintf(j->appid,sizeof j->appid,"%s",id);
     snprintf(j->game_name,sizeof j->game_name,"%.240s",g->name);
     j->expect_deckcheatz=expect_deckcheatz;
+    j->session_mode=session_mode;
+    if(session_mode)snprintf(j->deckcheatz_launcher,
+                             sizeof j->deckcheatz_launcher,"%s",launcher);
     pthread_t thread;
     pc2_steam_launch_busy=1;
     if(pthread_create(&thread,NULL,pc2_steam_launch_worker,j)==0){
