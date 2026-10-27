@@ -178,6 +178,71 @@ class LiveAttachTests(unittest.TestCase):
         self.assertEqual(report["matching_prefix_processes"], 0)
         self.unchanged()
 
+    def test_acknowledged_unknowns_only_allow_matching_game_context(self):
+        # Original game's exact Steam environment remains readable; unrelated
+        # processes cannot be inspected, as on the user's CachyOS desktop.
+        for i in range(4):
+            p = self.proc / str(2001 + i)
+            p.mkdir()
+            (p / "environ").write_bytes(b"unreadable-fixture")
+        original = helper.read_env
+        def inaccessible(proc):
+            if int(proc.name) >= 2001:
+                raise PermissionError("fixture unreadable")
+            return original(proc)
+        with patch.object(helper, "read_env", side_effect=inaccessible):
+            preview, _ = self.plan()
+            self.assertFalse(preview["can_attempt_with_explicit_consent"])
+            accepted, priv = helper.plan(
+                self.id, self.game, self.client, proc_root=self.proc, uid=os.getuid(),
+                accept_unreadable_risk=True)
+            self.assertEqual(accepted["unreadable_same_user_processes"], 4)
+            self.assertTrue(accepted["unreadable_process_risk_accepted"])
+            self.assertTrue(accepted["can_attempt_with_explicit_consent"])
+            with patch.object(helper.subprocess, "Popen") as spawn:
+                spawn.return_value.pid = 45678
+                result = helper.launch(
+                    accepted, priv, approved=True, state_root=self.root_state,
+                    proc_root=self.proc, uid=os.getuid(),
+                    accept_unreadable_risk=True)
+                self.assertEqual(result["pid"], 45678)
+                spawn.assert_called_once()
+            with patch.object(helper.subprocess, "Popen") as spawn:
+                with self.assertRaisesRegex(helper.AttachBlocked, "session changed"):
+                    helper.launch(
+                        accepted, priv, approved=True,
+                        proc_root=self.proc, uid=os.getuid(),
+                        accept_unreadable_risk=False)
+                spawn.assert_not_called()
+        self.unchanged()
+
+    def test_unreadable_override_cannot_create_missing_game_session(self):
+        self.make_proc(appid="999999")
+        report, _ = helper.plan(
+            self.id, self.game, self.client, proc_root=self.proc,
+            uid=os.getuid(), accept_unreadable_risk=True)
+        self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.assertEqual(report["matching_prefix_processes"], 0)
+        self.unchanged()
+
+    def test_more_than_eight_unreadable_processes_always_block(self):
+        for i in range(9):
+            p = self.proc / str(2001 + i)
+            p.mkdir()
+            (p / "environ").write_bytes(b"inaccessible-fixture")
+        original = helper.read_env
+        def unreadable(proc):
+            if int(proc.name) >= 2001:
+                raise PermissionError("fixture only")
+            return original(proc)
+        with patch.object(helper, "read_env", side_effect=unreadable):
+            report, _ = helper.plan(
+                self.id, self.game, self.client, proc_root=self.proc,
+                uid=os.getuid(), accept_unreadable_risk=True)
+            self.assertFalse(report["unreadable_process_risk_accepted"])
+            self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.unchanged()
+
     def test_tool_must_be_from_live_process_evidence(self):
         self.make_proc(paths="/nonexistent/GE-Proton")
         report, _ = self.plan()
