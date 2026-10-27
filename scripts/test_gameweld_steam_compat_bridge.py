@@ -763,7 +763,9 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn("Transfer reached 100%%. Validating ZIP and CRC; NOT SAVED", ui)
         self.assertIn("ZIP verified and written to GameWeld cache", ui)
         self.assertIn("Staging unavailable until validation completes.", ui)
-        self.assertIn("Step 1 complete — ZIP verified and saved", ui)
+        self.assertIn("Step 1 complete — verified ZIP saved. Cache location:", ui)
+        self.assertIn('const char *base=getenv("XDG_CACHE_HOME");', ui)
+        self.assertIn('gameweld/prepared-wemod/downloads.', ui)
         self.assertIn(
             'if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage){'
             '\n        snprintf(j->appid,sizeof j->appid', ui)
