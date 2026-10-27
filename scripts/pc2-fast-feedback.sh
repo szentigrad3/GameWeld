@@ -20,6 +20,7 @@ python3 -m py_compile \
   scripts/gameweld-prepared-prefix-cache.py \
   scripts/gameweld-rejected-zip-integrity.py \
   scripts/gameweld-prepared-prefix-case-preflight.py \
+  scripts/gameweld-wine-case-rehearsal.py \
   scripts/gameweld-remote-zip-directory.py \
   scripts/gameweld-prepared-prefix-stage.py \
   scripts/gameweld-prefix-backup.py \
@@ -35,6 +36,7 @@ suites=(
   test_gameweld_prepared_prefix_cache.py
   test_gameweld_rejected_zip_integrity.py
   test_gameweld_prepared_prefix_case_preflight.py
+  test_gameweld_wine_case_rehearsal.py
   test_gameweld_remote_zip_directory.py
   test_gameweld_prepared_prefix_stage.py
   test_gameweld_prefix_backup.py
