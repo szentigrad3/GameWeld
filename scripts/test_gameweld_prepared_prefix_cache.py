@@ -219,6 +219,38 @@ class PreparedPrefixCacheTests(unittest.TestCase):
         self.assertIn("pfx/Drive_C", report)
         self.assert_game_untouched()
 
+    def test_known_rejected_asset_blocks_repeat_network_download(self):
+        data = io.BytesIO()
+        with zipfile.ZipFile(data, "w", compression=zipfile.ZIP_STORED) as z:
+            z.writestr("pfx/InstallUtil.exe", b"UPPER")
+            z.writestr("pfx/installutil.exe", b"lower-version")
+            z.writestr("pfx/random.bin", os.urandom(1_200_000))
+        content = data.getvalue()
+        with patch.object(cache.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 5_000_000_000})()):
+            with self.assertRaisesRegex(cache.CacheRefused, "NOT saved for staging"):
+                cache.acquire_to_cache(
+                    URL, declared_size=len(content), cache_root=self.cache_root,
+                    approved=True, opener=lambda request, timeout: FakeResponse(content))
+            with self.assertRaisesRegex(cache.CacheRefused, "NO DOWNLOAD STARTED"):
+                cache.acquire_to_cache(
+                    URL, declared_size=len(content), cache_root=self.cache_root,
+                    approved=True, opener=lambda request, timeout:
+                        self.fail("Must not request network on known rejected release"))
+            network_calls = []
+            with self.assertRaisesRegex(cache.CacheRefused, "NOT saved for staging"):
+                cache.acquire_to_cache(
+                    URL, declared_size=len(content), cache_root=self.cache_root,
+                    approved=True, retry_rejected=True,
+                    opener=lambda request, timeout: (
+                        network_calls.append(1) or FakeResponse(content)))
+        self.assertEqual(network_calls, [1])
+        self.assertEqual(len(list((self.cache_root / "rejected").glob("*.zip"))), 1)
+        self.assertEqual(list((self.cache_root / "downloads").glob("*.zip")), [])
+        report = cache.rejected_cache_status(self.cache_root)
+        self.assertIn("VERDICT: UPSTREAM ARCHIVE INCOMPATIBLE", report)
+        self.assert_game_untouched()
+
     def test_other_unsafe_zip_is_not_retained_for_reuse(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w", compression=zipfile.ZIP_STORED) as z:
