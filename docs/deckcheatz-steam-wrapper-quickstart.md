@@ -152,3 +152,33 @@ This is still draft development and needs a real one-shot gameplay trial.
 Complex wrappers such as MangoHud, GameMode, Gamescope and arbitrary shell
 commands are intentionally not merged automatically, because their wrapper
 ordering and semantics cannot safely be inferred.
+
+## Experimental Rust native wrapper plan (private development)
+
+The wand-runtime crate now exposes the opt-in Rust API:
+
+- build_native_wrapper_launch_plan(game, steam_root, proton, wrapper, wrapper_log)
+- run_native_wrapper_launch_plan(plan, game_install_dir, dry_run)
+
+The builder creates the familiar DeckCheatz -> Proton -> waitforexitandrun ->
+game.exe command with existing per-game Steam compatdata, WINEDLLOVERRIDES,
+WEMOD_LOG, Steam app IDs and install paths. It is read-only. Unlike the older
+heuristic executable search, it refuses multiple plausible EXEs unless
+WAND_GAME_EXE is explicitly set to a reviewed path within the game's install.
+
+The Rust runner returns None in dry-run mode, without spawning a process
+or writing its own logs. A separately authorized non-dry-run call creates
+a unique private log and starts an isolated DeckCheatz process group.
+It refuses a detected already-running game. A spawned PID does not prove
+Steamworks, overlay, DRM, trainer attachment, or actual gameplay success.
+
+The Rust functions are library APIs, not yet the default GameWeld GUI Play
+path. Continue to prefer the user-verified Steam wrapper until a real-game
+direct-runtime test has passed. The standalone Python dry-run is currently
+available through:
+
+    python3 scripts/gameweld-deckcheatz-autodetect.py --dry-run --appid 3008130
+
+Rust verification in GitHub Actions: cargo test -p wand-runtime --lib.
+All checks are based on fake Steam/Proton fixture files; no real game
+or Steam Launch Options are edited by these tests.
