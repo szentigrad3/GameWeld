@@ -36,7 +36,8 @@ def verify_prefix(provider: str, game_id: str, prefix: Path, *, allow_missing: b
     if (not prefix.is_absolute() or prefix.is_symlink() or
             any(parent.is_symlink() for parent in prefix.parents) or
             (not prefix.is_dir() and not (allow_missing and not prefix.exists()
-                                            and prefix.parent.is_dir()))):
+                                            and not prefix.parent.exists()
+                                            and prefix.parent.parent.is_dir()))):
         raise RuntimePreflightRefused("Choose an existing non-symlinked absolute prefix")
     return prefix
 
