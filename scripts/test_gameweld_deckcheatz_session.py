@@ -180,6 +180,49 @@ class SingleSessionTests(unittest.TestCase):
                 self.assertIsNone(value)
                 self.assertTrue(state.startswith("MANUAL_"))
 
+    def test_installer_creates_stable_launcher_once_without_editing_steam(self):
+        installed = self.root / "managed/steam-session.py"
+        result = session.install_wrapper(destination=installed, source=SCRIPT)
+        self.assertEqual(result["result"], "SESSION_WRAPPER_INSTALLED")
+        self.assertEqual(result["wrapper"], str(installed))
+        self.assertEqual(stat.S_IMODE(installed.stat().st_mode), 0o700)
+        again = session.install_wrapper(destination=installed, source=SCRIPT)
+        self.assertEqual(again["result"], "SESSION_WRAPPER_ALREADY_INSTALLED")
+        self.assertEqual(installed.read_bytes(), SCRIPT.read_bytes())
+        installed.write_text("user-edited file")
+        with self.assertRaisesRegex(session.SessionBlocked, "different session wrapper"):
+            session.install_wrapper(destination=installed, source=SCRIPT)
+        self.assertEqual(installed.read_text(), "user-edited file")
+
+    def test_read_only_exact_game_installed_session_verification(self):
+        root = self.root / "Steam"
+        cfg = root / "userdata/12345/config/localconfig.vdf"
+        cfg.parent.mkdir(parents=True)
+        launcher = self.root / "managed/steam-session.py"
+        launcher.parent.mkdir()
+        launcher.write_bytes(b"stub")
+        option, state = session.compose("PROTON_LOG=1 %command% -dx11",
+                                        launcher, self.appid)
+        self.assertEqual(state, "SAFE_ENV_AND_ARGUMENTS")
+        escaped = option.replace("\\", "\\\\").replace('"', '\\"')
+        cfg.write_text('"UserLocalConfigStore" { "Software" { "Valve" {'
+                       '"Steam" { "apps" { "' + self.appid +
+                       '" { "LaunchOptions" "' + escaped +
+                       '" } } } } } }', encoding="utf-8")
+        original = cfg.read_bytes()
+        with self.assertRaises(session.SessionBlocked):
+            session.verify_steam_option(
+                self.appid, wrapper=launcher,
+                steam_root=self.root / "no-such-steam")
+        details = session.verify_steam_option(
+            self.appid, wrapper=launcher, steam_root=root)
+        self.assertTrue(details["session_wrapper_installed_in_saved_options"])
+        self.assertFalse(details["live_steam_ui_verified"])
+        self.assertEqual(cfg.read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "no "):
+            session.verify_steam_option(
+                "2353250", wrapper=launcher, steam_root=root)
+
     def test_invalid_appid_never_arms(self):
         for appid in ("0", "-1", "1;id", "4294967296", "", "000010"):
             with self.subTest(appid=appid):
