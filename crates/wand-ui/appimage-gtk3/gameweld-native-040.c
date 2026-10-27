@@ -5618,10 +5618,12 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         goto done;
     }
     if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,preview,65536)){
-        pc2_steam_option_message("Steam options could not be read safely",
+        pc2_steam_option_message("Steam options inspection blocked",
             "GameWeld did NOT copy a replacement or edit Steam. "
-            "If multiple Steam accounts are logged in, use the command-line "
-            "--steam-account selector. Existing launch options remain unchanged.",
+            "The cause may be an unrecognized DeckCheatz launcher, Steam "
+            "account ambiguity, or an unreadable Steam configuration. "
+            "The specific diagnostic is displayed below; existing options "
+            "remain unchanged.",
             preview);
         goto done;
     }
