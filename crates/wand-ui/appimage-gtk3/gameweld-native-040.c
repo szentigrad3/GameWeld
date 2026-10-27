@@ -625,6 +625,7 @@ static int bounded_child_output(pid_t pid,int fd,char *output,size_t capacity,in
 static void on_pc2_wemod_verify_selected(GtkButton*,void*);
 static void on_pc2_deckcheatz_detect(GtkButton*,void*);
 static void on_pc2_deckcheatz_copy_steam_option(GtkButton*,void*);
+static void on_pc2_deckcheatz_setup_session(GtkButton*,void*);
 static void on_pc2_deckcheatz_restore_steam_option(GtkButton*,void*);
 static int pc2_deckcheatz_find_launcher(char *,size_t);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
@@ -689,7 +690,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -5614,7 +5615,7 @@ static int pc2_deckcheatz_find_launcher(char *target,size_t cap){
  * does it copy a conservative, conflict-free merge to the clipboard. */
 static int pc2_steam_option_helper_run(const char *mode,const char *appid,
                                      const char *launcher,char *out,size_t cap,
-                                     int verified_empty){
+                                     int verified_empty,int session_wrapper){
     if(!appid||!*appid||!mode||!*mode||cap<64)return 0;
     out[0]=0;
     const char *appdir=getenv("APPDIR");char helper[4096]={0};
@@ -5629,20 +5630,14 @@ static int pc2_steam_option_helper_run(const char *mode,const char *appid,
         close(fd[0]);setsid();
         dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);close(fd[1]);
         clear_desktop_activation_env();
-        if(launcher&&*launcher){
-            if(verified_empty)
-                execlp("python3","python3",helper,mode,"--appid",appid,
-                       "--launcher",launcher,"--verified-empty-in-steam",(char*)NULL);
-            else
-                execlp("python3","python3",helper,mode,"--appid",appid,
-                       "--launcher",launcher,(char*)NULL);
-        }else{
-            if(verified_empty)
-                execlp("python3","python3",helper,mode,"--appid",appid,
-                       "--verified-empty-in-steam",(char*)NULL);
-            else
-                execlp("python3","python3",helper,mode,"--appid",appid,(char*)NULL);
-        }
+        char *argv[16];int n=0;
+        argv[n++]="python3";argv[n++]=helper;
+        argv[n++]=(char*)mode;argv[n++]="--appid";argv[n++]=(char*)appid;
+        if(launcher&&*launcher){argv[n++]="--launcher";argv[n++]=(char*)launcher;}
+        if(session_wrapper)argv[n++]="--session-wrapper";
+        if(verified_empty)argv[n++]="--verified-empty-in-steam";
+        argv[n]=NULL;
+        execvp("python3",argv);
         _exit(127);
     }
     close(fd[1]);
@@ -5669,7 +5664,8 @@ static void pc2_steam_option_message(const char *subject,const char *description
     gtk_widget_destroy(dlg);
 }
 static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
-    (void)b;(void)d;
+    (void)b;
+    int session_wrapper=d!=NULL;
     if(G.selected<0||G.selected>=G.game_count ||
        !game_is_steam(&G.games[G.selected]) ||
        game_is_steam_shortcut(&G.games[G.selected])){
@@ -5678,6 +5674,30 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         return;
     }
     Game*g=&G.games[G.selected];
+    if(session_wrapper){
+        GtkWidget*agree=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+            "Install a private GameWeld one-session Steam launcher?\n\n"
+            "This installs only a local user-owned helper. It will NOT change "
+            "Steam, any Proton prefix or the selected game's files.\n\n"
+            "You will copy the one-time Steam launch option manually. "
+            "After that, GameWeld Play can arm DeckCheatz for one session "
+            "and revert to ordinary game execution automatically. "
+            "The session shim remains configured in Steam until you restore "
+            "your backed-up original. Continue?");
+        int accept=gtk_dialog_run((GtkDialog*)agree)==GTK_RESPONSE_YES;
+        gtk_widget_destroy(agree);
+        if(!accept)return;
+        char result[4096]={0};
+        if(!pc2_deckcheatz_session_helper("install",g->appid,NULL,result,sizeof result) ||
+           (!strstr(result,"\"SESSION_WRAPPER_INSTALLED\"") &&
+            !strstr(result,"\"SESSION_WRAPPER_ALREADY_INSTALLED\""))){
+            pc2_steam_option_message("One-session launcher installation refused",
+                "GameWeld did not change Steam. Review the private installer error "
+                "below and keep using your existing working launch option.",result);
+            return;
+        }
+    }
     char launcher[4096]={0};
     if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
         pc2_steam_option_message("DeckCheatz launcher missing",
@@ -5692,7 +5712,8 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         goto done;
     }
     int verified_empty=0;
-    if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,preview,65536,0)){
+    if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,
+                                    preview,65536,0,session_wrapper)){
         pc2_steam_option_message("Steam options inspection blocked",
             "GameWeld did NOT copy a replacement or edit Steam. "
             "The cause may be an unrecognized DeckCheatz launcher, Steam "
@@ -5724,7 +5745,7 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
         }
         verified_empty=1;
         if(!pc2_steam_option_helper_run("--preview",g->appid,launcher,
-                                       preview,65536,verified_empty)){
+                                       preview,65536,verified_empty,session_wrapper)){
             pc2_steam_option_message("Could not verify Steam launch options",
                 "Steam's saved state changed or became unreadable. "
                 "No backup or clipboard changes were made.",preview);
@@ -5778,7 +5799,7 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     gtk_widget_destroy(dlg);
     if(!yes){log_line("Steam Launch Options merge cancelled; no backup or clipboard changes.");goto done;}
     if(!pc2_steam_option_helper_run("--save-original",g->appid,launcher,
-                                    saved,65536,verified_empty)){
+                                    saved,65536,verified_empty,session_wrapper)){
         pc2_steam_option_message("Original-command backup not saved",
             "GameWeld refuses to overwrite an existing backup or copy an "
             "unprotected Steam replacement. Your Steam settings are unchanged.",saved);
@@ -5804,6 +5825,10 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
 done:
     free(preview);free(saved);free(original);free(merged);free(confirmed);free(confirmed_original);free(decision);
 }
+static void on_pc2_deckcheatz_setup_session(GtkButton*b,void*d){
+    (void)d;
+    on_pc2_deckcheatz_copy_steam_option(b,(void*)1);
+}
 static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     (void)b;(void)d;
     if(G.selected<0||G.selected>=G.game_count ||
@@ -5816,7 +5841,7 @@ static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     char *result=calloc(1,65536),*original=calloc(1,18000);
     if(!result||!original)goto done;
     if(!pc2_steam_option_helper_run("--restore-original",
-            G.games[G.selected].appid,NULL,result,65536,0)){
+            G.games[G.selected].appid,NULL,result,65536,0,0)){
         pc2_steam_option_message("Original launch options backup unavailable",
             "No matching GameWeld backup exists for the selected game and Steam account. "
             "Nothing was copied or changed.",result);
@@ -6513,6 +6538,10 @@ static GtkWidget *build_settings(void){
         g_signal_connect_data(copy_steam_deckcheatz,"clicked",
             (GCallback)on_pc2_deckcheatz_copy_steam_option,NULL,NULL,0);
         pack(native_card,copy_steam_deckcheatz,0);
+        GtkWidget*one_shot_setup=button("Set up one-session DeckCheatz","action");
+        g_signal_connect_data(one_shot_setup,"clicked",
+            (GCallback)on_pc2_deckcheatz_setup_session,NULL,NULL,0);
+        pack(native_card,one_shot_setup,0);
         GtkWidget*restore_steam_original=button("Restore original Steam launch option","action");
         g_signal_connect_data(restore_steam_original,"clicked",
             (GCallback)on_pc2_deckcheatz_restore_steam_option,NULL,NULL,0);
