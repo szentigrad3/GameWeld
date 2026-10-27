@@ -27,41 +27,35 @@ def function_body(signature: str, following: str) -> str:
 
 class DeckCheatzGuiLayoutTests(unittest.TestCase):
     def test_primary_launch_is_available_on_overview_and_library(self):
-        self.assertEqual(
-            text.count('button("Play with WeMod","primary-action")'),
-            2,
-        )
         self.assertIn("G.pc2_deckcheatz_overview_play=direct", text)
         self.assertIn("G.pc2_deckcheatz_library_play=deckcheatz_test", text)
+        self.assertIn('"Play via Steam + WeMod (private test)"', text)
+        self.assertIn('on_pc2_bridge_primary,NULL,NULL,0', text)
+        self.assertIn('if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);', text)
 
     def test_button_is_steam_only_and_other_games_stay_experimental(self):
         self.assertIn("game_is_steam(g)&&!game_is_steam_shortcut(g)", text)
         self.assertIn("pc2_bridge_readiness_for_game(g)", text)
         self.assertIn("pc2_bridge_readiness_invalidate();", text)
-        self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],title)', text)
-        self.assertIn("gtk_widget_set_sensitive(G.pc2_deckcheatz_library_play,FALSE)", text)
-        self.assertIn("pc2_bridge_ready_appid", text)
-        self.assertIn("Select GameWeld Bridge (Experimental)", (SOURCE.parents[3] / "scripts/gameweld-steam-compat-bridge.py").read_text())
+        self.assertIn('gtk_button_set_label((GtkButton*)buttons[i],', text)
+        self.assertIn('pc2_steam_wemod_allowed()?', text)
+        self.assertIn('!game_is_steam(g)||game_is_steam_shortcut(g)', text)
+        self.assertIn('steam://rungameid/%s', text)
         self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_primary', text)
         self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary', text)
         self.assertNotIn('on_pc2_deckcheatz_experimental', text)
 
     def test_primary_we_mod_action_is_per_game_and_fails_closed(self):
-        for state, label in [
-            ("play", "Play with WeMod"),
-            ("setup", "Set Up WeMod"),
-            ("enable", "Enable WeMod"),
-            ("steam", "Finish Steam Setup"),
-            ("repair", "Repair WeMod"),
-        ]:
-            self.assertIn(f'!strcmp(state,"{state}")', text)
-            self.assertIn(f'title="{label}"', text)
-        self.assertIn('pc2_steam_bridge_action("play")', text)
-        self.assertIn('pc2_steam_bridge_action("setup")', text)
-        self.assertIn('pc2_steam_bridge_action("trainer-on")', text)
+        self.assertIn('if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);', text)
+        self.assertIn('strcmp(reply_id,id)', text)
+        self.assertIn('strcmp(uri,expected_uri)', text)
+        self.assertIn('strcmp(mode,"preview_only")', text)
+        self.assertIn('if(accepted!=GTK_RESPONSE_YES)', text)
+        self.assertIn('j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz;', text)
+        self.assertIn('if(!j->live&&ready&&matching)', text)
+        self.assertIn('if(consent==GTK_RESPONSE_YES)pc2_steam_wemod_attach_selected(1);', text)
+        self.assertIn('pc2_steam_bridge_action("play")', text)  # Legacy remains optional
         self.assertIn('pc2_bridge_readiness_generation', text)
-        self.assertIn('if(job->generation==pc2_bridge_readiness_generation', text)
-        self.assertIn('const char *state="blocked"', text)
 
     def test_saved_wemod_default_uses_steam_bridge_not_disabled_pc1_backend(self):
         launch = function_body(
@@ -72,20 +66,18 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
             "static void on_play_default(GtkButton*b,void*d){",
             "static void on_steam_launch_preview(GtkButton*b,void*d){",
         )
-        bridge = function_body(
+        route = function_body(
             "static void pc2_launch_with_steam_bridge(Game *game){",
             "static void on_pc2_bridge_setup(GtkButton*b,void*d){",
         )
         self.assertIn('pc2_launch_with_steam_bridge(g);return;', launch)
         self.assertNotIn('start_job(JOB_WEMOD', launch)
         self.assertIn('if(!strcmp(mode,"wemod")){on_launch_with_wemod(NULL,NULL);return;}', one_click)
-        self.assertIn('if(!strcmp(pc2_bridge_ready_state,"play"))', bridge)
-        self.assertIn('on_pc2_bridge_primary(NULL,NULL);', bridge)
-        self.assertIn('pc2_bridge_readiness_for_game(game);', bridge)
+        self.assertIn('pc2_steam_bridge_action("native-route")', route)
+        self.assertIn('No game or trainer launch was attempted.', route)
+        self.assertNotIn('pc2_steam_bridge_action("play")', route)
         self.assertNotIn('/api/set-game', launch)
         self.assertIn('if(!pc2_discovery_only()&&pc2_provider_controls_allowed())', text)
-        self.assertIn('pc2_bridge_readiness_for_game(g);', text)
-        self.assertIn('pc2_provider_controls_allowed()', bridge)
 
     def test_primary_action_dispatch_blocks_unready_launch(self):
         apply = function_body(
@@ -96,15 +88,16 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
             "static void on_pc2_bridge_primary(GtkButton*b,void*d){",
             "static void on_pc2_bridge_setup(GtkButton*b,void*d){",
         )
-        self.assertIn('else{title="Checking WeMod…";actionable=0;}', apply)
-        self.assertIn('gtk_widget_set_sensitive(buttons[i],actionable)', apply)
-        self.assertIn('if(G.selected<0||G.selected>=G.game_count)return;', dispatch)
-        self.assertIn('if(strcmp(game->appid,pc2_bridge_ready_appid))return;', dispatch)
-        self.assertRegex(dispatch, r'if\(!strcmp\(state,"play"\)\)pc2_steam_bridge_action\("play"\)')
-        self.assertIn('else if(!strcmp(state,"setup"))pc2_steam_bridge_action("setup")', dispatch)
-        self.assertIn('else if(!strcmp(state,"enable"))pc2_steam_bridge_action("trainer-on")', dispatch)
-        self.assertIn('else if(!strcmp(state,"steam")||!strcmp(state,"repair"))', dispatch)
-        self.assertNotIn('pc2_steam_bridge_action("play")', dispatch.split('else if(!strcmp(state,"steam")||!strcmp(state,"repair"))')[1])
+        steam = function_body(
+            "static void pc2_steam_launch_selected(int expect_deckcheatz){",
+            "static void on_pc2_steam_game_only(GtkButton*b,void*d){",
+        )
+        self.assertIn('pc2_steam_wemod_allowed()?', apply)
+        self.assertIn('if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);', dispatch)
+        self.assertNotIn('pc2_steam_bridge_action("play")', dispatch)
+        self.assertIn('!game_is_steam(g)||game_is_steam_shortcut(g)', steam)
+        self.assertIn('if(strcmp(mode,"preview_only")', steam)
+        self.assertIn('if(accepted!=GTK_RESPONSE_YES)', steam)
         done = function_body(
             "static gboolean pc2_bridge_readiness_done(gpointer data){",
             "static void *pc2_bridge_readiness_worker(void *data){",
@@ -114,12 +107,12 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('const char *state="blocked"', done)
 
     def test_steam_bridge_identifiers_match_game_capacity(self):
-        self.assertIn("char appid[192],result[2048];", text)
+        self.assertIn("char appid[192],result[2048],game_dir[2048];", text)
         self.assertIn("static char pc2_bridge_ready_appid[192]={0};", text)
         self.assertIn("char action[24],appid[192],game[256],output[4096];", text)
         self.assertIn('snprintf(pc2_bridge_ready_state,sizeof pc2_bridge_ready_state,"%.*s"', text)
-        self.assertNotIn("char appid[32],result[2048];", text)
         self.assertNotIn("static char pc2_bridge_ready_appid[32]", text)
+        self.assertIn("char appid[32],game_name[256],output[4096];", text)
 
     def test_source_runner_wires_current_gui_and_bridge_helper(self):
         runner = (SOURCE.parents[3] / "scripts/run-pc2-source-frontend.sh").read_text(encoding="utf-8")
@@ -138,17 +131,15 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertNotIn('gtk_expander_new("Advanced Steam / WeMod diagnostics")', overview)
         self.assertNotIn('button("Check Steam session (read-only)"', overview)
         self.assertNotIn('button("Install DeckCheatz 1.x (managed)"', overview)
-        self.assertIn('button("Play with WeMod","primary-action")', overview)
+        self.assertIn('G.pc2_deckcheatz_overview_play=direct', overview)
+        self.assertIn('"Play via Steam + WeMod (private test)"', overview)
         self.assertIn("gtk_widget_set_no_show_all(lower,TRUE)", overview)
         self.assertIn("gtk_widget_hide(lower)", overview)
         self.assertIn("gtk_widget_set_no_show_all(plays,TRUE)", overview)
         self.assertIn("gtk_widget_set_no_show_all(launchwith,TRUE)", overview)
-        # The old refresh/log widgets are still built to avoid breaking
-        # callbacks, but PC2 show_all() must not make them visible.
         self.assertIn('pack(readiness,label("SESSION READINESS"', overview)
         self.assertIn('pack(aht,label("ACTIVITY"', overview)
         self.assertIn('pack(context,label("SESSION CONTEXT"', overview)
-        # Library diagnostics are still available outside Overview.
         self.assertIn('gtk_expander_new("Advanced trainer / launch diagnostics")', text)
 
     def test_screen_policy_is_windowed_at_every_resolution(self):
@@ -237,8 +228,11 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('if(global_upgrade)', text)
         self.assertIn('gtk_message_dialog_new((GtkWindow*)G.window,GTK_DIALOG_MODAL', text)
         self.assertIn('if(reply!=GTK_RESPONSE_YES)return;', text)
-        self.assertIn('if(strcmp(j->action,"status")&&strcmp(j->action,"netfx-status"))argv[n++]="--confirm"', text)
+        self.assertIn('strcmp(j->action,"native-route")&&', text)
+        self.assertIn('strcmp(j->action,"live-attach-preview")&&', text)
+        self.assertIn('strcmp(j->action,"netfx-status"))argv[n++]="--confirm"', text)
         self.assertIn('Steam Bridge: Update installed launcher")', text)
+        self.assertIn('pack(deckpage,legacy_bridge,0)', text)
 
     def test_settings_separates_maintenance_and_advanced(self):
         self.assertIn('label("Quick Start",NULL)', text)
@@ -247,7 +241,8 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn("pack(deckpage,dc,0)", text)
         self.assertIn("pack(advancedpage,advanced_expander,0)", text)
         self.assertIn("gtk_notebook_set_current_page((GtkNotebook*)tabs,0)", text)
-        self.assertIn("pack(deckpage,bridge_card,0)", text)
+        self.assertIn("pack(deckpage,legacy_bridge,0)", text)
+        self.assertIn("gtk_container_add(legacy_bridge,bridge_card)", text)
         self.assertIn("on_settings_open_wemod", text)
         self.assertIn("pc2_provider_controls_allowed()", text)
         for name in ("on_pc2_deckcheatz_detect", "pc2_deckcheatz_request_install",
@@ -257,8 +252,9 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
     def test_netfx_runtime_inspection_stays_read_only(self):
         self.assertIn('button("Check Windows .NET in this game (read-only)","action")',text)
         self.assertIn('pc2_steam_bridge_action("netfx-status")',text)
-        self.assertIn('if(strcmp(action,"status")&&strcmp(action,"netfx-status"))',text)
-        self.assertIn('if(strcmp(j->action,"status")&&strcmp(j->action,"netfx-status"))',text)
+        self.assertIn('strcmp(action,"netfx-status")',text)
+        self.assertIn('strcmp(j->action,"netfx-status")',text)
+        self.assertIn('argv[n++]="--confirm"',text)
 
     def test_gpu_display_workaround_is_per_game_opt_in_not_global(self):
         self.assertIn('gtk_expander_new("WeMod blank/white window — per-game display fix")',text)
