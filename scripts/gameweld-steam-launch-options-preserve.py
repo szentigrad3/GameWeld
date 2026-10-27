@@ -180,6 +180,9 @@ def merge(original: str, recipe: str):
         pos = parts.index("%command%")
         if any(not VARIABLE.fullmatch(p) for p in parts[:pos]):
             return None, "MANUAL_OTHER_WRAPPERS"
+        if any(p.split("=", 1)[0] in ("WINEDLLOVERRIDES", "WEMOD_LOG")
+               for p in parts[:pos]):
+            return None, "MANUAL_ENV_COLLISION"
         if any(not p.startswith("-") for p in parts[pos + 1:]):
             return None, "MANUAL_ARGUMENTS"
         at = old.index("%command%")
