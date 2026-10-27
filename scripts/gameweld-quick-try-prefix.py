@@ -86,14 +86,63 @@ def check_steam(appid: str, steamapps: Path) -> tuple[Path, Path, Path]:
     return current, backup, tested
 
 
-def check_idle(appid: str, current: Path) -> None:
+def process_report(appid: str, current: Path) -> dict:
+    """Read-only scoped process report; process arguments are never disclosed."""
     inspector = load("gw_quick_try_active_guard", "gameweld-prefix-runtime-preflight.py")
     try:
-        report = inspector.procfs_report("steam", appid, current / "pfx")
+        return inspector.procfs_report("steam", appid, current / "pfx")
     except (OSError, ValueError) as exc:
         raise QuickTryBlocked("Could not inspect running game/Proton processes") from exc
-    if report["state"] != "IDLE_CANDIDATE" or report["unreadable_same_user_processes"]:
-        raise QuickTryBlocked("Game/Proton may still be running; close the game first")
+
+
+def process_verdict(report: dict) -> str:
+    state = report.get("state")
+    matching = report.get("matching_process_count", len(report.get("matching_processes", [])))
+    unreadable = report.get("unreadable_same_user_processes", 0)
+    if state == "ACTIVE" or matching:
+        return (f"BLOCKED: {matching} process(es) still reference this game's "
+                "Proton prefix. Close the game through Steam (Stop -> Play), "
+                "then retry. Matching PIDs: " +
+                ", ".join(str(pid) for pid in report.get("matching_processes", [])[:20]))
+    if state != "IDLE_CANDIDATE" or unreadable:
+        return (f"BLOCKED: {unreadable} same-user process(es) could not be "
+                "inspected (state UNKNOWN); this does NOT prove the game is "
+                "running. Check Steam/Proton state, and do not kill unrelated "
+                "Wine processes or bypass the safety check.")
+    return "IDLE_CANDIDATE (process observation only; not proof that Steam closed the game)"
+
+
+def status_report(appid: str, steamapps: Path) -> dict:
+    """No extraction, archive reads or writes; report the precise blocker."""
+    current, backup, tested = check_steam(appid, steamapps)
+    report = process_report(appid, current)
+    state = report.get("state")
+    has_backup = backup.exists() or backup.is_symlink()
+    has_tested = tested.exists() or tested.is_symlink()
+    return {
+        "appid": appid,
+        "process_state": state,
+        "matching_process_count": report.get("matching_process_count", 0),
+        "matching_pids": report.get("matching_processes", [])[:20],
+        "unreadable_same_user_processes":
+            report.get("unreadable_same_user_processes", 0),
+        "original_backup_present": has_backup,
+        "tested_copy_present": has_tested,
+        "can_attempt_prepare":
+            state == "IDLE_CANDIDATE" and
+            report.get("unreadable_same_user_processes", 0) == 0 and
+            not has_backup and not has_tested,
+        "verdict": process_verdict(report),
+        "prefix_modified": False,
+        "note": "Read-only process preflight. No ZIP extraction or prefix swap.",
+    }
+
+
+def check_idle(appid: str, current: Path) -> None:
+    report = process_report(appid, current)
+    if (report.get("state") != "IDLE_CANDIDATE" or
+            report.get("unreadable_same_user_processes", 0)):
+        raise QuickTryBlocked(process_verdict(report))
 
 
 def find_zip(cache_root: Path):
@@ -279,6 +328,8 @@ def main() -> int:
     choice = parser.add_mutually_exclusive_group(required=True)
     choice.add_argument("--prepare", action="store_true")
     choice.add_argument("--restore", action="store_true")
+    choice.add_argument("--status", action="store_true",
+                        help="Read-only Steam/Proton process and backup diagnosis")
     parser.add_argument("--appid", required=True)
     parser.add_argument("--steamapps", type=Path, default=Path("/mnt/games/Steam/steamapps"))
     cache = Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache"))
@@ -287,7 +338,11 @@ def main() -> int:
     parser.add_argument("--accept-experimental-swap", action="store_true")
     args = parser.parse_args()
     try:
-        if args.prepare:
+        if args.status:
+            if args.acknowledge_game_closed or args.accept_experimental_swap:
+                raise QuickTryBlocked("Read-only status cannot be combined with approval flags")
+            out = status_report(args.appid, args.steamapps)
+        elif args.prepare:
             out = prepare(args.appid, args.steamapps, args.cache_root,
                           acknowledge_closed=args.acknowledge_game_closed,
                           accept=args.accept_experimental_swap)
