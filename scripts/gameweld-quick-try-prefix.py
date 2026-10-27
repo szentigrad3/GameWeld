@@ -280,6 +280,79 @@ def extract_overlay(archive: Path, target: Path, max_bytes: int) -> int:
     return expanded
 
 
+def validate_saved_test_copy(tested: Path) -> None:
+    """Check the exact case-preserving DeckCheatz copy retained by --restore.
+
+    This confirms local structure only, not code authenticity or compatibility.
+    Refuse a symlink, missing .NET case variant or broken WeMod marker.
+    """
+    if tested.is_symlink() or not tested.is_dir():
+        raise QuickTryBlocked("Saved experimental prefix is missing or symlinked")
+    prefix = tested / "pfx"
+    marker = prefix / ".wemod_installer"
+    if (prefix.is_symlink() or not prefix.is_dir() or
+            marker.is_symlink() or not marker.is_file()):
+        raise QuickTryBlocked("Saved experimental prefix lacks its WeMod marker")
+    for pair in EXPECTED_GROUPS:
+        files = [tested.joinpath(*relative.split("/")) for relative in pair]
+        if len(files) != 2:
+            raise QuickTryBlocked("Saved experimental prefix has an unexpected collision group")
+        for file in files:
+            if (file.is_symlink() or not file.is_file() or
+                    any(parent.is_symlink() for parent in
+                        (file.parent, *file.parents[:6]))):
+                raise QuickTryBlocked("Saved experimental prefix lost a required case variant")
+        if files[0].stat().st_ino == files[1].stat().st_ino:
+            raise QuickTryBlocked("Saved experimental prefix merged case variants")
+
+
+def retest(appid: str, steamapps: Path, *,
+           acknowledge_closed: bool, accept: bool,
+           allow_unreadable: bool = False,
+           idle_checker=check_idle) -> dict:
+    """Reactivate previously saved test compatdata WITHOUT ZIP I/O or extraction.
+
+    Complete, unchanged original compatdata is moved to the rollback name.
+    Two same-filesystem renames make it reversible as in initial --prepare.
+    """
+    if not (acknowledge_closed and accept):
+        raise QuickTryBlocked("Explicit closed-game and experimental-swap approvals required")
+    current, backup, tested = check_steam(appid, steamapps)
+    if backup.is_symlink() or backup.exists():
+        raise QuickTryBlocked("An original backup is already present; cannot activate another test")
+    validate_saved_test_copy(tested)
+    if allow_unreadable:
+        idle_checker(appid, current, allow_unreadable=True)
+        idle_checker(appid, current, allow_unreadable=True)
+    else:
+        idle_checker(appid, current)
+        idle_checker(appid, current)
+    # No ZIP reads or extraction; source is only the previously retained local
+    # directory. Never delete the original backup on a successful swap.
+    os.rename(current, backup)
+    try:
+        os.rename(tested, current)
+    except BaseException:
+        os.rename(backup, current)
+        raise
+    return {
+        "result": "SAVED_TEST_PREFIX_REACTIVATED",
+        "appid": appid,
+        "reused_existing_test_copy": True,
+        "downloaded_bytes": 0,
+        "extracted_bytes": 0,
+        "backup": str(backup),
+        "live": str(current),
+        "launch": f"steam -applaunch {appid}",
+        "restore": f"python3 scripts/gameweld-quick-try-prefix.py --restore "
+                   f"--appid {appid} --steamapps '{steamapps}' "
+                   "--acknowledge-game-closed --accept-experimental-swap" +
+                   (" --accept-unreadable-process-risk" if allow_unreadable else ""),
+        "warning": "Existing test copy may contain changes from an earlier game run. "
+                   "Experimental case-ambiguous Wine prefix; no trainer claim.",
+    }
+
+
 def prepare(appid: str, steamapps: Path, cache_root: Path,
             *, acknowledge_closed: bool, accept: bool,
             allow_unreadable: bool = False,
@@ -287,8 +360,15 @@ def prepare(appid: str, steamapps: Path, cache_root: Path,
     if not (acknowledge_closed and accept):
         raise QuickTryBlocked("Explicit closed-game and experimental-swap approvals required")
     current, backup, tested = check_steam(appid, steamapps)
-    if backup.exists() or backup.is_symlink() or tested.exists() or tested.is_symlink():
-        raise QuickTryBlocked("Another GameWeld quick try exists; restore/review it first")
+    if backup.exists() or backup.is_symlink():
+        raise QuickTryBlocked("An original prefix backup already exists; restore/review first")
+    if tested.exists() or tested.is_symlink():
+        # --restore intentionally retains the last tested copy. Reuse it on
+        # repeated --prepare rather than decompressing 2.55 GB again.
+        return retest(appid, steamapps,
+                      acknowledge_closed=acknowledge_closed, accept=accept,
+                      allow_unreadable=allow_unreadable,
+                      idle_checker=idle_checker)
     if allow_unreadable:
         idle_checker(appid, current, allow_unreadable=True)
     else:
@@ -367,6 +447,8 @@ def main() -> int:
     choice = parser.add_mutually_exclusive_group(required=True)
     choice.add_argument("--prepare", action="store_true")
     choice.add_argument("--restore", action="store_true")
+    choice.add_argument("--retest", action="store_true",
+                        help="Reactivate the test prefix saved after --restore, no extraction")
     choice.add_argument("--status", action="store_true",
                         help="Read-only Steam/Proton process and backup diagnosis")
     parser.add_argument("--appid", required=True)
@@ -391,6 +473,11 @@ def main() -> int:
                           acknowledge_closed=args.acknowledge_game_closed,
                           accept=args.accept_experimental_swap,
                           allow_unreadable=args.accept_unreadable_process_risk)
+        elif args.retest:
+            out = retest(args.appid, args.steamapps,
+                         acknowledge_closed=args.acknowledge_game_closed,
+                         accept=args.accept_experimental_swap,
+                         allow_unreadable=args.accept_unreadable_process_risk)
         else:
             out = restore(args.appid, args.steamapps,
                           acknowledge_closed=args.acknowledge_game_closed,
