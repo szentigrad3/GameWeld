@@ -19,6 +19,7 @@ import argparse
 import fcntl
 import json
 import os
+import hashlib
 from pathlib import Path
 import re
 import shlex
@@ -214,6 +215,94 @@ def invoke(appid: str, game_argv: list[str], *, state_root=None,
     return spawn([str(launcher), *game_argv], env=env)
 
 
+def installed_wrapper_path(data_root: Path | None = None) -> Path:
+    if data_root is None:
+        raw = os.environ.get("XDG_DATA_HOME", "")
+        if raw and not Path(raw).is_absolute():
+            raise SessionBlocked("XDG_DATA_HOME must be absolute")
+        data_root = Path(raw) if raw else Path.home() / ".local/share"
+    if not data_root.is_absolute():
+        raise SessionBlocked("Data root must be absolute")
+    return data_root / "gameweld/steam-session-launcher/steam-session.py"
+
+
+def install_wrapper(*, destination: Path | None = None,
+                    source: Path | None = None) -> dict:
+    """Explicit opt-in copy to a persistent user-owned path, NEVER Steam."""
+    dest = destination or installed_wrapper_path()
+    source = source or Path(__file__).absolute()
+    if source.is_symlink() or not source.is_file() or not dest.is_absolute():
+        raise SessionBlocked("Session wrapper source/destination is unsafe")
+    if dest.parent.is_symlink():
+        raise SessionBlocked("Session wrapper destination must not be a symlink")
+    dest.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    if dest.parent.stat().st_uid != os.getuid():
+        raise SessionBlocked("Session wrapper directory belongs to a different user")
+    code = source.read_bytes()
+    if not code.startswith(b"#!/usr/bin/env python3") or b"def invoke(" not in code:
+        raise SessionBlocked("Unexpected session wrapper source layout")
+    if dest.exists() or dest.is_symlink():
+        if dest.is_symlink() or not dest.is_file() or dest.read_bytes() != code:
+            raise SessionBlocked("A different session wrapper already exists. "
+                                 "Preserve the installed version until no games use it.")
+        return {"result": "SESSION_WRAPPER_ALREADY_INSTALLED",
+                "wrapper": str(dest), "steam_launch_options_changed": False}
+    fd, staging = tempfile.mkstemp(prefix=".session-wrapper-", dir=dest.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(code)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(staging, 0o700)
+        if dest.exists() or dest.is_symlink():
+            raise SessionBlocked("Another session wrapper was installed concurrently")
+        os.rename(staging, dest)
+    finally:
+        if os.path.exists(staging):
+            os.unlink(staging)
+    return {"result": "SESSION_WRAPPER_INSTALLED", "wrapper": str(dest),
+            "sha256": hashlib.sha256(code).hexdigest(),
+            "steam_launch_options_changed": False,
+            "requires_one_time_manual_steam_setup": True}
+
+
+def verify_steam_option(appid: str, *, wrapper: Path | None = None,
+                        steam_root: Path | None = None,
+                        steam_account: str | None = None) -> dict:
+    """Read saved Steam config, not the potentially newer client UI state."""
+    import importlib.util
+    location = Path(__file__).with_name("gameweld-steam-launch-options-preserve.py")
+    # Installed runtime copy lacks this helper; preserve-only inspection is
+    # performed by GameWeld checkout, never by the standalone Steam wrapper.
+    spec = importlib.util.spec_from_file_location("gw_session_verify", location)
+    if not spec or not spec.loader:
+        raise SessionBlocked("Steam option verification helper is unavailable")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    config, account = mod.find_config(appid, steam_root, steam_account)
+    original = mod.launch_option(config, appid)
+    wrapper = wrapper or installed_wrapper_path()
+    args = shlex.split(original)
+    try:
+        i = args.index(str(wrapper))
+    except ValueError:
+        i = -1
+    configured = (
+        i > 0 and args[i - 1] == "/usr/bin/python3" and
+        args[i + 1:i + 6] == ["run", "--appid", appid, "--", "%command%"] and
+        args.count("%command%") == 1
+    )
+    if configured:
+        prefix = args[:i - 1]
+        configured = all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.+", item)
+                         for item in prefix)
+    return {"appid": appid, "steam_account": account,
+            "session_wrapper_installed_in_saved_options": bool(configured),
+            "steam_launch_options_changed": False,
+            "live_steam_ui_verified": False,
+            "warning": "This reads saved Steam configuration, not the live client cache."}
+
+
 def compose(original: str, wrapper: Path, appid: str,
             *, python: Path = Path("/usr/bin/python3")) -> tuple[str | None, str]:
     """Conservatively create a one-time Steam launch option.
@@ -242,21 +331,30 @@ def compose(original: str, wrapper: Path, appid: str,
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for mode in ("arm", "status", "disarm", "run", "recipe"):
+    for mode in ("arm", "status", "disarm", "run", "recipe", "install", "verify"):
         cmd = commands.add_parser(mode)
         cmd.add_argument("--appid", required=True)
         if mode == "arm":
             cmd.add_argument("--launcher", type=Path, required=True)
         if mode == "recipe":
             cmd.add_argument("--original", required=True)
-            cmd.add_argument("--wrapper", type=Path, default=Path(__file__).absolute())
+            cmd.add_argument("--wrapper", type=Path, default=installed_wrapper_path())
+        if mode == "verify":
+            cmd.add_argument("--steam-root", type=Path)
+            cmd.add_argument("--steam-account")
         if mode == "run":
             cmd.add_argument("steam_command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if not valid_appid(args.appid):
         parser.error("Invalid Steam AppID")
     try:
-        if args.action == "arm":
+        if args.action == "install":
+            result = install_wrapper()
+        elif args.action == "verify":
+            result = verify_steam_option(args.appid,
+                                         steam_root=args.steam_root,
+                                         steam_account=args.steam_account)
+        elif args.action == "arm":
             result = arm(args.appid, args.launcher)
         elif args.action == "disarm":
             result = disarm(args.appid)
