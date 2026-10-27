@@ -108,8 +108,11 @@ def process_verdict(report: dict) -> str:
     if state != "IDLE_CANDIDATE" or unreadable:
         return (f"BLOCKED: {unreadable} same-user process(es) could not be "
                 "inspected (state UNKNOWN); this does NOT prove the game is "
-                "running. Check Steam/Proton state, and do not kill unrelated "
-                "Wine processes or bypass the safety check.")
+                "running. Do not kill unrelated Wine processes. For this "
+                "private experiment ONLY, if Steam shows Play and the game is "
+                "confirmed closed, --accept-unreadable-process-risk adds "
+                "a separate, explicitly acknowledged UNKNOWN-only exception; "
+                "a positively detected game process always blocks.")
     return "IDLE_CANDIDATE (process observation only; not proof that Steam closed the game)"
 
 
