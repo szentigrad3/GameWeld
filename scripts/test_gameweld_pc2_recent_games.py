@@ -84,7 +84,9 @@ int main(void) {
         self.assertIn("pc2-recent-games.txt", text)
         self.assertIn("G.selected=last;", text)
         self.assertIn("gtk_widget_set_no_show_all(lower,TRUE)", text)
-        self.assertIn('button("Play with WeMod","primary-action")', text)
+        self.assertIn("G.pc2_deckcheatz_overview_play=direct", text)
+        self.assertIn('"Play via Steam + WeMod (private test)"', text)
+        self.assertIn('g_signal_connect_data(direct,"clicked",(GCallback)on_pc2_bridge_primary', text)
 
 
 if __name__ == "__main__":
