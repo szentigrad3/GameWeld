@@ -229,7 +229,11 @@ def backup_file(appid: str, account: str, root: Path | None):
         raise Blocked("State root must be absolute")
     return state / "gameweld/steam-option-backups" / account / (appid + ".json")
 
-def save_backup(appid: str, account: str, old: str, root: Path | None = None):
+def save_backup(appid: str, account: str, old: str, root: Path | None = None,
+                *, verified_empty: bool = False):
+    if old == "" and not verified_empty:
+        raise Blocked("Empty Steam original must be verified in the live Steam UI "
+                      "before a restorable backup can be created")
     if not APPID.fullmatch(appid) or not ACCOUNT.fullmatch(account):
         raise Blocked("Invalid game/account backup identifiers")
     path = backup_file(appid, account, root)
@@ -248,7 +252,8 @@ def save_backup(appid: str, account: str, old: str, root: Path | None = None):
         if (directory != path.parent.parent.parent and
                 stat.S_IMODE(info.st_mode) & 0o077):
             raise Blocked("Private Steam backup directory exposes other users")
-    payload = {"version": 1, "appid": appid, "account": account, "original": old}
+    payload = {"version": 1, "appid": appid, "account": account, "original": old,
+               "live_empty_confirmed": bool(old == "" and verified_empty)}
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
                  getattr(os, "O_NOFOLLOW", 0), 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -266,6 +271,9 @@ def load_backup(appid: str, account: str, root: Path | None = None) -> str:
     if (value.get("version") != 1 or value.get("appid") != appid or
             value.get("account") != account or not isinstance(value.get("original"), str)):
         raise Blocked("Backup metadata does not match selected account and game")
+    if value["original"] == "" and value.get("live_empty_confirmed") is not True:
+        raise Blocked("A previous GameWeld version saved an unverified EMPTY original. "
+                      "Refusing to copy this as a restore command; check Steam Properties manually.")
     return value["original"]
 
 def main(argv=None):
@@ -314,7 +322,9 @@ def main(argv=None):
                 if proposed is None:
                     raise Blocked("Steam Launch Options have unsupported syntax; "
                                   "cannot safely back up an unverified merge.")
-                result["backup_file"] = str(save_backup(args.appid, account, old))
+                result["backup_file"] = str(save_backup(
+                    args.appid, account, old,
+                    verified_empty=args.verified_empty_in_steam))
         if args.format == "text":
             print(result.get("proposed_launch_option") or result.get("original_launch_option") or "")
         else:
