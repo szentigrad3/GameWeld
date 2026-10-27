@@ -889,6 +889,30 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('gameweld-wemod-live-attach.py', primary)
         self.assertNotIn('WeMod.exe', primary)
 
+    def test_preserve_original_gui_requires_backup_before_clipboard_copy(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('gameweld-steam-launch-options-preserve.py', ui)
+        self.assertIn('pc2_steam_option_helper_run("--preview"', ui)
+        self.assertIn('pc2_steam_option_helper_run("--save-original"', ui)
+        self.assertIn('pc2_steam_option_helper_run("--restore-original"', ui)
+        self.assertIn('No replacement was copied.', ui.upper().replace('NO REPLACEMENT', 'No replacement'))
+        self.assertIn('Steam itself will NOT be modified.', ui)
+        self.assertIn('proposed_launch_option', ui)
+        self.assertIn('requires_manual_review', ui)
+        self.assertIn('on_pc2_deckcheatz_restore_steam_option', ui)
+        self.assertIn('Restore original Steam launch option', ui)
+        guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
+        guard = guard.split('static GtkWidget *box(', 1)[0]
+        self.assertIn('strcmp(s, "Restore original Steam launch option")', guard)
+        copying = ui.split('static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){', 1)[1]
+        copying = copying.split('static void on_pc2_deckcheatz_restore_steam_option', 1)[0]
+        self.assertLess(copying.index('pc2_steam_option_helper_run("--preview"'),
+                        copying.index('pc2_steam_option_helper_run("--save-original"'))
+        self.assertLess(copying.index('pc2_steam_option_helper_run("--save-original"'),
+                        copying.index('gtk_clipboard_set_text(clip,merged,-1);'))
+        self.assertNotIn('localconfig.vdf', copying)
+
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
         with patch.dict(os.environ, self.env):
             bridge.register(self.steam, source=SCRIPT)
