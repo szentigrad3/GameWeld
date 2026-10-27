@@ -163,6 +163,37 @@ class PrefixActivationTests(unittest.TestCase):
                     accepted_risk=True, proc_root=self.processes)
         self.original()
 
+
+    def test_recovery_with_missing_live_prefix_refuses_active_process(self):
+        txid = "d" * 32
+        backup = self.compat.parent / f".gameweld-original-{self.appid}-{txid}"
+        staging = self.compat.parent / f".gameweld-import-{self.appid}-{txid}"
+        shutil.copytree(self.candidate, staging, symlinks=True)
+        promote.write_new_journal(self.state, txid, {
+            "txid": txid, "appid": self.appid, "state": "PREPARED",
+            "compat_path": str(self.compat), "backup_path": str(backup),
+            "staging_path": str(staging),
+            "original_sha256": importer.fingerprint(self.compat),
+        })
+        os.rename(self.compat, backup)
+        pid = self.processes / "712"
+        pid.mkdir()
+        (pid / "environ").write_bytes(
+            f"WINEPREFIX={self.compat / 'pfx'}\\0".encode()
+        )
+        with patch.dict(os.environ, {
+            "GAMEWELD_PREFIX_IMPORT_EXPERIMENT": promote.EXPERIMENT
+        }):
+            with self.assertRaisesRegex(promote.ActivationBlocked, "may still"):
+                promote.recover_interrupted(
+                    self.appid, self.install, txid, state_root=self.state,
+                    approved=True, game_closed=True, accepted_risk=True,
+                    proc_root=self.processes)
+        self.assertFalse(self.compat.exists())
+        self.assertTrue(backup.is_dir())
+        self.assertTrue(staging.is_dir())
+        self.assertEqual(promote.read_journal(self.state, txid)["state"], "PREPARED")
+
     def test_recover_interrupted_swap_with_game_prefix_temporarily_missing(self):
         txid = "f" * 32
         original = self.compat.parent / f".gameweld-original-{self.appid}-{txid}"
