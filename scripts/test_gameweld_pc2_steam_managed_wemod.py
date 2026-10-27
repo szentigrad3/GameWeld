@@ -23,6 +23,8 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('strcmp(s, "Play via Steam + WeMod (private test)")', GUI)
         self.assertIn("if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);", GUI)
         self.assertIn('[executable, "-applaunch", appid]', STEAM)
+        self.assertIn("if(j->expect_deckcheatz||j->steam_managed_wemod)", GUI)
+        self.assertIn('"--require-idle-before-launch"', GUI)
 
     def test_no_launch_options_or_bridge_requirements(self):
         self.assertIn("j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz", GUI)
