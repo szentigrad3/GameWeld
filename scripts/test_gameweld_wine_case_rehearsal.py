@@ -100,6 +100,19 @@ class WineCaseRehearsalTests(unittest.TestCase):
         self.assertIn("STILL BLOCKED", result)
         self.assert_safe()
 
+    def test_missing_windows_path_is_unresolved_not_a_false_success(self):
+        def missing(args, *, env, **kwargs):
+            result = self.fake_wine(args, env=env, **kwargs)
+            if args[3] == "type" and args[4].endswith(r"\INSTALLUTIL.EXE"):
+                result.returncode = 1
+                result.stdout = b"File not found"
+            return result
+        report = rehearsal.run_rehearsal(
+            self.root, runner=missing, wine_exe="/synthetic-wine")
+        self.assertIn("Ambiguous mixed-case file: UNRESOLVED", report)
+        self.assertIn("STILL BLOCKED", report)
+        self.assert_safe()
+
     def test_rejects_prefix_root_under_game_prefix(self):
         unsafe = self.game / "gameweld/prepared-wemod"
         unsafe.mkdir(parents=True)
