@@ -25,6 +25,7 @@ import time
 APPID = re.compile(r"[1-9][0-9]{0,9}\Z")
 CHUNK = 1024 * 1024
 MAX_PIDS = 50000
+MAX_ACKNOWLEDGED_UNREADABLE = 8
 ALLOW_ENV = ("STEAM_COMPAT_DATA_PATH", "STEAM_COMPAT_CLIENT_INSTALL_PATH",
              "STEAM_COMPAT_TOOL_PATHS", "SteamAppId", "SteamGameId",
              "STEAM_COMPAT_APP_ID", "SteamCompatAppId")
@@ -195,6 +196,7 @@ def default_client() -> Path:
 def plan(
     appid: str, install_dir: Path, client_dir: Path, *,
     proc_root: Path = Path("/proc"), uid: int | None = None,
+    accept_unreadable_risk: bool = False,
 ) -> tuple[dict, dict]:
     compat = validate_steam_game(appid, install_dir)
     context = live_context(appid, compat, proc_root=proc_root, uid=uid)
@@ -206,7 +208,11 @@ def plan(
         blockers.append(str(exc))
     if context["matched_processes"] == 0:
         blockers.append("No exact running Steam game-prefix process found")
-    if context["unreadable_processes"]:
+    unknown_risk_accepted = (
+        accept_unreadable_risk and
+        0 < context["unreadable_processes"] <= MAX_ACKNOWLEDGED_UNREADABLE and
+        context["matched_processes"] > 0)
+    if context["unreadable_processes"] and not unknown_risk_accepted:
         blockers.append("Some same-user process environments were inaccessible")
     if context["wemod_already_visible"]:
         blockers.append("A matching WeMod.exe process is already visible; refuse duplicate")
@@ -221,6 +227,8 @@ def plan(
         "wemod_already_visible": context["wemod_already_visible"],
         "unique_proton_context": selected is not None,
         "managed_client_present": client is not None,
+        "unreadable_same_user_processes": context["unreadable_processes"],
+        "unreadable_process_risk_accepted": unknown_risk_accepted,
         "blockers": blockers,
         "can_attempt_with_explicit_consent": not blockers,
         "steam_launch_options_changed": False,
@@ -237,7 +245,8 @@ def plan(
 
 def launch(report: dict, private: dict, *, approved: bool,
            state_root: Path | None = None, proc_root: Path = Path("/proc"),
-           uid: int | None = None) -> dict:
+           uid: int | None = None,
+           accept_unreadable_risk: bool = False) -> dict:
     if not approved or not report["can_attempt_with_explicit_consent"]:
         raise AttachBlocked("Explicit approval and a clean live-session preflight are required")
     # Recheck the selected game and live Proton environment immediately before
@@ -246,7 +255,12 @@ def launch(report: dict, private: dict, *, approved: bool,
         raise AttachBlocked("Selected Steam game prefix changed since preview")
     recent = live_context(private["appid"], private["compat"],
                           proc_root=proc_root, uid=uid)
-    if (recent["matched_processes"] == 0 or recent["unreadable_processes"] or
+    unknowns = recent["unreadable_processes"]
+    unknowns_ok = (unknowns == 0 or
+                   (accept_unreadable_risk and
+                    report.get("unreadable_process_risk_accepted") is True and
+                    0 < unknowns <= MAX_ACKNOWLEDGED_UNREADABLE))
+    if (recent["matched_processes"] == 0 or not unknowns_ok or
             recent["wemod_already_visible"] or len(recent["contexts"]) != 1 or
             tuple(recent["contexts"]) != tuple([(
                 str(private["context"]["proton"]),
@@ -336,18 +350,25 @@ def main(argv=None) -> int:
     parser.add_argument("--launch-client", action="store_true")
     parser.add_argument("--approve-prefix-may-change", action="store_true")
     parser.add_argument("--approve-experimental-live-attach", action="store_true")
+    parser.add_argument("--accept-unreadable-process-risk", action="store_true",
+                        help="Explicit live handoff risk acceptance: up to eight unreadable "
+                             "same-user processes ONLY with a matching running "
+                             "Steam game and a unique Proton session")
     args = parser.parse_args(argv)
     try:
         if not args.launch_client and (
-                args.approve_prefix_may_change or args.approve_experimental_live_attach):
+                args.approve_prefix_may_change or args.approve_experimental_live_attach or
+                args.accept_unreadable_process_risk):
             raise AttachBlocked("Preview never accepts live launch approval flags")
         report, private = plan(args.appid, args.install_dir,
-                               args.client_dir or default_client())
+                               args.client_dir or default_client(),
+                               accept_unreadable_risk=args.accept_unreadable_process_risk)
         if args.launch_client:
             if not (args.approve_prefix_may_change and
                     args.approve_experimental_live_attach):
                 raise AttachBlocked("Both live-attach approvals are required")
-            result = launch(report, private, approved=True)
+            result = launch(report, private, approved=True,
+                            accept_unreadable_risk=args.accept_unreadable_process_risk)
         else:
             result = report
     except (AttachBlocked, OSError, ValueError) as exc:
