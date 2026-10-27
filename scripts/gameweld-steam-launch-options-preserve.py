@@ -237,9 +237,13 @@ def save_backup(appid: str, account: str, old: str, root: Path | None = None):
         raise Blocked("Symlinked backup location refused")
     for directory in (path.parent.parent.parent, path.parent.parent, path.parent):
         info = directory.stat()
-        if (info.st_uid != os.getuid() or
+        if info.st_uid != os.getuid():
+            raise Blocked("Backup directory is not owned by the current user")
+        # Existing GameWeld state may have been created 0755 by other tools;
+        # the dedicated backup container and account directory MUST be 0700.
+        if (directory != path.parent.parent.parent and
                 stat.S_IMODE(info.st_mode) & 0o077):
-            raise Blocked("Backup directory is not private to the current user")
+            raise Blocked("Private Steam backup directory exposes other users")
     payload = {"version": 1, "appid": appid, "account": account, "original": old}
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
                  getattr(os, "O_NOFOLLOW", 0), 0o600)
