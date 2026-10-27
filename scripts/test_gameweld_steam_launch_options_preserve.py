@@ -150,6 +150,19 @@ class PreserveTests(unittest.TestCase):
         self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), old)
         self.assertEqual(self.file.read_bytes(), original)
 
+    def test_preexisting_gameweld_state_can_be_public_but_backups_are_private(self):
+        state = self.root / "preexisting-state"
+        gw = state / "gameweld"
+        gw.mkdir(parents=True, mode=0o755)
+        gw.chmod(0o755)
+        result = options.save_backup(APPID, ACCOUNT, "ORIGINAL",
+                                     state)
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, state), "ORIGINAL")
+        self.assertEqual(stat.S_IMODE(gw.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(result.parent.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(result.parent.parent.stat().st_mode), 0o700)
+        self.unchanged()
+
     def test_symlinked_config_and_backup_refused(self):
         self.file.unlink()
         target = self.root / "sensitive.vdf"
