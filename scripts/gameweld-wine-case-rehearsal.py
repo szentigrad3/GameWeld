@@ -49,7 +49,7 @@ def safe_root(root: Path) -> None:
         raise WineCaseRefused("Private GameWeld prepared-wemod cache unavailable or unsafe")
 
 
-def synthetic_files(prefix: Path) -> None:
+def synthetic_files(prefix: Path, *, reverse_creation_order: bool = False) -> None:
     drive = prefix / "drive_c"
     if drive.is_symlink() or not drive.is_dir():
         raise WineCaseRefused("Wine did not create a safe private C: drive")
@@ -63,9 +63,11 @@ def synthetic_files(prefix: Path) -> None:
         root / "CONFIG" / "machine.config": TOKENS["upper_dir"],
         root / "Config" / "machine.config": TOKENS["lower_dir"],
     }
-    (root / "CONFIG").mkdir(mode=0o700)
-    (root / "Config").mkdir(mode=0o700)
-    for destination, token in files.items():
+    folders = (root / "CONFIG", root / "Config")
+    for folder in (reversed(folders) if reverse_creation_order else folders):
+        folder.mkdir(mode=0o700)
+    entries = list(files.items())
+    for destination, token in (reversed(entries) if reverse_creation_order else entries):
         fd = os.open(destination,
                      os.O_WRONLY | os.O_CREAT | os.O_EXCL |
                      getattr(os, "O_NOFOLLOW", 0), 0o600)
@@ -131,7 +133,8 @@ def execute(command: list[str], *, env: dict[str, str], runner=subprocess.run,
 
 def run_rehearsal(root: Path, *, runner=subprocess.run,
                   wine_exe: str | None = None,
-                  cleanup_runner=subprocess.run) -> str:
+                  cleanup_runner=subprocess.run,
+                  reverse_creation_order: bool = False) -> str:
     safe_root(root)
     executable = wine_exe or shutil.which("wine")
     if not executable:
@@ -144,7 +147,7 @@ def run_rehearsal(root: Path, *, runner=subprocess.run,
         try:
             # Only Wine's own cmd.exe is launched. The rejected ZIP is never opened.
             execute([executable, "cmd", "/c", "ver"], env=env, runner=runner)
-            synthetic_files(prefix)
+            synthetic_files(prefix, reverse_creation_order=reverse_creation_order)
             for label, path, expected in WIN_TESTS:
                 output = execute(
                     [executable, "cmd", "/c", "type", path],
@@ -173,6 +176,8 @@ def run_rehearsal(root: Path, *, runner=subprocess.run,
     return "\n".join([
         "GAMEWELD — SYNTHETIC WINE CASE LOOKUP (DISPOSABLE)",
         "Source: new isolated Wine prefix; ONLY tiny generated test files",
+        "Synthetic creation order: " + (
+            "REVERSED" if reverse_creation_order else "NORMAL"),
         *results,
         "Disposable test prefix and synthetic contents: CLEANED UP",
         "Interpretation: host Wine cmd.exe file lookup only — NOT Proton or .NET validation",
@@ -182,24 +187,75 @@ def run_rehearsal(root: Path, *, runner=subprocess.run,
     ])
 
 
+def run_creation_order_matrix(root: Path, *, runner=subprocess.run,
+                              wine_exe: str | None = None,
+                              cleanup_runner=subprocess.run) -> str:
+    """Compare observed Wine file lookups across two fresh disposable prefixes."""
+    reports = [
+        run_rehearsal(root, runner=runner, wine_exe=wine_exe,
+                      cleanup_runner=cleanup_runner, reverse_creation_order=False),
+        run_rehearsal(root, runner=runner, wine_exe=wine_exe,
+                      cleanup_runner=cleanup_runner, reverse_creation_order=True),
+    ]
+    def outputs(report: str) -> dict[str, str]:
+        observations = {}
+        for line in report.splitlines():
+            if ": " in line and " — " in line:
+                label, content = line.split(": ", 1)
+                if label in {t[0] for t in WIN_TESTS}:
+                    observations[label] = content.split(" — ", 1)[0]
+        return observations
+    normal, reversed_order = map(outputs, reports)
+    if len(normal) != len(WIN_TESTS) or len(reversed_order) != len(WIN_TESTS):
+        raise WineCaseRefused("Synthetic lookup matrix did not complete both configurations")
+    changed = [key for key in normal if normal[key] != reversed_order[key]]
+    result = [
+        "GAMEWELD — WINE CASE CREATION-ORDER MATRIX (DISPOSABLE)",
+        "Two independently created and deleted synthetic Wine prefixes.",
+    ]
+    for label, _, expected in WIN_TESTS:
+        first, second = normal[label], reversed_order[label]
+        classification = (
+            "ORDER-DEPENDENT" if label in changed else
+            "EXACT CASE OK IN BOTH" if expected and first == expected else
+            "CONSISTENT BUT UNRESOLVED" if first == "UNRESOLVED" else
+            "SAME RESULT (NOT PROOF OF SAFETY)"
+        )
+        result.append(f"{label}: normal={first}; reversed={second}; {classification}")
+    result.extend([
+        "Order-dependent lookup groups: " + str(len(changed)),
+        "No order change does NOT prove Windows/.NET or Proton compatibility.",
+        "Only host Wine cmd.exe, synthetic files, and private disposable prefixes tested.",
+        "All temporary test prefixes cleaned; real rejected ZIP NEVER extracted or executed.",
+        "Game prefixes, Steam/Heroic/Lutris and staged cache: UNCHANGED",
+        "Real archive staging and installation: STILL BLOCKED",
+    ])
+    return "\n".join(result)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     cache = Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache"))
     parser.add_argument("--cache-root", type=Path,
                         default=cache / "gameweld/prepared-wemod")
-    parser.add_argument("--run-disposable-wine", action="store_true",
-                        help="Opt in to a new temporary Wine prefix and built-in cmd.exe")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--run-disposable-wine", action="store_true",
+                       help="Opt in to a new temporary Wine prefix and built-in cmd.exe")
+    modes.add_argument("--run-order-matrix", action="store_true",
+                       help="Compare normal/reversed creation order in TWO disposable prefixes")
     args = parser.parse_args()
     try:
         safe_root(args.cache_root)
-        if args.run_disposable_wine:
+        if args.run_order_matrix:
+            print(run_creation_order_matrix(args.cache_root))
+        elif args.run_disposable_wine:
             print(run_rehearsal(args.cache_root))
         else:
             print("GAMEWELD — SYNTHETIC WINE CASE LOOKUP (PREVIEW)")
             print("No Wine process or ZIP operation started.")
             print("Available system Wine: " +
                   ("YES" if shutil.which("wine") else "NO"))
-            print("Explicit test: add --run-disposable-wine")
+            print("Explicit tests: --run-disposable-wine or --run-order-matrix")
             print("Test uses only synthetic files in a private disposable prefix.")
             print("No archive staging or compatibility approval.")
     except (WineCaseRefused, OSError) as exc:
