@@ -186,6 +186,46 @@ class PreparedPrefixCacheTests(unittest.TestCase):
         self.assertEqual(list((self.cache_root / "incoming").glob("*.part")), [])
         self.assert_game_untouched()
 
+    def test_case_colliding_zip_is_kept_only_in_rejected_private_cache(self):
+        data = io.BytesIO()
+        with zipfile.ZipFile(data, "w", compression=zipfile.ZIP_STORED) as z:
+            z.writestr("pfx/Drive_C/a.txt", b"UPPER")
+            z.writestr("pfx/drive_c/a.txt", b"lower")
+            z.writestr("pfx/random.bin", os.urandom(1_200_000))
+        zipped = data.getvalue()
+        with patch.object(cache.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 5_000_000_000})()):
+            with self.assertRaisesRegex(cache.CacheRefused, "NOT saved for staging"):
+                cache.acquire_to_cache(
+                    URL, declared_size=len(zipped), cache_root=self.cache_root,
+                    approved=True, opener=lambda req, timeout: FakeResponse(zipped))
+        rejected = list((self.cache_root / "rejected").glob("*.zip"))
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0].read_bytes(), zipped)
+        self.assertEqual(list((self.cache_root / "downloads").iterdir()), [])
+        self.assertEqual(list((self.cache_root / "incoming").iterdir()), [])
+        self.assertNotIn("source.json", rejected[0].name)
+        report = cache.rejected_cache_status(self.cache_root)
+        self.assertIn("case_collision: 1", report)
+        self.assertIn("cannot be staged", report)
+        self.assertIn("pfx/Drive_C", report)
+        self.assert_game_untouched()
+
+    def test_other_unsafe_zip_is_not_retained_for_reuse(self):
+        data = io.BytesIO()
+        with zipfile.ZipFile(data, "w", compression=zipfile.ZIP_STORED) as z:
+            z.writestr("../escape", os.urandom(1_200_000))
+        zipped = data.getvalue()
+        with patch.object(cache.shutil, "disk_usage",
+                          return_value=type("Disk", (), {"free": 5_000_000_000})()):
+            with self.assertRaisesRegex(cache.CacheRefused, "Path traversal"):
+                cache.acquire_to_cache(
+                    URL, declared_size=len(zipped), cache_root=self.cache_root,
+                    approved=True, opener=lambda req, timeout: FakeResponse(zipped))
+        self.assertFalse((self.cache_root / "rejected").exists())
+        self.assertEqual(list((self.cache_root / "incoming").iterdir()), [])
+        self.assert_game_untouched()
+
     def test_symlinked_cache_ancestry_and_game_prefix_path_blocked(self):
         alias = self.root / "alias"
         alias.symlink_to(self.root / "steamapps", target_is_directory=True)
