@@ -2781,8 +2781,12 @@ static void *pc2_steam_launch_worker(void *data){
         if(appdir&&*appdir)
             snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-steam-handoff.py",appdir);
         else snprintf(helper,sizeof helper,"gameweld-steam-handoff.py");
-        execlp("python3","python3",helper,"launch","--appid",j->appid,
-               "--confirm",(char*)NULL);
+        if(j->expect_deckcheatz)
+            execlp("python3","python3",helper,"launch","--appid",j->appid,
+                   "--confirm","--require-idle-before-launch",(char*)NULL);
+        else
+            execlp("python3","python3",helper,"launch","--appid",j->appid,
+                   "--confirm",(char*)NULL);
         _exit(127);
     }
     close(pipes[1]);
