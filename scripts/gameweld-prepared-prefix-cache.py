@@ -179,9 +179,30 @@ def acquire_to_cache(
                 if quarantined.is_symlink():
                     raise CacheRefused("Unsafe existing rejected archive") from exc
                 if not quarantined.exists() and len(existing_quarantine) < 2:
-                    # Atomic relocation: never enters downloads/, cannot be
-                    # selected by Stage, no .source.json receipt is created.
+                    # Atomic relocation: never enters downloads/ and cannot
+                    # be selected by Stage; only preserve bounded diagnostics.
                     os.replace(temp, quarantined)
+                    receipt = rejected / (digest_name + ".rejected.json")
+                    if not receipt.exists() and not receipt.is_symlink():
+                        try:
+                            fd = os.open(receipt,
+                                os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                                getattr(os, "O_NOFOLLOW", 0), 0o600)
+                            with os.fdopen(fd, "w", encoding="utf-8") as output:
+                                json.dump({
+                                    "sha256": digest_name, "bytes": length,
+                                    "source": SOURCE_REPO,
+                                    "release_tag": tag, "asset_name": filename,
+                                    "status": "REJECTED_NOT_STAGEABLE",
+                                }, output, sort_keys=True)
+                                output.write("\n")
+                                output.flush()
+                                os.fsync(output.fileno())
+                        except OSError:
+                            # A rejected ZIP remains inspectable even if its
+                            # source receipt could not be saved. Never imply
+                            # provenance from a missing or invalid receipt.
+                            receipt.unlink(missing_ok=True)
                 raise CacheRefused(
                     "ZIP safety check failed: Duplicate/case-colliding archive entries. "
                     "The complete rejected ZIP is isolated when space permits; "
@@ -268,6 +289,17 @@ def rejected_cache_status(cache_root: Path) -> str:
             lines.append("Rejected archive index cannot be safely inspected")
             continue
         lines.append("Archive SHA-256 filename prefix: " + sha[:12])
+        receipt = directory / (sha + ".rejected.json")
+        if receipt.is_file() and not receipt.is_symlink() and receipt.stat().st_size < 4096:
+            try:
+                source_record = json.loads(receipt.read_text(encoding="utf-8"))
+            except (ValueError, UnicodeError, OSError):
+                source_record = {}
+            if (isinstance(source_record, dict) and
+                    source_record.get("sha256") == sha and
+                    source_record.get("source") == SOURCE_REPO and
+                    source_record.get("status") == "REJECTED_NOT_STAGEABLE"):
+                lines.append("Source metadata receipt present (publisher authenticity unverified)")
         lines.extend(f"{kind}: {count}" for kind, count in counts.items())
         lines.extend("Collision example: " + example for example in examples)
     lines.append("No archive installed, extracted, executed, or approved for staging.")
