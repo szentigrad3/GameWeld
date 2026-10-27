@@ -162,9 +162,32 @@ def acquire_to_cache(
                 if archive.testzip() is not None:
                     raise CacheRefused("ZIP CRC check failed")
         except audit.UnsafePreparedPrefix as exc:
-            # The archive inspector emits fixed, non-sensitive policy reasons.
-            # Preserve those diagnostics so a failed 900+ MiB download is
-            # actionable without weakening validation or showing member names.
+            # Retain ONLY completed ZIPs rejected for filename collisions in
+            # a separate non-stageable directory for offline investigation.
+            # Everything else fails closed and the temporary ZIP is deleted.
+            if str(exc) == "Duplicate/case-colliding archive entries":
+                rejected = root / "rejected"
+                if rejected.is_symlink():
+                    raise CacheRefused("Unsafe rejected-archive cache") from exc
+                rejected.mkdir(mode=0o700, exist_ok=True)
+                if (not rejected.is_dir() or rejected.is_symlink() or
+                        stat.S_IMODE(rejected.stat().st_mode) & 0o077):
+                    raise CacheRefused("Rejected archive folder must be private") from exc
+                digest_name = digest.hexdigest()
+                quarantined = rejected / (digest_name + ".zip")
+                existing_quarantine = list(rejected.glob("*.zip"))
+                if quarantined.is_symlink():
+                    raise CacheRefused("Unsafe existing rejected archive") from exc
+                if not quarantined.exists() and len(existing_quarantine) < 2:
+                    # Atomic relocation: never enters downloads/, cannot be
+                    # selected by Stage, no .source.json receipt is created.
+                    os.replace(temp, quarantined)
+                raise CacheRefused(
+                    "ZIP safety check failed: Duplicate/case-colliding archive entries. "
+                    "The complete rejected ZIP is isolated when space permits; "
+                    "run gameweld-prepared-prefix-cache.py --rejected-status "
+                    "for a read-only classification. NOT saved for staging."
+                ) from exc
             raise CacheRefused(f"ZIP safety check failed: {exc}") from exc
         except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError) as exc:
             # Low-level exceptions can include untrusted archive names/paths.
@@ -214,11 +237,48 @@ def acquire_to_cache(
             temp.unlink()
 
 
+
+def rejected_cache_status(cache_root: Path) -> str:
+    """Read only rejected archive metadata; never extract or trust rejected ZIPs."""
+    root = safe_cache_root(cache_root)
+    directory = root / "rejected"
+    lines = ["GAMEWELD — REJECTED ZIP COLLISIONS (READ ONLY)",
+             "Rejected ZIPs are NOT completed cache downloads and cannot be staged."]
+    if not directory.exists():
+        return "\n".join(lines + ["Rejected archives: 0"])
+    if directory.is_symlink() or not directory.is_dir():
+        raise CacheRefused("Unsafe rejected-archive directory")
+    if stat.S_IMODE(directory.stat().st_mode) & 0o077:
+        raise CacheRefused("Rejected-archive directory is not private")
+    paths = sorted(directory.glob("*.zip"))
+    lines.append(f"Rejected archives: {len(paths)}")
+    audit = _load_zip_audit()
+    for path in paths[:2]:
+        sha = path.stem
+        if (path.is_symlink() or not path.is_file() or
+                len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha) or
+                not 0 < path.stat().st_size <= MAX_DOWNLOAD_BYTES):
+            lines.append("Rejected archive skipped: invalid cached file")
+            continue
+        try:
+            with zipfile.ZipFile(path) as archive:
+                counts, examples = audit.classify_zip_collisions(archive)
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError,
+                audit.UnsafePreparedPrefix) as exc:
+            lines.append("Rejected archive index cannot be safely inspected")
+            continue
+        lines.append("Archive SHA-256 filename prefix: " + sha[:12])
+        lines.extend(f"{kind}: {count}" for kind, count in counts.items())
+        lines.extend("Collision example: " + example for example in examples)
+    lines.append("No archive installed, extracted, executed, or approved for staging.")
+    return "\n".join(lines)
+
+
 def main() -> int:
     import json
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--release-asset-url", required=True)
-    parser.add_argument("--declared-size", type=int, required=True)
+    parser.add_argument("--release-asset-url")
+    parser.add_argument("--declared-size", type=int)
     parser.add_argument("--approve-cache-download", action="store_true")
     parser.add_argument("--progress", action="store_true",
                         help="Emit progress records for a parent GUI; no installation")
@@ -226,7 +286,19 @@ def main() -> int:
                          str(Path.home() / ".cache"))
     parser.add_argument("--cache-root", type=Path,
                         default=default_cache / "gameweld/prepared-wemod")
+    parser.add_argument("--rejected-status", action="store_true",
+                        help="Inspect quarantined ZIP filenames locally (read only)")
     args = parser.parse_args()
+    if args.rejected_status:
+        if args.release_asset_url or args.declared_size is not None or args.approve_cache_download or args.progress:
+            parser.error("--rejected-status cannot start a download")
+        try:
+            print(rejected_cache_status(args.cache_root))
+        except (CacheRefused, OSError) as exc:
+            parser.exit(2, f"Rejected ZIP inspection BLOCKED: {exc}\n")
+        return 0
+    if not args.release_asset_url or args.declared_size is None:
+        parser.error("download requires --release-asset-url and --declared-size")
     def cancel_download(signum, frame):
         raise CacheRefused("Cancelled by user; incomplete download discarded")
     if args.progress:
