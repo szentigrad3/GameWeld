@@ -71,7 +71,7 @@ class SteamHandoffTests(unittest.TestCase):
         # A command can remain alive after the observation window. This is
         # legitimate Steam IPC behaviour, not a reason to kill Steam.
         marker = self.root / "steam-completed"
-        self.fake_steam('sleep 0.2\\nprintf done > "' + str(marker) + '"\\n')
+        self.fake_steam('sleep 0.2\nprintf done > "' + str(marker) + '"\n')
         with patch.object(steam, "associated_process_count", return_value=0):
             with warnings.catch_warnings(record=True) as recorded:
                 warnings.simplefilter("always", ResourceWarning)
