@@ -77,11 +77,13 @@ def selected_candidate(root: Path, appid: str, candidate_dir: Path) -> tuple[Pat
     return candidate, manifest
 
 
-def game_idle(appid: str, current: Path, *, proc_root: Path = Path("/proc")) -> dict:
+def game_idle(appid: str, current: Path, *, proc_root: Path = Path("/proc"),
+              allow_missing_prefix: bool = False) -> dict:
     inspector = module("gameweld-prefix-runtime-preflight.py", "gw_prefix_idle")
     try:
         status = inspector.procfs_report(
-            "steam", appid, current / "pfx", proc_root=proc_root)
+            "steam", appid, current / "pfx", proc_root=proc_root,
+            allow_missing_prefix=allow_missing_prefix)
     except (OSError, ValueError) as exc:
         raise ActivationBlocked("Could not safely inspect matching Wine/Proton processes") from exc
     if status["state"] != "IDLE_CANDIDATE" or status["unreadable_same_user_processes"]:
@@ -295,7 +297,8 @@ def recover_interrupted(
     # Even if the live directory disappeared between renames, a Wine process
     # may still hold files from the renamed original prefix. Refuse recovery
     # unless the selected game is idle, before any further directory rename.
-    game_idle(appid, current, proc_root=proc_root)
+    game_idle(appid, current, proc_root=proc_root,
+              allow_missing_prefix=not current.exists())
     if backup.is_symlink() or current.is_symlink() or staging.is_symlink():
         raise ActivationBlocked("Symlinked prefix recovery path is forbidden")
     if backup.exists():
