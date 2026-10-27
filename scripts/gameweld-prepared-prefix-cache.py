@@ -362,9 +362,13 @@ def rejected_cache_status(cache_root: Path) -> str:
         if counts["case_collision"] and (
                 payload_comparison["different_payload"] or
                 payload_comparison["size_mismatch"]):
-            lines.append("VERDICT: UPSTREAM ARCHIVE INCOMPATIBLE. Conflicting "
-                         "case-only paths have different contents or sizes; "
-                         "do NOT merge, rename, or stage. Request a corrected release.")
+            lines.append("VERDICT: BLOCKED BY GAMEWELD'S CURRENT SAFE STAGING POLICY. "
+                         "Four case-only path pairs may coexist on Linux but "
+                         "have distinct contents or sizes, so no automatic "
+                         "merge or case-normalization is permitted. "
+                         "Do NOT stage or install this archive until "
+                         "runtime-safe handling is independently verified, "
+                         "or select a corrected release.")
         lines.append("Comparison is read-only; identical payloads are NOT approval to stage.")
     lines.append("No archive installed, extracted, executed, or approved for staging.")
     return "\n".join(lines)
