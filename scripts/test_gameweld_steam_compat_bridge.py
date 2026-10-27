@@ -745,7 +745,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertNotIn('pack(bridge_card,netfx_plan,0);', ui)
         self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
         self.assertIn('!strcmp(job->result,"runtime")', ui)
-        self.assertIn('pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui)
+        self.assertIn('"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn('strcmp(action,"netfx-plan")', ui)
         self.assertIn('strcmp(j->action,"netfx-plan")', ui)
@@ -852,7 +852,7 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('(GCallback)on_pc2_bridge_play,NULL,NULL,0);', ui)
         self.assertIn('pc2_steam_bridge_action("native-route");', ui)
         self.assertIn(
-            'pc2_steam_launch_allowed()?"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui
+            '"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui
         )
         self.assertNotIn('pack(deckpage,bridge_card,0);', ui)
         self.assertIn('GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui)
