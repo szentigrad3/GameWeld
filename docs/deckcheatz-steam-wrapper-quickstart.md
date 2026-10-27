@@ -99,3 +99,56 @@ you later decide to stop using DeckCheatz.
 Offline test suites and GTK smoke tests do not qualify this path
 for a public release. The PR remains draft until real end-to-end
 trainer functionality is verified.
+
+
+## New private alpha: one-shot DeckCheatz session
+
+GameWeld now includes an experimental **Set up one-session DeckCheatz** action
+in Game Connection. It installs its own private, user-owned Steam shim and
+copies a conservative merged one-time Launch Option **after backup and explicit
+consent**. You still have to paste the option into Steam **once**.
+
+From the development source GUI:
+
+    bash scripts/run-pc2-source-frontend.sh --enable-steam-game-launch
+
+For the selected standard Steam Windows title:
+
+1. Choose **Set up one-session DeckCheatz**, confirm private helper installation.
+2. Verify the original/proposed launch options. If the Steam config is empty on
+   disk, explicitly check the current Steam Properties field and confirm it is
+   also empty. Otherwise do not proceed.
+3. GameWeld backs up the exact original string (once, in private state), then
+   copies the new one-time session shim option. Paste it into Steam manually.
+4. Close the game and any WeMod client; Steam should save the launch option.
+5. Click **Play via Steam + DeckCheatz**. When GameWeld can verify the exact shim
+   is in the selected game's saved Launch Options, its UI will arm a token
+   bound to that AppID (10-minute expiry), then request a normal Steam launch.
+6. The Steam shim atomically consumes the token before executing DeckCheatz
+   with Steam's full original Proton/game command. All following launches,
+   whether through Steam or GameWeld, simply pass Steam's original command
+   through with no DeckCheatz; no background monitor is required. A crash,
+   SIGKILL or regular exit cannot leave the token armed after consumption.
+
+This is **behaviour restoration, NOT literal Steam Launch Options text
+restoration**. The persistent GameWeld shim remains in the launch options
+until the user uses **Restore original Steam launch option** and pastes the
+original back in Steam. Steam caches launch options while open, so GameWeld
+does not overwrite localconfig.vdf on each play session.
+
+For extra private command-line tests, without changing Steam:
+
+    python3 scripts/gameweld-deckcheatz-session.py install --appid 3008130
+    python3 scripts/gameweld-deckcheatz-session.py status --appid 3008130
+    python3 scripts/gameweld-deckcheatz-session.py verify --appid 3008130
+
+The source GUI's GameWeld shim verification is based on saved Steam config,
+which can lag the live Steam client. If it is not verified, the older
+**already-configured permanent DeckCheatz** Steam route remains available
+and is not automatically switched or described as temporary. No trainer
+attachment or gameplay effect is inferred from a Steam association result.
+
+This is still draft development and needs a real one-shot gameplay trial.
+Complex wrappers such as MangoHud, GameMode, Gamescope and arbitrary shell
+commands are intentionally not merged automatically, because their wrapper
+ordering and semantics cannot safely be inferred.
