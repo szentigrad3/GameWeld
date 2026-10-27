@@ -760,6 +760,10 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
         self.assertIn('button("Step 3 — Review prepared .NET prefix (read-only)","action")', ui)
         self.assertIn('button("Step 2 — Stage downloaded .NET prefix (isolated)","action")', ui)
         self.assertIn('pc2_steam_bridge_action("prefix-stage");', ui)
+        self.assertIn("Transfer reached 100%%. Validating ZIP and CRC; NOT SAVED", ui)
+        self.assertIn("ZIP verified and written to GameWeld cache", ui)
+        self.assertIn("Staging unavailable until validation completes.", ui)
+        self.assertIn("Step 1 complete — ZIP verified and saved", ui)
         self.assertIn(
             'if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage){'
             '\n        snprintf(j->appid,sizeof j->appid', ui)
