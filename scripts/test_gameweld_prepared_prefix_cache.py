@@ -248,7 +248,7 @@ class PreparedPrefixCacheTests(unittest.TestCase):
         self.assertEqual(len(list((self.cache_root / "rejected").glob("*.zip"))), 1)
         self.assertEqual(list((self.cache_root / "downloads").glob("*.zip")), [])
         report = cache.rejected_cache_status(self.cache_root)
-        self.assertIn("VERDICT: UPSTREAM ARCHIVE INCOMPATIBLE", report)
+        self.assertIn("VERDICT: BLOCKED BY GAMEWELD\'S CURRENT SAFE STAGING POLICY", report)
         self.assert_game_untouched()
 
     def test_other_unsafe_zip_is_not_retained_for_reuse(self):
