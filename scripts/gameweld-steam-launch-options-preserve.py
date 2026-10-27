@@ -174,6 +174,10 @@ def merge(original: str, recipe: str):
         parts = shlex.split(old)
     except ValueError:
         return None, "MANUAL_INVALID_QUOTES"
+    # Steam users often quote path/value tokens differently from the copied
+    # recipe; recognize the *same argv* without overwriting working options.
+    if parts == shlex.split(recipe):
+        return old, "ALREADY_CONFIGURED"
     if any("wemod" in p.lower() or "deckcheatz" in p.lower() for p in parts):
         return None, "MANUAL_EXISTING_TRAINER"
     if parts.count("%command%") == 1:
