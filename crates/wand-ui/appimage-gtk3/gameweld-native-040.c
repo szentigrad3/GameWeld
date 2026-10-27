@@ -2850,7 +2850,11 @@ static void *pc2_steam_launch_worker(void *data){
         if(!j->output[0])snprintf(j->output,sizeof j->output,
             "Launch result: FAILED (helper exited without reporting a status)");
     }
-    if(j->session_mode && strstr(j->output,"Launch result: FAILED")){
+    if(j->session_mode &&
+       !strstr(j->output,"Launch result: STEAM_ASSOCIATION_OBSERVED")){
+        /* Don't leave a pending DeckCheatz token available to an unrelated
+         * manual Steam launch after a failed or unconfirmed Play request.
+         * If Steam already consumed it, this explicit disarm is harmless. */
         char ignored[2048]={0};
         pc2_deckcheatz_session_helper("disarm",j->appid,NULL,ignored,sizeof ignored);
     }
