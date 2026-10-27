@@ -292,6 +292,10 @@ def recover_interrupted(
             record.get("staging_path") != str(staging)):
         raise ActivationBlocked("Journal paths differ from exact selected game")
     importer = module("gameweld-prepared-prefix-import.py", "gw_import_recovery")
+    # Even if the live directory disappeared between renames, a Wine process
+    # may still hold files from the renamed original prefix. Refuse recovery
+    # unless the selected game is idle, before any further directory rename.
+    game_idle(appid, current, proc_root=proc_root)
     if backup.is_symlink() or current.is_symlink() or staging.is_symlink():
         raise ActivationBlocked("Symlinked prefix recovery path is forbidden")
     if backup.exists():
