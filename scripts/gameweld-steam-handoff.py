@@ -13,6 +13,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import threading
 import tempfile
 import time
 
@@ -86,31 +87,42 @@ def run_launch(appid: str, *, steam: str | None = None,
                 stdin=subprocess.DEVNULL, stdout=output,
                 stderr=subprocess.STDOUT, start_new_session=True,
             )
-            print("Steam -applaunch command: STARTED", flush=True)
-            deadline = time.monotonic() + max(0, duration)
-            while True:
-                status = child.poll()
-                if status is not None and status != 0:
-                    print(f"Steam command exit status: {status}", flush=True)
-                    print("Launch result: FAILED (Steam command returned an error).", flush=True)
-                    return 3
-                observed = associated_process_count(appid)
-                if observed and (not previous or observed > previous):
-                    print(f"Steam app-ID associated processes: {observed}", flush=True)
-                    print("Launch result: STEAM_ASSOCIATION_OBSERVED", flush=True)
-                    print("Game executable, visible window and trainer: NOT VERIFIED.", flush=True)
-                    return 0
-                if time.monotonic() >= deadline:
-                    if status is None:
-                        print("Steam command: STILL RUNNING (left untouched).", flush=True)
-                    else:
+            try:
+                print("Steam -applaunch command: STARTED", flush=True)
+                deadline = time.monotonic() + max(0, duration)
+                while True:
+                    status = child.poll()
+                    if status is not None and status != 0:
                         print(f"Steam command exit status: {status}", flush=True)
-                    if observed:
-                        print(f"Existing app-ID associated processes: {observed}", flush=True)
-                    print("Launch result: UNCONFIRMED (no new game-associated process evidence).", flush=True)
-                    print("Steam may still be starting the game; check Steam or its game logs.", flush=True)
-                    return 2
-                time.sleep(0.5)
+                        print("Launch result: FAILED (Steam command returned an error).", flush=True)
+                        return 3
+                    observed = associated_process_count(appid)
+                    if observed and (not previous or observed > previous):
+                        print(f"Steam app-ID associated processes: {observed}", flush=True)
+                        print("Launch result: STEAM_ASSOCIATION_OBSERVED", flush=True)
+                        print("Game executable, visible window and trainer: NOT VERIFIED.", flush=True)
+                        return 0
+                    if time.monotonic() >= deadline:
+                        if status is None:
+                            print("Steam command: STILL RUNNING (left untouched).", flush=True)
+                        else:
+                            print(f"Steam command exit status: {status}", flush=True)
+                        if observed:
+                            print(f"Existing app-ID associated processes: {observed}", flush=True)
+                        print("Launch result: UNCONFIRMED (no new game-associated process evidence).", flush=True)
+                        print("Steam may still be starting the game; check Steam or its game logs.", flush=True)
+                        return 2
+                    time.sleep(0.5)
+            finally:
+                # Do not kill or block on Steam: the client can keep this
+                # command alive after GameWeld finishes its observation.
+                # A daemon waiter retains/reaps Popen without ResourceWarning.
+                if child.poll() is None:
+                    threading.Thread(
+                        target=child.wait,
+                        name="gameweld-steam-handoff-reaper",
+                        daemon=True,
+                    ).start()
     except OSError as exc:
         print(f"Steam command: COULD NOT EXECUTE ({type(exc).__name__}).", flush=True)
         print("Launch result: FAILED (Steam command could not be executed).", flush=True)
