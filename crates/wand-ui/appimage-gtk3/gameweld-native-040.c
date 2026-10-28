@@ -103,6 +103,7 @@ extern GtkWidget *gtk_button_new_with_label(const char *);
 extern void gtk_button_set_label(GtkButton *, const char *);
 extern GtkWidget *gtk_entry_new(void);
 extern void gtk_entry_set_text(GtkEntry *, const char *);
+extern void gtk_entry_set_max_length(GtkEntry *, int);
 extern void gtk_entry_set_placeholder_text(GtkEntry *, const char *);
 extern void gtk_entry_set_icon_from_icon_name(GtkEntry *, int, const char *);
 extern const char *gtk_entry_get_text(GtkEntry *);
@@ -120,6 +121,7 @@ extern GtkWidget *gtk_check_button_new_with_label(const char *);
 extern gboolean gtk_toggle_button_get_active(GtkToggleButton *);
 extern void gtk_toggle_button_set_active(GtkToggleButton *, gboolean);
 extern GtkWidget *gtk_message_dialog_new(GtkWindow *, int, int, int, const char *, ...);
+extern GtkWidget *gtk_dialog_new_with_buttons(const char *, GtkWindow *, int, const char *, int, ...);
 extern GtkWidget *gtk_file_chooser_dialog_new(const char *, GtkWindow *, int, const char *, int, ...);
 extern int gtk_dialog_run(GtkDialog *);
 extern GtkWidget *gtk_dialog_get_content_area(GtkDialog *);
@@ -6674,7 +6676,7 @@ static int pc2_deckcheatz_current_options_dialog(const char *appid,char *result,
     GtkWidget *dlg=gtk_dialog_new_with_buttons(
         "Custom Steam Launch Options for this session",(GtkWindow*)G.window,
         GTK_DIALOG_MODAL,"Cancel",GTK_RESPONSE_CANCEL,
-        "Use these options",GTK_RESPONSE_OK,NULL);
+        "Use these options",GTK_RESPONSE_YES,NULL);
     GtkWidget *area=gtk_dialog_get_content_area((GtkDialog*)dlg);
     GtkWidget *hint=label(
         "Verify the exact CURRENT text in Steam > Game Properties > Launch Options.\n"
@@ -6690,7 +6692,7 @@ static int pc2_deckcheatz_current_options_dialog(const char *appid,char *result,
     gtk_entry_set_text((GtkEntry*)entry,saved);
     pack(area,entry,0);
     gtk_widget_show_all(dlg);
-    int accepted=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_OK;
+    int accepted=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES;
     if(accepted){
         const char *value=gtk_entry_get_text((GtkEntry*)entry);
         if(strlen(value)>=cap)accepted=0;
