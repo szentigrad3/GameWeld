@@ -252,6 +252,85 @@ class LiveAttachTests(unittest.TestCase):
                 spawn.assert_not_called()
         self.unchanged()
 
+    def test_protected_host_and_overlay_processes_do_not_block_we_mod(self):
+        # Models the observed KDE/CachyOS /proc audit: unreadable desktop
+        # services and Steam overlay tasks are not Wine or WeMod clients.
+        names = [
+            "systemd", "(sd-pam)", "polkit-kde-auth", "arch-update",
+            "kwin_wayland", "gameoverlayui", "gameoverlayui",
+            "gameoverlayui", "gameoverlayui", "gameoverlayui",
+        ]
+        for i, name in enumerate(names):
+            p = self.proc / str(2001 + i)
+            p.mkdir()
+            (p / "environ").write_bytes(b"hidden-environment")
+            (p / "comm").write_text(name + "\\n")
+            (p / "cmdline").write_bytes(name.encode() + b"\\x00")
+        original = helper.read_env
+
+        def protect(proc):
+            if int(proc.name) >= 2001:
+                raise PermissionError("simulated protected desktop environment")
+            return original(proc)
+
+        with patch.object(helper, "read_env", side_effect=protect):
+            report, private = self.plan()
+            self.assertTrue(report["can_attempt_with_explicit_consent"])
+            self.assertEqual(report["unreadable_same_user_processes"], 0)
+            self.assertEqual(report["unreadable_recognized_host_processes"], 10)
+            self.assertEqual(report["matching_prefix_processes"], 1)
+            with patch.object(helper.subprocess, "Popen") as spawned:
+                spawned.return_value.pid = 54321
+                result = helper.launch(
+                    report, private, approved=True, state_root=self.root_state,
+                    proc_root=self.proc, uid=os.getuid())
+                self.assertEqual(result["pid"], 54321)
+                spawned.assert_called_once()
+        self.unchanged()
+
+    def test_host_name_cannot_hide_a_wemod_executable(self):
+        p = self.proc / "2001"
+        p.mkdir()
+        (p / "environ").write_bytes(b"hidden-environment")
+        (p / "comm").write_text("gameoverlayui\\n")
+        (p / "cmdline").write_bytes(b"/any/WeMod.exe\\x00")
+        original = helper.read_env
+
+        def protect(proc):
+            if proc.name == "2001":
+                raise PermissionError("cannot inspect matching Steam game overlay")
+            return original(proc)
+
+        with patch.object(helper, "read_env", side_effect=protect):
+            report, private = self.plan()
+            self.assertEqual(report["unreadable_same_user_processes"], 1)
+            self.assertEqual(report["unreadable_recognized_host_processes"], 0)
+            self.assertFalse(report["can_attempt_with_explicit_consent"])
+            with patch.object(helper.subprocess, "Popen") as spawned:
+                with self.assertRaisesRegex(helper.AttachBlocked, "clean live-session"):
+                    helper.launch(report, private, approved=True)
+                spawned.assert_not_called()
+        self.unchanged()
+
+    def test_unreadable_wine_process_still_blocks_handoff(self):
+        p = self.proc / "2001"
+        p.mkdir()
+        (p / "environ").write_bytes(b"hidden-environment")
+        (p / "comm").write_text("wineserver\\n")
+        (p / "cmdline").write_bytes(b"wineserver\\x00")
+        original = helper.read_env
+
+        def protect(proc):
+            if proc.name == "2001":
+                raise PermissionError("Wine environment inaccessible")
+            return original(proc)
+
+        with patch.object(helper, "read_env", side_effect=protect):
+            report, _ = self.plan()
+            self.assertEqual(report["unreadable_same_user_processes"], 1)
+            self.assertFalse(report["can_attempt_with_explicit_consent"])
+        self.unchanged()
+
     def test_unreadable_override_cannot_create_missing_game_session(self):
         self.make_proc(appid="999999")
         report, _ = helper.plan(
