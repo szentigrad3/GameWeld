@@ -31,7 +31,7 @@ CATEGORY_WORDS = {
     "filesystem_or_permission": re.compile(
         r"file not found|no such file|permission denied|directory|filesystem|path", re.I),
     "dependencies_or_modules": re.compile(
-        r"dll|dotnet|\\.net|module|importerror|runtime|mono|winetricks", re.I),
+        r"dll|dotnet|\.net|module|importerror|runtime|mono|winetricks", re.I),
     "gui_or_display": re.compile(r"tkinter|tclerror|display|wayland|x11|gtk|qt", re.I),
 }
 SAFE_EXCEPTIONS = (
@@ -159,7 +159,7 @@ def analyze_deckcheatz_interval(live: dict, after: dict, path: Path) -> dict:
     categories["unclassified_error_lines"] = sum(
         not any(rx.search(line) for rx in CATEGORY_WORDS.values())
         for line in error_lines)
-    exceptions = {name: sum(bool(re.search(r"\\b" + name + r"\\b", line))
+    exceptions = {name: sum(bool(re.search(r"\b" + name + r"\b", line))
                             for line in error_lines)
                   for name in SAFE_EXCEPTIONS}
     return {
