@@ -329,6 +329,22 @@ class PreserveTests(unittest.TestCase):
         self.assertEqual(backup.stat().st_mtime_ns, modified)
         self.unchanged()
 
+    def test_existing_original_conflict_never_overwrites_backup(self):
+        self.make_config("PROTON_LOG=1 %command% -dx11")
+        rc, _, error = self.run_main_with_fixture("--save-original")
+        self.assertEqual(rc, 0, error)
+        path = options.backup_file(APPID, ACCOUNT, self.backups)
+        backup_bytes = path.read_bytes()
+        self.make_config("MANGOHUD=1 %command% -dx11")
+        rc, result, error = self.run_main_with_fixture("--save-original")
+        self.assertEqual(rc, 2)
+        self.assertEqual(result, "")
+        self.assertIn("differs from Steam", error)
+        self.assertEqual(path.read_bytes(), backup_bytes)
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups),
+                         "PROTON_LOG=1 %command% -dx11")
+        self.unchanged()
+
     def test_preexisting_gameweld_state_can_be_public_but_backups_are_private(self):
         state = self.root / "preexisting-state"
         gw = state / "gameweld"
