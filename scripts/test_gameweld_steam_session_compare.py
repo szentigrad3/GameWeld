@@ -107,16 +107,16 @@ class SteamSessionCompareTests(unittest.TestCase):
 
     def test_bounded_interval_classifies_errors_without_leaking_raw_log(self):
         live, after = self.reports()
-        prefix = b"historical private log content\\n"
-        interval = (b"FileNotFoundError: /home/secret/DO_NOT_SHARE missing DLL\\n"
-                    b"Failed to attach WeMod to the game process\\n"
-                    b"ConnectionError: HTTPS download failed TOKEN=PRIVATE\\n"
-                    b"Traceback (most recent call last):\\n")
+        prefix = b"historical private log content\n"
+        interval = (b"FileNotFoundError: /home/secret/DO_NOT_SHARE missing DLL\n"
+                    b"Failed to attach WeMod to the game process\n"
+                    b"ConnectionError: HTTPS download failed TOKEN=PRIVATE\n"
+                    b"Traceback (most recent call last):\n")
         live["deckcheatz_logs"][0]["size_bytes"] = len(prefix)
         after["deckcheatz_logs"][0]["size_bytes"] = len(prefix) + len(interval)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "wemod.log"
-            path.write_bytes(prefix + interval + b"later session not in scope\\n")
+            path.write_bytes(prefix + interval + b"later session not in scope\n")
             outcome = compare.analyze_deckcheatz_interval(live, after, path)
         self.assertEqual(outcome["bytes_examined"], len(interval))
         self.assertGreaterEqual(outcome["lines_with_failure_keywords"], 3)
