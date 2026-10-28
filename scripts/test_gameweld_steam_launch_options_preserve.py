@@ -285,6 +285,84 @@ class PreserveTests(unittest.TestCase):
             options.load_backup(APPID, ACCOUNT, self.backups)
         self.assertEqual(self.file.read_bytes(), self.saved)
 
+    def test_legacy_empty_backup_migrates_to_separate_verified_current_snapshot(self):
+        legacy = options.backup_file(APPID, ACCOUNT, self.backups)
+        legacy.parent.mkdir(parents=True, mode=0o700)
+        legacy.write_text(json.dumps({
+            "version": 1, "appid": APPID, "account": ACCOUNT, "original": ""
+        }), encoding="utf-8")
+        legacy.chmod(0o600)
+        old_bytes = legacy.read_bytes()
+        old_mtime = legacy.stat().st_mtime_ns
+        self.make_config("")
+        rc, _, error = self.run_main_with_fixture("--save-original")
+        self.assertEqual(rc, 2, error)
+        current = options.verified_baseline_file(APPID, ACCOUNT, self.backups)
+        self.assertFalse(current.exists())
+        with self.assertRaisesRegex(options.Blocked, "unverified EMPTY original"):
+            options.load_backup(APPID, ACCOUNT, self.backups)
+        rc, output, error = self.run_main_with_fixture(
+            "--save-original", "--verified-empty-in-steam")
+        self.assertEqual(rc, 0, error)
+        parsed = json.loads(output)
+        self.assertEqual(parsed["result"], "VERIFIED_CURRENT_BASELINE_SAVED")
+        self.assertTrue(parsed["legacy_historical_original_unverified"])
+        self.assertEqual(current.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), "")
+        self.assertEqual(legacy.read_bytes(), old_bytes)
+        self.assertEqual(legacy.stat().st_mtime_ns, old_mtime)
+        rc, output, error = self.run_main_with_fixture(
+            "--save-original", "--verified-empty-in-steam")
+        self.assertEqual(rc, 0, error)
+        self.assertEqual(json.loads(output)["result"], "VERIFIED_CURRENT_BASELINE_REUSED")
+        self.assertEqual(legacy.read_bytes(), old_bytes)
+        self.unchanged()
+
+    def test_legacy_backup_nonempty_current_options_must_not_be_relabelled(self):
+        legacy = options.backup_file(APPID, ACCOUNT, self.backups)
+        legacy.parent.mkdir(parents=True, mode=0o700)
+        legacy.write_text(json.dumps({
+            "version": 1, "appid": APPID, "account": ACCOUNT, "original": ""
+        }), encoding="utf-8")
+        legacy.chmod(0o600)
+        original = legacy.read_bytes()
+        self.make_config("MANGOHUD=1 %command%")
+        rc, output, error = self.run_main_with_fixture(
+            "--save-original", "--verified-empty-in-steam")
+        self.assertEqual(rc, 2)
+        self.assertEqual(output, "")
+        self.assertIn("cannot be reconciled", error)
+        self.assertFalse(options.verified_baseline_file(
+            APPID, ACCOUNT, self.backups).exists())
+        self.assertEqual(legacy.read_bytes(), original)
+        self.unchanged()
+
+    def test_verified_baseline_refuses_legacy_tampering_or_symlink(self):
+        legacy = options.backup_file(APPID, ACCOUNT, self.backups)
+        legacy.parent.mkdir(parents=True, mode=0o700)
+        legacy.write_text(json.dumps({
+            "version": 1, "appid": APPID, "account": ACCOUNT, "original": ""
+        }), encoding="utf-8")
+        legacy.chmod(0o600)
+        self.make_config("")
+        path = options.save_backup(APPID, ACCOUNT, "", self.backups,
+                                   verified_empty=True)
+        self.assertEqual(path, options.verified_baseline_file(
+            APPID, ACCOUNT, self.backups))
+        baseline_bytes = path.read_bytes()
+        legacy.write_text(json.dumps({
+            "version": 1, "appid": APPID, "account": ACCOUNT,
+            "original": "", "note": "modified"
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(options.Blocked, "Legacy original changed"):
+            options.load_backup(APPID, ACCOUNT, self.backups)
+        self.assertEqual(path.read_bytes(), baseline_bytes)
+        path.unlink()
+        path.symlink_to(legacy)
+        with self.assertRaisesRegex(options.Blocked, "unsafe"):
+            options.load_backup(APPID, ACCOUNT, self.backups)
+        self.unchanged()
+
     def test_empty_backup_is_only_written_after_explicit_live_ui_check(self):
         with self.assertRaisesRegex(options.Blocked, "verified in the live Steam UI"):
             options.save_backup(APPID, ACCOUNT, "", self.backups)
