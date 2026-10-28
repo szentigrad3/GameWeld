@@ -172,6 +172,28 @@ def saved_compatibility_tool_state(appid: str, steam_root: Path | None = None) -
         return {"state": "unverified", "source": "saved_steam_compatibility"}
 
 
+def last_prefix_runtime_hint(appid: str, root: Path) -> dict:
+    """Read last prefix runtime evidence; NEVER claim it is Steam's live choice."""
+    result = {"state": "unverified",
+              "source": "existing_compatdata_config_info",
+              "current_steam_selection_verified": False}
+    config = root / "steamapps" / "compatdata" / appid / "config_info"
+    try:
+        if config.is_symlink() or not config.is_file() or config.stat().st_size > 65536:
+            return result
+        resolver = peer("gameweld-steam-shortcuts.py", "gw_stall_runtime_hint")
+        name, tool_root = resolver._compatdata_runtime_hint(config.parent)
+        if not name or not tool_root:
+            return result
+        # Report only an installation's basename, not private filesystem paths.
+        return {**result, "state": "prefix_runtime_resolved",
+                "tool_name": name[:100],
+                "launcher_file_present": (Path(tool_root) / "proton").is_file(),
+                "note": "Last prefix runtime, NOT current Steam Compatibility setting"}
+    except (OSError, ValueError, AttributeError):
+        return result
+
+
 def diagnose(appid: str, root: Path, install_dir: Path | None = None) -> dict:
     if not APPID.fullmatch(appid) or int(appid) >= 2**32:
         raise ValueError("Invalid Steam AppID")
@@ -196,6 +218,7 @@ def diagnose(appid: str, root: Path, install_dir: Path | None = None) -> dict:
     result["recognized_launcher_processes"] = recognized_launchers()
     result["saved_steam_launch_options"] = saved_steam_option_state(appid)
     result["saved_steam_compatibility"] = saved_compatibility_tool_state(appid, root)
+    result["last_prefix_runtime"] = last_prefix_runtime_hint(appid, root)
     result["pending_one_shot"] = pending_one_shot_state(appid)
     result["steam_events_historical_only"] = handoff.SteamLogProbe(root).summary(
         appid, historical=True)
