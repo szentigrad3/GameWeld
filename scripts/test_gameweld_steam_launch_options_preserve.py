@@ -302,7 +302,11 @@ class PreserveTests(unittest.TestCase):
         backup = options.save_backup(APPID, ACCOUNT, old, self.backups)
         self.assertEqual(stat.S_IMODE(backup.stat().st_mode), 0o600)
         self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), old)
-        with self.assertRaises(FileExistsError):
+        reused_path, reused = options.save_backup(
+            APPID, ACCOUNT, old, self.backups, return_status=True)
+        self.assertEqual(reused_path, backup)
+        self.assertTrue(reused)
+        with self.assertRaisesRegex(options.Blocked, "differs from Steam"):
             options.save_backup(APPID, ACCOUNT, RECIPE, self.backups)
         self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), old)
         self.assertEqual(self.file.read_bytes(), original)
