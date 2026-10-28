@@ -116,6 +116,26 @@ class LiveAttachTests(unittest.TestCase):
         self.assertEqual(os.stat(result["log"]).st_mode & 0o777, 0o600)
         self.unchanged()
 
+    def test_immediate_proton_exit_is_not_misreported_as_wemod_running(self):
+        report, private = self.plan()
+        class ExitChild:
+            pid = 43209
+            @staticmethod
+            def poll():
+                return 7
+        with patch.object(helper.subprocess, "Popen", return_value=ExitChild()):
+            result = helper.launch(
+                report, private, approved=True, state_root=self.root_state,
+                proc_root=self.proc, uid=os.getuid())
+        self.assertEqual(result["mode"], "EXPERIMENTAL_CLIENT_SUBPROCESS_EXITED_EARLY")
+        self.assertTrue(result["proton_subprocess_exited_early"])
+        self.assertEqual(result["proton_subprocess_early_exit_code"], 7)
+        self.assertFalse(result["wemod_window_verified"])
+        self.assertFalse(result["trainer_attachment_verified"])
+        self.assertFalse(result["steam_launch_options_changed"])
+        self.assertIn("NOT verified", result["message"].replace("NOT verified", "NOT verified"))
+        self.unchanged()
+
     def test_electron_gpu_fallback_changes_only_wemod_argv(self):
         report, private = self.plan()
         captured = []
