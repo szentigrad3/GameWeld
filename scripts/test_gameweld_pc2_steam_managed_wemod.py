@@ -213,6 +213,10 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('You explicitly accept up to 8 unreadable same-user process', GUI)
         self.assertIn('if(accepted==GTK_RESPONSE_YES)', GUI)
         self.assertIn('pc2_steam_wemod_attach_selected_ex(0,2,0);', GUI)
+        self.assertIn('pc2_deckcheatz_saved_readiness(g,NULL,readiness,sizeof readiness)', GUI)
+        self.assertIn('pc2_deckcheatz_session_helper("status",g->appid,NULL,pending,sizeof pending)', GUI)
+        self.assertIn('strstr(pending,"\\\"session_armed\\\": true")', GUI)
+        self.assertIn('GameWeld has not modified your existing Steam Launch Options.', GUI)
         self.assertIn('if(!game_is_steam(g)||game_is_steam_shortcut(g)||', GUI)
         self.assertIn('if(pc2_steam_wemod_attach_busy)return;', GUI)
 
