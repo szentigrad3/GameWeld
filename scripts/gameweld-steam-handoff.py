@@ -195,6 +195,48 @@ def _verified_game_dir(appid: str, requested: pathlib.Path | None) -> pathlib.Pa
         return None
 
 
+def game_session_lifecycle(appid: str, install_dir: pathlib.Path | None,
+                           *, root: str = "/proc") -> dict[str, object]:
+    """Read-only assessment of game/WeMod processes at a single instant.
+
+    A lingering WeMod process must not be interpreted as an active game.
+    Absence of on-disk game evidence is inconclusive, not proof of exit.
+    Nothing is killed, reaped, or modified by this inspector.
+    """
+    game = observed_game_executable_pids(appid, install_dir, root=root)
+    blockers, client_count = associated_non_client_processes(appid, root=root)
+    associated = associated_processes(appid, root=root)
+    return {
+        "steam_appid": appid,
+        "game_executable_candidates": len(game),
+        "wemod_only_wine_clients": client_count,
+        "other_appid_associated_processes": len(blockers),
+        "total_appid_associated_processes": len(associated),
+        "game_closed_verified": False,
+        "game_process_detection_conclusive": False,
+    }
+
+
+def print_game_lifecycle(report: dict[str, object]) -> None:
+    print("Read-only game executable candidates in selected Steam install: "
+          + str(report["game_executable_candidates"]), flush=True)
+    print("WeMod-only Wine clients associated with AppID: "
+          + str(report["wemod_only_wine_clients"]), flush=True)
+    print("Other AppID-associated processes: "
+          + str(report["other_appid_associated_processes"]), flush=True)
+    if (report["game_executable_candidates"] == 0 and
+            report["wemod_only_wine_clients"]):
+        print("Lifecycle assessment: WeMod is present but game EXE was not "
+              "verified. This can remain after closing the game.", flush=True)
+    elif report["game_executable_candidates"]:
+        print("Lifecycle assessment: a selected-game EXE was observed; do not "
+              "terminate its Wine session.", flush=True)
+    else:
+        print("Lifecycle assessment: no selected-game EXE verified; "
+              "game closure remains UNCONFIRMED.", flush=True)
+    print("No process was terminated or modified.", flush=True)
+
+
 def _process_game_target(tokens: list[bytes], cwd: pathlib.Path | None,
                          install_dir: pathlib.Path) -> bool:
     """Verify a concrete on-disk Windows EXE in the selected game directory.
@@ -619,6 +661,8 @@ def main() -> int:
                         help="Manifest-backed Steam install directory for read-only game EXE detection")
     parser.add_argument("--steam-root", type=pathlib.Path,
                         help="Steam client root to inspect read-only logs")
+    parser.add_argument("--lifecycle", action="store_true",
+                        help="Summarize game EXE versus residual WeMod/Wine processes without killing them")
     parser.add_argument("--steam-log-summary", action="store_true",
                         help="Report sanitized, AppID-scoped Steam log event counts")
     parser.add_argument("--details", action="store_true",
@@ -647,6 +691,8 @@ def main() -> int:
                       f"comm={comm} executable={executable} PPID={parent} "
                       f"state={state} windows_target_hint={target}", flush=True)
             print("Process roles and Windows target hints are heuristic; no game executable verified.", flush=True)
+        if args.lifecycle:
+            print_game_lifecycle(game_session_lifecycle(args.appid, args.install_dir))
         if args.steam_log_summary:
             for note in SteamLogProbe(args.steam_root).summary(args.appid, historical=True):
                 print(note, flush=True)
