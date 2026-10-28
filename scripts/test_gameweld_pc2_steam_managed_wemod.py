@@ -220,6 +220,24 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('if(!game_is_steam(g)||game_is_steam_shortcut(g)||', GUI)
         self.assertIn('if(pc2_steam_wemod_attach_busy)return;', GUI)
 
+    def test_v2_gpu_safe_development_mode_is_explicit_and_only_we_mod_changes(self):
+        self.assertIn("--enable-v2-wemod-gpu-safe-test", RUNNER)
+        self.assertIn("unset GAMEWELD_PC2_WEMOD_SOFTWARE_RENDERING", RUNNER)
+        self.assertIn("export GAMEWELD_PC2_WEMOD_SOFTWARE_RENDERING=1", RUNNER)
+        self.assertIn("pc2_wand_v2_gpu_safe_allowed(void)", GUI)
+        self.assertIn('strcmp(s, "Play with WeMod (v2 GPU-safe test)")', GUI)
+        self.assertIn("Play with WeMod (v2 GPU-safe test)", GUI)
+        self.assertIn("Only WeMod.exe receives the Electron flags;", GUI)
+        self.assertIn('if(pc2_wand_v2_gpu_safe_allowed()){', GUI)
+        self.assertIn('"--client-software-rendering"', GUI)
+        self.assertIn("Steam will run your game with its existing graphics settings", GUI)
+        self.assertIn("No existing Wine or Proton processes will be killed.", GUI)
+        # The prepared game launch itself never receives client flags.
+        pos=GUI.index('static void *pc2_steam_launch_worker(void *data)')
+        end=GUI.index('static int pc2_deckcheatz_session_helper(', pos) if 'static int pc2_deckcheatz_session_helper(' in GUI[pos:] else len(GUI)
+        self.assertNotIn('--client-software-rendering', GUI[pos:end])
+        self.assertNotIn('steam -applaunch', RUNNER)
+
     def test_explicit_steam_url_fallback_is_not_automatic(self):
         self.assertIn('button("Launch via Steam URL (fallback)"', GUI)
         self.assertIn('on_pc2_steam_uri_fallback,NULL,NULL,0', GUI)
