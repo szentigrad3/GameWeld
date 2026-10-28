@@ -3235,13 +3235,15 @@ static void pc2_deckcheatz_steam_onebutton(void){
     if(!strcmp(state,"needs_setup")){
         GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
-            "Steam Launch Options were discovered automatically for %.140s.\n\n"
-            "They do not yet contain a verified DeckCheatz Steam wrapper. "
-            "Steam has no supported per-launch override for this installed game's "
-            "%%command%% wrapper. GameWeld will NOT bypass Steam or overwrite "
-            "the running client's configuration.\n\n"
-            "Create a safe, backed-up Steam wrapper setup proposal now? "
-            "One-time Steam Properties setup is still required.",
+            "Steam launches %.140s normally, but WeMod is not connected to Steam.\n\n"
+            "GameWeld automatically read this game's saved Steam Launch Options: "
+            "no verified DeckCheatz %%command%% wrapper is installed. "
+            "Steam will therefore NOT launch WeMod from GameWeld.\n\n"
+            "Prepare the backed-up, one-time Steam wrapper setup? "
+            "GameWeld copies the exact combined setting so you do NOT need "
+            "to enter existing launch commands. You will still need to paste "
+            "it into Steam Properties once. No game, prefix, or Steam setting "
+            "will be changed automatically.",
             g->name);
         int ok=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES;
         gtk_widget_destroy(dlg);
