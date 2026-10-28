@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(store.load_session(record.id).unwrap().id, record.id);
         assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
         assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
-        let leftovers = fs::read_dir(root.join("sessions")).unwrap().filter_map(Result::ok)
+        let leftovers = fs::read_dir(root.join("sessions")).unwrap().filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) != Some("json"))
             .count();
         assert_eq!(leftovers, 0);
