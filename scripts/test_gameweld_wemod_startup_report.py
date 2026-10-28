@@ -86,6 +86,19 @@ class WeModStartupReportTests(unittest.TestCase):
                 self.assertTrue(result["failure_category_counts"]["other_failure_keyword"])
                 self.assertFalse(result["raw_log_content_included"])
 
+    def test_repeated_gpu_errors_reported_only_as_fixed_categories(self):
+        log = self.log("1793192433761672762",
+                       (b"[ERROR:gpu_process_host.cc] GPU process launch failed: error_code=99 SECRET=one\\n"
+                        b"[ERROR:gpu_process_host.cc] GPU process launch failed: error_code=99 SECRET=two\\n"
+                        b"[FATAL:gpu_data_manager_impl_private.cc] GPU process isn't usable. Goodbye.\\n"))
+        out = mod.summarize("3008130", log)
+        self.assertEqual(out["gpu_failure_signature_counts"]["gpu_process_launch_failed"], 2)
+        self.assertEqual(out["gpu_failure_signature_counts"]["gpu_process_not_usable"], 1)
+        self.assertTrue(out["category_counts_may_overlap_or_repeat"])
+        self.assertFalse(out["raw_log_content_included"])
+        self.assertNotIn("SECRET", str(out))
+        self.assertNotIn("error_code=99", str(out))
+
     def test_invalid_appid_and_size_fail_closed(self):
         good = self.log("1793192433761672762", b"error\n")
         with self.assertRaisesRegex(mod.Blocked, "Invalid Steam AppID"):
