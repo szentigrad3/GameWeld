@@ -22,5 +22,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Check and test wand-state
         run: |
-          cargo test --locked -p wand-state --lib
-          cargo check --locked -p wandd
+          cargo test -p wand-state --lib
+          cargo check -p wandd
