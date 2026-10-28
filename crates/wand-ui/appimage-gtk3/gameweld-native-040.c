@@ -6404,15 +6404,19 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     if(!yes){log_line("Steam Launch Options merge cancelled; no backup or clipboard changes.");goto done;}
     if(!pc2_steam_option_helper_run("--save-original",g->appid,launcher,
                                     saved,65536,verified_empty,session_wrapper)){
-        pc2_steam_option_message("Original-command backup not saved",
-            "GameWeld refuses to overwrite an existing backup or copy an "
-            "unprotected Steam replacement. Your Steam settings are unchanged.",saved);
+        pc2_steam_option_message("Steam option snapshot not saved",
+            "GameWeld could not validate the saved backup and CURRENT Steam configuration. "
+            "It did not replace the legacy backup, modify Steam or copy a new launch command. "
+            "Check the details below before retrying.",saved);
         goto done;
     }
     json_string(saved,"proposed_launch_option",confirmed,36000);
     json_string(saved,"original_launch_option",confirmed_original,18000);
-    int backup_reused=strstr(saved,"\"ORIGINAL_BACKUP_REUSED\"")!=NULL;
-    int backup_created=strstr(saved,"\"ORIGINAL_BACKUP_SAVED\"")!=NULL;
+    int current_baseline=strstr(saved,"\"VERIFIED_CURRENT_BASELINE_")!=NULL;
+    int backup_reused=strstr(saved,"\"ORIGINAL_BACKUP_REUSED\"")!=NULL ||
+                      strstr(saved,"\"VERIFIED_CURRENT_BASELINE_REUSED\"")!=NULL;
+    int backup_created=strstr(saved,"\"ORIGINAL_BACKUP_SAVED\"")!=NULL ||
+                       strstr(saved,"\"VERIFIED_CURRENT_BASELINE_SAVED\"")!=NULL;
     if(strcmp(original,confirmed_original) || strcmp(merged,confirmed) ||
        (!backup_created && !backup_reused)){
         pc2_steam_option_message("Steam options changed during preparation",
@@ -6424,11 +6428,19 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     if(!clip){log_line("Steam option protection: clipboard unavailable; Steam unchanged.");goto done;}
     gtk_clipboard_set_text(clip,merged,-1);
     pc2_steam_option_message(
-        backup_reused?"Existing original backup verified; combined command copied":
-        "Original options backed up; combined command copied",
-        "The protected original Steam Launch Options backup is safely retained. "
-        "Paste the combined command into this game's Steam Properties > General > Launch Options. "
-        "Restore Original can recover the saved original. GameWeld did not edit Steam.",merged);
+        current_baseline?
+          "Current empty Steam options verified; legacy record preserved":
+          backup_reused?"Existing original backup verified; combined command copied":
+          "Original options backed up; combined command copied",
+        current_baseline?
+          "GameWeld preserved the older, UNVERIFIED historical backup unchanged "
+          "and stored a separate snapshot of the CURRENT empty Steam options you verified. "
+          "This does NOT establish what your launch command was before the old backup. "
+          "The proposed command is on your clipboard. Paste it into this game's "
+          "Steam Properties > General > Launch Options. GameWeld did not edit Steam.":
+          "The protected original Steam Launch Options backup is safely retained. "
+          "Paste the combined command into this game's Steam Properties > General > Launch Options. "
+          "Restore Original can recover the saved original. GameWeld did not edit Steam.",merged);
     log_line("Steam AppID %s: %s; copied safe combined command; Steam unchanged.",
              g->appid,backup_reused?"verified existing original backup":
              "saved a new original backup");
