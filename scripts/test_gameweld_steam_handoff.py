@@ -40,6 +40,45 @@ class SteamHandoffTests(unittest.TestCase):
             result = steam.run_launch(*args, **kwargs)
         return result, buffer.getvalue()
 
+    def test_read_only_details_identify_appid_helper_without_exposing_environment(self):
+        proc = self.root / "proc"
+        proc.mkdir()
+        process = proc / "12345"
+        process.mkdir()
+        (process / "environ").write_bytes(
+            b"SECRET_TOKEN=do-not-display\0SteamAppId=3008130\0")
+        (process / "comm").write_text("steamwebhelper\n")
+        (process / "exe").symlink_to("/opt/steam/steamwebhelper")
+        self.assertEqual(steam.associated_process_count("3008130", str(proc)), 1)
+        details = steam.associated_process_details("3008130", str(proc))
+        self.assertEqual(details, [
+            (12345, "steamwebhelper", "steamwebhelper", "steam_helper")])
+        self.assertNotIn("do-not-display", repr(details))
+        self.assertEqual(steam.associated_process_details("3008131", str(proc)), [])
+
+    def test_read_only_details_do_not_claim_game_identity(self):
+        proc = self.root / "proc"
+        proc.mkdir()
+        process = proc / "456"
+        process.mkdir()
+        (process / "environ").write_bytes(b"SteamGameId=3008130\0")
+        (process / "comm").write_text("DyingLight.exe\n")
+        (process / "exe").symlink_to("/opt/Steam/DyingLight.exe")
+        self.assertEqual(steam.associated_process_details("3008130", str(proc)),
+                         [(456, "DyingLight.exe", "DyingLight.exe",
+                           "windows_executable_candidate")])
+
+    def test_read_only_details_redact_untrusted_process_names(self):
+        proc = self.root / "proc"
+        proc.mkdir()
+        process = proc / "777"
+        process.mkdir()
+        (process / "environ").write_bytes(b"STEAM_COMPAT_APP_ID=3008130\0")
+        (process / "comm").write_text("secret /home/user\n")
+        details = steam.associated_process_details("3008130", str(proc))
+        self.assertEqual(details[0][1], "redacted")
+        self.assertEqual(details[0][2], "unavailable")
+
     def test_app_id_validation(self):
         for value in ("", "0", "01", " 1", "1;touch /tmp/x", "4294967296", "-1", "abc"):
             self.assertFalse(steam.valid_appid(value), value)
