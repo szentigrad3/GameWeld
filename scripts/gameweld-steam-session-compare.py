@@ -9,10 +9,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import re
 import stat
 
 MAX_JSON_BYTES = 1048576
+MAX_LOG_SPAN_BYTES = 65536
+MAX_LOG_FILE_BYTES = 67108864
+
+# Only these fixed, non-user-controlled category labels enter the output.
+# A line can match more than one category; the raw line NEVER enters JSON.
+ERROR_WORDS = re.compile(
+    r"traceback|exception|error|fail(?:ed|ure)?|fatal|not found|"
+    r"missing|unable|cannot|could not|timed out|permission denied", re.I)
+CATEGORY_WORDS = {
+    "steam_or_proton": re.compile(r"steam|proton|compatdata|wine|wineserver", re.I),
+    "game_or_process": re.compile(r"game|process|spawn|launch|exit|returncode", re.I),
+    "wemod_or_trainer": re.compile(r"wemod|trainer|inject|attach", re.I),
+    "network_or_download": re.compile(r"https?|ssl|connection|timeout|download|request|dns", re.I),
+    "filesystem_or_permission": re.compile(
+        r"file not found|no such file|permission denied|directory|filesystem|path", re.I),
+    "dependencies_or_modules": re.compile(
+        r"dll|dotnet|\\.net|module|importerror|runtime|mono|winetricks", re.I),
+    "gui_or_display": re.compile(r"tkinter|tclerror|display|wayland|x11|gtk|qt", re.I),
+}
+SAFE_EXCEPTIONS = (
+    "FileNotFoundError", "PermissionError", "ModuleNotFoundError",
+    "ImportError", "RuntimeError", "ValueError", "OSError",
+    "CalledProcessError", "TclError", "TimeoutError",
+    "ConnectionError", "KeyError", "TypeError"
+)
 
 
 class CompareBlocked(ValueError):
@@ -95,6 +122,63 @@ def log_delta(live: dict, after: dict) -> dict:
     }
 
 
+def analyze_deckcheatz_interval(live: dict, after: dict, path: Path) -> dict:
+    """Redacted labels from a bounded appended log region, not a log export.
+
+    Older snapshots have no log inode/hash evidence. Therefore offset matching
+    is a candidate interval only, even if size and timestamps are consistent.
+    """
+    a, b = first_log(live), first_log(after)
+    if not a or not b:
+        raise CompareBlocked("One unambiguous DeckCheatz log in each report is required")
+    begin, end = a.get("size_bytes"), b.get("size_bytes")
+    if (type(begin) is not int or type(end) is not int
+            or begin < 0 or end < begin or end - begin > MAX_LOG_SPAN_BYTES):
+        raise CompareBlocked("Logged interval is invalid or exceeds the 64 KiB safety bound")
+    if path.is_symlink():
+        raise CompareBlocked("Refusing symlinked DeckCheatz log")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        st = os.fstat(fd)
+        if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid()
+                or st.st_size > MAX_LOG_FILE_BYTES or st.st_size < end):
+            raise CompareBlocked("Log is unsafe, oversized, or shorter than the saved interval")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            stream.seek(begin)
+            chunk = stream.read(end - begin + 1)
+        if len(chunk) != end - begin:
+            raise CompareBlocked("Saved log interval could not be read exactly")
+    finally:
+        os.close(fd)
+    # Logs may have been rotated or edited since the snapshots. Do not
+    # label the region as provably caused by this launch.
+    lines = chunk.decode("utf-8", errors="replace").splitlines()
+    error_lines = [line[:4096] for line in lines if ERROR_WORDS.search(line[:4096])]
+    categories = {key: sum(bool(rx.search(line)) for line in error_lines)
+                  for key, rx in CATEGORY_WORDS.items()}
+    categories["unclassified_error_lines"] = sum(
+        not any(rx.search(line) for rx in CATEGORY_WORDS.values())
+        for line in error_lines)
+    exceptions = {name: sum(bool(re.search(r"\\b" + name + r"\\b", line))
+                            for line in error_lines)
+                  for name in SAFE_EXCEPTIONS}
+    return {
+        "state": "candidate_saved_byte_interval_redacted",
+        "bytes_examined": len(chunk),
+        "lines_examined": len(lines),
+        "lines_with_failure_keywords": len(error_lines),
+        "error_line_category_counts": categories,
+        "allowlisted_exception_type_counts": {k: v for k, v in exceptions.items() if v},
+        "source_bytes_were_unchanged_since_snapshots_verified": False,
+        "steam_game_causality_verified": False,
+        "trainer_attachment_verified": False,
+        "raw_log_content_included": False,
+        "note": ("Offsets are derived from the two saved reports, but those older reports "
+                 "did not fingerprint the log. A rotated/replaced log cannot be ruled out; "
+                 "category counts are only diagnostic hints, not root-cause proof."),
+    }
+
+
 def compare(live: dict, after: dict) -> dict:
     appid = live.get("steam_appid")
     if (not isinstance(appid, str) or not appid.isdecimal()
@@ -150,9 +234,21 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--live", type=Path, required=True)
     p.add_argument("--after-exit", type=Path, required=True)
+    p.add_argument("--inspect-log-range", action="store_true",
+                   help="read only the log bytes between snapshots, report redacted categories")
+    p.add_argument("--log-path", type=Path,
+                   help="optional DeckCheatz wemod.log path (only with --inspect-log-range)")
     args = p.parse_args(argv)
+    if args.log_path and not args.inspect_log_range:
+        p.error("--log-path requires --inspect-log-range")
     try:
-        result = compare(read_snapshot(args.live), read_snapshot(args.after_exit))
+        live, after = read_snapshot(args.live), read_snapshot(args.after_exit)
+        result = compare(live, after)
+        if args.inspect_log_range:
+            path = (args.log_path if args.log_path is not None else
+                    Path.home() / ".local/share/gameweld/deckcheatz/wemod.log")
+            result["deckcheatz_log_interval_triage"] = analyze_deckcheatz_interval(
+                live, after, path)
     except (OSError, CompareBlocked) as exc:
         p.exit(2, "GameWeld session comparison BLOCKED: " + str(exc) + "\n")
     print(json.dumps(result, indent=2))
