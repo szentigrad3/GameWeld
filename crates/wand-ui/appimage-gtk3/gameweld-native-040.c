@@ -3529,10 +3529,14 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
         j->output[0]?j->output:"No report from helper.");
     const int wemod_existing = strstr(j->output,
         "\"wemod_already_visible\": true") != NULL;
+    const int proton_exited_early = j->live && strstr(j->output,
+        "\"proton_subprocess_exited_early\": true") != NULL;
     if(matching&&G.library_detail_status)
         set_label(G.library_detail_status,
-            j->live?(j->ok?
-                "WeMod client process requested; game attachment NOT VERIFIED.":
+            j->live?(proton_exited_early?
+                "Proton exited early; WeMod was not verified running. Check startup report.":
+                j->ok?
+                "Proton helper started; WeMod window and trainer attachment NOT VERIFIED.":
                 "WeMod client handoff BLOCKED. No game or Steam settings changed by GameWeld.") :
             wemod_existing?
                 "WeMod.exe is already running; no duplicate started. Open WeMod to connect to the game. Attachment UNVERIFIED.":
@@ -3559,7 +3563,7 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
         if(consent==GTK_RESPONSE_YES)pc2_steam_wemod_attach_selected(1);
     }else{
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
-            GTK_DIALOG_MODAL,j->ok?GTK_MESSAGE_INFO:GTK_MESSAGE_QUESTION,
+            GTK_DIALOG_MODAL,(j->ok&&!proton_exited_early)?GTK_MESSAGE_INFO:GTK_MESSAGE_QUESTION,
             GTK_BUTTONS_OK,wemod_existing?
                 "WeMod.exe is already running in the selected prefix.\n\n"
                 "GameWeld did not start or kill another copy. An existing WeMod "
@@ -3569,7 +3573,8 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
                 "test connection manually.\n\n"
                 "Read-only details:\n%.2600s":
                 "WeMod %s\n\n%.2800s\n\n"
-                "Steam Launch Options unchanged. Trainer attachment UNVERIFIED.",
+                "Steam Launch Options unchanged. Trainer attachment UNVERIFIED. "
+                "If WeMod did not open, run scripts/gameweld-wemod-startup-report.py --appid 3008130.",
             wemod_existing?(j->output[0]?j->output:"Helper returned no output."):
                 (j->live?"handoff response":"preview"),
             j->output[0]?j->output:"Helper returned no output.");
