@@ -105,6 +105,47 @@ class SteamSessionCompareTests(unittest.TestCase):
         self.assertEqual(outcome["deckcheatz_log_changes"]["state"],
                          "log_replaced_truncated_or_unverifiable")
 
+    def test_bounded_interval_classifies_errors_without_leaking_raw_log(self):
+        live, after = self.reports()
+        prefix = b"historical private log content\\n"
+        interval = (b"FileNotFoundError: /home/secret/DO_NOT_SHARE missing DLL\\n"
+                    b"Failed to attach WeMod to the game process\\n"
+                    b"ConnectionError: HTTPS download failed TOKEN=PRIVATE\\n"
+                    b"Traceback (most recent call last):\\n")
+        live["deckcheatz_logs"][0]["size_bytes"] = len(prefix)
+        after["deckcheatz_logs"][0]["size_bytes"] = len(prefix) + len(interval)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wemod.log"
+            path.write_bytes(prefix + interval + b"later session not in scope\\n")
+            outcome = compare.analyze_deckcheatz_interval(live, after, path)
+        self.assertEqual(outcome["bytes_examined"], len(interval))
+        self.assertGreaterEqual(outcome["lines_with_failure_keywords"], 3)
+        self.assertGreater(outcome["error_line_category_counts"]["wemod_or_trainer"], 0)
+        self.assertGreater(outcome["error_line_category_counts"]["filesystem_or_permission"], 0)
+        self.assertEqual(outcome["allowlisted_exception_type_counts"]["FileNotFoundError"], 1)
+        self.assertFalse(outcome["source_bytes_were_unchanged_since_snapshots_verified"])
+        self.assertFalse(outcome["raw_log_content_included"])
+        self.assertNotIn("DO_NOT_SHARE", str(outcome))
+        self.assertNotIn("TOKEN=PRIVATE", str(outcome))
+
+    def test_log_interval_refuses_symlinks_oversize_and_truncated_logs(self):
+        live, after = self.reports()
+        live["deckcheatz_logs"][0]["size_bytes"] = 0
+        after["deckcheatz_logs"][0]["size_bytes"] = 10
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wemod.log"
+            path.write_bytes(b"abc")
+            with self.assertRaisesRegex(compare.CompareBlocked, "shorter"):
+                compare.analyze_deckcheatz_interval(live, after, path)
+            path.write_bytes(b"ten bytes!")
+            alias = Path(tmp) / "alias"
+            alias.symlink_to(path)
+            with self.assertRaisesRegex(compare.CompareBlocked, "symlinked"):
+                compare.analyze_deckcheatz_interval(live, after, alias)
+            after["deckcheatz_logs"][0]["size_bytes"] = compare.MAX_LOG_SPAN_BYTES + 1
+            with self.assertRaisesRegex(compare.CompareBlocked, "64 KiB"):
+                compare.analyze_deckcheatz_interval(live, after, path)
+
     def test_snapshot_path_limit_symlink_and_invalid_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
