@@ -198,11 +198,12 @@ def choose_exe(install: Path, selected: Path | None = None, *,
                 except ValueError:
                     break
             else:
-                # Don't misidentify utilities or launchers as the game binary.
-                if not set(name_parts) & {"launcher", "setup", "uninstall",
-                                          "crashreporter", "settings", "redist"}:
-                    strong.append(candidate)
-        if len(strong) == 1:
+                # Any second title-matched .exe is ambiguous, even if its name
+                # says "Launcher". Never silently ignore that competing target.
+                strong.append(candidate)
+        if len(strong) == 1 and not set(words(strong[0].stem)) & {
+                "launcher", "setup", "uninstall", "crashreporter",
+                "settings", "redist"}:
             return strong[0]
     # A generic game might have separate launcher/tools/bootstrap exe files.
     # The first/x64 path is NEVER an acceptable automatic fallback.
