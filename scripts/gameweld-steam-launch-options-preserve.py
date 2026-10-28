@@ -246,7 +246,12 @@ def backup_file(appid: str, account: str, root: Path | None):
     return state / "gameweld/steam-option-backups" / account / (appid + ".json")
 
 def save_backup(appid: str, account: str, old: str, root: Path | None = None,
-                *, verified_empty: bool = False):
+                *, verified_empty: bool = False, return_status: bool = False):
+    """Create a private original once, or reuse a validated exact match.
+
+    Existing backups are NEVER replaced. A changed original is a conflict,
+    not permission to overwrite history. Exact-match retries are idempotent.
+    """
     if old == "" and not verified_empty:
         raise Blocked("Empty Steam original must be verified in the live Steam UI "
                       "before a restorable backup can be created")
@@ -270,20 +275,47 @@ def save_backup(appid: str, account: str, old: str, root: Path | None = None,
             raise Blocked("Private Steam backup directory exposes other users")
     payload = {"version": 1, "appid": appid, "account": account, "original": old,
                "live_empty_confirmed": bool(old == "" and verified_empty)}
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-                 getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                     getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError:
+        # Must read and validate the actual existing record before reporting
+        # a successful retry. Never truncate it or create a new backup.
+        saved_original = load_backup(appid, account, root)
+        if saved_original != old:
+            raise Blocked(
+                "Existing original-command backup differs from Steam's saved "
+                "Launch Options. The original backup is protected and unchanged; "
+                "use Restore Original or review this game's Steam Properties "
+                "before trying setup again.")
+        return (path, True) if return_status else path
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
         json.dump(payload, stream, ensure_ascii=False, indent=2)
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
-    return path
+    return (path, False) if return_status else path
 
 def load_backup(appid: str, account: str, root: Path | None = None) -> str:
     path = backup_file(appid, account, root)
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 100000:
+    if path.is_symlink() or not path.is_file():
         raise Blocked("Original options backup missing or unsafe")
-    value = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) & 0o077
+                    or info.st_size > 100000):
+                raise Blocked("Original options backup has unsafe permissions or size")
+            raw = stream.read(100001)
+        if len(raw) > 100000:
+            raise Blocked("Original options backup is oversized")
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise Blocked("Existing original-command backup is invalid; no changes made") from exc
+    if not isinstance(value, dict):
+        raise Blocked("Existing original-command backup is not a JSON object")
     if (value.get("version") != 1 or value.get("appid") != appid or
             value.get("account") != account or not isinstance(value.get("original"), str)):
         raise Blocked("Backup metadata does not match selected account and game")
@@ -344,9 +376,14 @@ def main(argv=None):
                 if proposed is None:
                     raise Blocked("Steam Launch Options have unsupported syntax; "
                                   "cannot safely back up an unverified merge.")
-                result["backup_file"] = str(save_backup(
+                path, reused = save_backup(
                     args.appid, account, old,
-                    verified_empty=args.verified_empty_in_steam))
+                    verified_empty=args.verified_empty_in_steam,
+                    return_status=True)
+                result["backup_file"] = str(path)
+                result["backup_reused"] = reused
+                result["result"] = ("ORIGINAL_BACKUP_REUSED" if reused
+                                    else "ORIGINAL_BACKUP_SAVED")
         if args.format == "text":
             print(result.get("proposed_launch_option") or result.get("original_launch_option") or "")
         else:
