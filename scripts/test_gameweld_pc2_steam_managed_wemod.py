@@ -39,6 +39,8 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_steam_onebutton()", GUI)
         self.assertIn("static void pc2_deckcheatz_steam_onebutton(void){", GUI)
         self.assertIn('"gameweld-deckcheatz-steam-readiness.py"', GUI)
+        self.assertIn('"--compat-steam-root",', GUI)
+        self.assertIn('pc2_deckcheatz_folder(g->steam_root)', GUI)
         self.assertIn('pc2_steam_launch_selected(1);', GUI)
         self.assertIn('if(ok)on_pc2_deckcheatz_setup_session(NULL,NULL);', GUI)
         self.assertIn('if(j->resume_mode==2)pc2_deckcheatz_steam_onebutton();', GUI)
