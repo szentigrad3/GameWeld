@@ -89,7 +89,7 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
             "static void on_pc2_bridge_setup(GtkButton*b,void*d){",
         )
         steam = function_body(
-            "static void pc2_steam_launch_selected(int expect_deckcheatz){",
+            "static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_uri){",
             "static void on_pc2_steam_game_only(GtkButton*b,void*d){",
         )
         self.assertIn('pc2_steam_wemod_allowed()?', apply)
