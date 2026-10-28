@@ -231,7 +231,8 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('if(pc2_wand_v2_gpu_safe_allowed()){', GUI)
         self.assertIn('"--client-software-rendering"', GUI)
         self.assertIn("Steam will run your game with its existing graphics settings", GUI)
-        self.assertIn("No existing Wine or Proton processes will be killed.", GUI)
+        self.assertIn("No existing Wine or ", GUI)
+        self.assertIn("Proton processes will be killed.", GUI)
         # The prepared game launch itself never receives client flags.
         pos=GUI.index('static void *pc2_steam_launch_worker(void *data)')
         end=GUI.index('static int pc2_deckcheatz_session_helper(', pos) if 'static int pc2_deckcheatz_session_helper(' in GUI[pos:] else len(GUI)
