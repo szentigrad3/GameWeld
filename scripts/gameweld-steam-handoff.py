@@ -134,15 +134,19 @@ class SteamLogProbe:
                 start = identity[2] - LOG_READ_CAP
                 output.append(f"Steam log {name}: appended data exceeded safety window.")
             try:
-                with path.open("rb") as stream:
+                flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                fd = os.open(path, flags)
+                with os.fdopen(fd, "rb") as stream:
                     if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                         continue
+                    stream.seek(start - 1 if start else 0)
+                    previous_byte = stream.read(1) if start else b"\n"
                     stream.seek(start)
                     data = stream.read(LOG_READ_CAP)
             except OSError:
                 output.append(f"Steam log {name}: unreadable; inconclusive.")
                 continue
-            if start:
+            if start and previous_byte != b"\n":
                 first_break = data.find(b"\n")
                 data = data[first_break + 1:] if first_break >= 0 else b""
             kinds = {}
