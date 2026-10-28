@@ -2829,7 +2829,8 @@ static gboolean pc2_steam_launch_done(gpointer data){
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
             "Steam launch not verified for %.140s.\n\n%.2100s\n\n"
-            "WeMod was NOT started. Use the separate WeMod button once the game is running.",
+            "GameWeld did NOT start another WeMod client. An existing WeMod process may still be running. "
+            "Once the game is visibly running, use the separate WeMod check button.",
             j->game_name,j->output);
         gtk_dialog_run((GtkDialog*)notice);gtk_widget_destroy(notice);
     }
