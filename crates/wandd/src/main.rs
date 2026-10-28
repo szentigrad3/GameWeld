@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::{
     fs,
     io::Write,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -1419,19 +1419,132 @@ async fn serve_client(stream: UnixStream, app: App) -> Result<()> {
     Ok(())
 }
 
+/// Ensure socket setup cannot change another owner's directory or unlink
+/// a live daemon. Caller binds under a restrictive umask after this check.
 fn prepare_socket(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-        fs::set_permissions(
-            parent,
-            fs::Permissions::from_mode(0o700),
-        )?;
-    }
+    use anyhow::{bail, Context};
 
-    if path.exists() {
-        fs::remove_file(path)?;
+    if !path.is_absolute() {
+        bail!("daemon socket path must be absolute");
+    }
+    let parent = path.parent().context("socket path has no parent")?;
+    // DirBuilder sets 0700 at creation, not by chmod'ing an existing dir.
+    // Existing 0775/0777 parents are intentionally rejected.
+    if !parent.exists() {
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(parent)?;
+    }
+    let directory = fs::symlink_metadata(parent)?;
+    if directory.file_type().is_symlink() || !directory.is_dir() {
+        bail!("socket parent is a symlink or not a directory: {}", parent.display());
+    }
+    if directory.uid() != unsafe { libc::geteuid() } {
+        bail!("socket parent is not owned by this user: {}", parent.display());
+    }
+    if directory.permissions().mode() & 0o077 != 0 {
+        bail!("socket parent must be private (0700); refusing to chmod {}", parent.display());
+    }
+    match fs::symlink_metadata(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err).context("inspecting existing daemon socket"),
+        Ok(existing) => {
+            if existing.file_type().is_symlink() || !existing.file_type().is_socket() {
+                bail!("refusing to remove a non-socket or symlink: {}", path.display());
+            }
+            if existing.uid() != unsafe { libc::geteuid() } {
+                bail!("refusing another user's socket: {}", path.display());
+            }
+            // An established listener proves the socket is live; never unlink.
+            match std::os::unix::net::UnixStream::connect(path) {
+                Ok(_) => bail!("a daemon is already listening at {}", path.display()),
+                Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => {
+                    fs::remove_file(path).context("removing stale daemon socket")?;
+                }
+                Err(err) => {
+                    return Err(err).context(
+                        "cannot safely determine whether existing socket is in use");
+                }
+            }
+        }
     }
     Ok(())
+}
+
+/// Umask is process-wide, so change it only for this startup bind and
+/// restore it immediately even when bind fails.
+struct SocketBindUmask(libc::mode_t);
+impl SocketBindUmask {
+    fn private() -> Self { Self(unsafe { libc::umask(0o177) }) }
+}
+impl Drop for SocketBindUmask {
+    fn drop(&mut self) { unsafe { libc::umask(self.0); } }
+}
+
+#[cfg(test)]
+mod socket_tests {
+    use super::*;
+    use std::os::unix::net::UnixListener as StdUnixListener;
+
+    fn root() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("wand-socket-test-{}", Uuid::new_v4()));
+        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn private_parent_created_without_changing_ancestors() {
+        let dir = root();
+        let parent = dir.join("daemon");
+        let socket = parent.join("wand.sock");
+        prepare_socket(&socket).unwrap();
+        assert!(parent.is_dir());
+        assert_eq!(fs::metadata(parent).unwrap().permissions().mode() & 0o777, 0o700);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn existing_non_socket_is_never_deleted() {
+        let dir = root();
+        let socket = dir.join("wand.sock");
+        fs::write(&socket, b"unrelated").unwrap();
+        assert!(prepare_socket(&socket).is_err());
+        assert_eq!(fs::read(&socket).unwrap(), b"unrelated");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn live_socket_remains_and_stale_socket_is_removed() {
+        let dir = root();
+        let socket = dir.join("wand.sock");
+        let listener = StdUnixListener::bind(&socket).unwrap();
+        assert!(prepare_socket(&socket).is_err());
+        assert!(socket.exists());
+        drop(listener);
+        prepare_socket(&socket).unwrap();
+        assert!(!socket.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn existing_group_writable_directory_not_chmoded() {
+        let dir = root();
+        let parent = dir.join("shared");
+        fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o775)).unwrap();
+        assert!(prepare_socket(&parent.join("wand.sock")).is_err());
+        assert_eq!(fs::metadata(&parent).unwrap().permissions().mode() & 0o777, 0o775);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn symlinked_socket_parent_is_refused() {
+        let dir = root();
+        let real = dir.join("real");
+        fs::create_dir(&real).unwrap();
+        let link = dir.join("alias");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert!(prepare_socket(&link.join("wand.sock")).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 #[tokio::main]
@@ -1439,8 +1552,10 @@ async fn main() -> Result<()> {
     let socket = socket_path();
     prepare_socket(&socket)?;
 
+    let permissions_guard = SocketBindUmask::private();
     let listener = UnixListener::bind(&socket)
         .with_context(|| format!("binding {}", socket.display()))?;
+    drop(permissions_guard);
     fs::set_permissions(
         &socket,
         fs::Permissions::from_mode(0o600),
