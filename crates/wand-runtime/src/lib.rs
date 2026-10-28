@@ -834,7 +834,7 @@ fn batch_safe_windows_path(path: &Path, prefix_dir: &Path) -> Result<String> {
     let value = windows_path_from_prefix_drive(path, prefix_dir)
         .unwrap_or_else(|| wine_z_path(path));
 
-    if value.contains(['\r', '\n', '"', '%', '!']) {
+    if value.contains(['\r', '\n', '"', '%', '!', '&', '|', '<', '>', '^', '(', ')']) {
         return Err(anyhow!(
             "path contains characters unsupported by the one-session batch launcher: {}",
             path.display()
@@ -844,7 +844,7 @@ fn batch_safe_windows_path(path: &Path, prefix_dir: &Path) -> Result<String> {
 }
 
 fn batch_safe_arg(value: &str) -> Result<String> {
-    if value.contains(['\r', '\n', '"', '%', '!']) {
+    if value.contains(['\r', '\n', '"', '%', '!', '&', '|', '<', '>', '^', '(', ')']) {
         return Err(anyhow!(
             "argument contains characters unsupported by the one-session batch launcher: {value:?}"
         ));
@@ -1117,24 +1117,7 @@ echo SteamGameId=%SteamGameId%>> \"{stage_win}\"\r\n\
 echo wand={wand_win}>> \"{stage_win}\"\r\n\
 echo game={game_win}>> \"{stage_win}\"\r\n\
 echo starting-wand>> \"{stage_win}\"\r\n\
-set \"WAND_SAVED_USERPROFILE=%USERPROFILE%\"\r\n\
-set \"WAND_SAVED_APPDATA=%APPDATA%\"\r\n\
-set \"WAND_SAVED_LOCALAPPDATA=%LOCALAPPDATA%\"\r\n\
-set \"WAND_SAVED_HOMEDRIVE=%HOMEDRIVE%\"\r\n\
-set \"WAND_SAVED_HOMEPATH=%HOMEPATH%\"\r\n\
-set \"USERPROFILE=C:\\users\\szentigrade\"\r\n\
-set \"APPDATA=C:\\users\\szentigrade\\AppData\\Roaming\"\r\n\
-set \"LOCALAPPDATA=C:\\users\\szentigrade\\AppData\\Local\"\r\n\
-set \"HOMEDRIVE=C:\"\r\n\
-set \"HOMEPATH=\\users\\szentigrade\"\r\n\
-echo wand-user=%USERPROFILE%>> \"{stage_win}\"\r\n\
 start \"\" /D \"{wand_dir_win}\" \"{wand_win}\"{wand_arg_text}\r\n\
-set \"USERPROFILE=%WAND_SAVED_USERPROFILE%\"\r\n\
-set \"APPDATA=%WAND_SAVED_APPDATA%\"\r\n\
-set \"LOCALAPPDATA=%WAND_SAVED_LOCALAPPDATA%\"\r\n\
-set \"HOMEDRIVE=%WAND_SAVED_HOMEDRIVE%\"\r\n\
-set \"HOMEPATH=%WAND_SAVED_HOMEPATH%\"\r\n\
-echo game-user=%USERPROFILE%>> \"{stage_win}\"\r\n\
 echo starting-game>> \"{stage_win}\"\r\n\
 start \"\" /D \"{game_dir_win}\" \"{game_win}\"\r\n\
 echo dispatched>> \"{stage_win}\"\r\n\
@@ -1724,6 +1707,35 @@ mod tests {
         };
         let log = wrapper.parent().unwrap().join("wemod.log");
         (root, game, proton, wrapper, log)
+    }
+
+    #[test]
+    fn one_session_batch_rejects_command_metacharacters_and_expansion() {
+        for bad in [
+            "hello&whoami", "hello|whoami", "a<b", "a>b", "hello^world",
+            "(group)", "hello%USERNAME%", "hello!VAR!", "hello\"world",
+            "line\nbreak", "line\rbreak",
+        ] {
+            assert!(batch_safe_arg(bad).is_err(), "unsafe argument accepted: {bad:?}");
+            let path = PathBuf::from(format!("/tmp/{bad}"));
+            assert!(batch_safe_windows_path(&path, Path::new("/tmp/wand-prefix")).is_err(),
+                    "unsafe path accepted: {bad:?}");
+        }
+        assert_eq!(batch_safe_arg("--safe=game-1").unwrap(), "\"--safe=game-1\"");
+        assert_eq!(batch_safe_windows_path(
+            Path::new("/tmp/game/Game.exe"), Path::new("/tmp/wand-prefix")).unwrap(),
+            r"Z:\tmp\game\Game.exe");
+    }
+
+    #[test]
+    fn one_session_batch_keeps_wine_profile_instead_of_overriding_account() {
+        // Regression guard for the hard-coded per-user Windows profile and
+        // expansion of untrusted USERPROFILE content into generated CMD.
+        let src = include_str!("lib.rs");
+        assert!(!src.contains(concat!("USER", "PROFILE=C:")));
+        assert!(!src.contains(concat!("WAND_SAVED_", "USERPROFILE")));
+        assert!(!src.contains(concat!("echo wand-user=", "%USERPROFILE%")));
+        assert!(!src.contains(concat!("echo game-user=", "%USERPROFILE%")));
     }
 
     #[test]
