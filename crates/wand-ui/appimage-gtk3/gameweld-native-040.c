@@ -2871,8 +2871,10 @@ static gboolean pc2_steam_launch_done(gpointer data){
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
             "Steam launch not verified for %.140s.\n\n%.2100s\n\n"
-            "GameWeld did NOT start another WeMod client. An existing WeMod process may still be running. "
-            "Once the game is visibly running, use the separate WeMod check button.",
+            "GameWeld did NOT start another WeMod client or issue a duplicate "
+            "Steam launch. Steam's launcher may still be preparing the game. "
+            "Once the actual game is running, use 'Check / start WeMod in running Steam game' "
+            "and explicitly approve the v2-only handoff. Do NOT relaunch the game.",
             j->game_name,j->output);
         gtk_dialog_run((GtkDialog*)notice);gtk_widget_destroy(notice);
     }
@@ -2946,6 +2948,11 @@ static void *pc2_steam_launch_worker(void *data){
             execlp("python3","python3",helper,"launch","--appid",j->appid,
                    "--install-dir",j->install_dir,"--confirm","--require-idle-before-launch",
                    "--transport","steam-uri",(char*)NULL);
+        else if(j->no_options_onebutton && pc2_wand_v2_allowed())
+            execlp("python3","python3",helper,"launch","--appid",j->appid,
+                   "--install-dir",j->install_dir,
+                   "--confirm","--require-idle-before-launch",
+                   "--observe-seconds","75",(char*)NULL);
         else if(j->expect_deckcheatz||j->steam_managed_wemod)
             execlp("python3","python3",helper,"launch","--appid",j->appid,
                    "--install-dir",j->install_dir,
@@ -2960,7 +2967,8 @@ static void *pc2_steam_launch_worker(void *data){
         close(pipes[0]);
         snprintf(j->output,sizeof j->output,"Launch result: FAILED (could not start helper)");
     } else {
-        j->confirmed=bounded_child_output(pid,pipes[0],j->output,sizeof j->output,28);
+        j->confirmed=bounded_child_output(pid,pipes[0],j->output,sizeof j->output,
+                                         (j->no_options_onebutton&&pc2_wand_v2_allowed())?90:28);
         if(!j->output[0])snprintf(j->output,sizeof j->output,
             "Launch result: FAILED (helper exited without reporting a status)");
     }
@@ -3701,7 +3709,35 @@ static void pc2_steam_wemod_attach_selected(int live){
     pc2_steam_wemod_attach_selected_ex(live,1,0);
 }
 static void on_pc2_steam_wemod_check(GtkButton*b,void*d){
-    (void)b;(void)d;pc2_steam_wemod_attach_selected(0);
+    (void)b;(void)d;
+    if(!pc2_wand_v2_allowed()){
+        pc2_steam_wemod_attach_selected(0);
+        return;
+    }
+    /* An earlier Steam request may have seen just a wrapper before the
+     * game's EXE appeared. Resume ONLY the client handoff, never Steam launch,
+     * and require a new, explicit consent tied to the currently selected game. */
+    if(pc2_steam_wemod_attach_busy)return;
+    if(G.selected<0||G.selected>=G.game_count)return;
+    Game*g=&G.games[G.selected];
+    if(!game_is_steam(g)||game_is_steam_shortcut(g)||
+       !g->appid[0]||g->install_dir[0]!='/')return;
+    GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        "Check the running Steam game and start Wand v2 ONLY if safe?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "GameWeld will NOT ask Steam to launch the game again. Wand v2 "
+        "must independently detect the real game EXE and one exact Proton "
+        "environment before launching an existing WeMod client.\n\n"
+        "You explicitly accept up to 8 unreadable same-user process "
+        "environments only if the exact game and Proton checks pass. "
+        "The existing game prefix may change when WeMod starts; "
+        "back up saves first. No Steam Launch Options or Proton selection "
+        "will be edited. Continue?",g->name,g->appid);
+    int accepted=gtk_dialog_run((GtkDialog*)notice);
+    gtk_widget_destroy(notice);
+    if(accepted==GTK_RESPONSE_YES)
+        pc2_steam_wemod_attach_selected_ex(0,2,0);
 }
 static void on_pc2_steam_wemod_lifecycle(GtkButton*b,void*d){
     (void)b;(void)d;pc2_steam_wemod_attach_selected_ex(0,0,1);
