@@ -5109,7 +5109,7 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     if(G.pc2_deckcheatz_overview_status)
         set_label(G.pc2_deckcheatz_overview_status,
             pc2_deckcheatz_onebutton_allowed()?
-            "DeckCheatz 1.x: setup on first use, then game + WeMod via one command; Steam options unchanged; experimental.":
+            "Steam-managed DeckCheatz: read saved game-specific options automatically; ask once for Steam wrapper setup only if missing.":
             pc2_steam_wemod_allowed()?
             "Steam launches normally; separate consented WeMod client handoff follows. Attachment unverified.":
             pc2_native_wrapper_allowed()?
@@ -5120,7 +5120,7 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     if(G.pc2_deckcheatz_library_status)
         set_label(G.pc2_deckcheatz_library_status,
             pc2_deckcheatz_onebutton_allowed()?
-            "DeckCheatz direct command mode. Setup/preview and prefix consent before game + WeMod launch.":
+            "Steam-managed DeckCheatz mode. Steam owns the game launch; saved wrapper status is checked before Play.":
             pc2_steam_wemod_allowed()?
             "Steam-managed mode. No Steam Bridge or Proton selection; WeMod attachment not verified.":
             pc2_native_wrapper_allowed()?
@@ -7136,9 +7136,10 @@ static GtkWidget *build_settings(void){
         GtkWidget*first=pc2_deckcheatz_onebutton_allowed()?
             card("Play with WeMod",
                  "Choose a Steam game in Library and click Play with WeMod. "
-                 "GameWeld prepares DeckCheatz as needed and combines user-verified "
-                 "Steam launch options for the current session without editing Steam. "
-                 "This direct route is experimental; Steam runtime parity and trainer attachment are unverified.",
+                 "GameWeld automatically inspects saved Steam Launch Options and uses "
+                 "the installed DeckCheatz Steam wrapper or one-shot shim if configured. "
+                 "First-time Steam wrapper setup may still be necessary. "
+                 "No direct Proton launch or automatic Steam setting changes.",
                  NULL):
             card("Play with WeMod",
                  "For Steam Windows games, the validated Steam Bridge launches the game and WeMod "
