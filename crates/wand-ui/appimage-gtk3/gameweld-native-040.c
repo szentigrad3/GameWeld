@@ -699,7 +699,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Play with WeMod") && strcmp(s, "Play with WeMod (no Steam settings)") && strcmp(s, "Play with WeMod (v2 development)") && strcmp(s, "Play via Steam + WeMod (private test)") && strcmp(s, "Launch via Steam URL (fallback)") && strcmp(s, "Check / start WeMod in running Steam game") && strcmp(s, "Inspect game and WeMod processes (read-only)") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Play with WeMod") && strcmp(s, "Play with WeMod (no Steam settings)") && strcmp(s, "Play with WeMod (v2 development)") && strcmp(s, "Play with WeMod (v2 GPU-safe test)") && strcmp(s, "Play via Steam + WeMod (private test)") && strcmp(s, "Launch via Steam URL (fallback)") && strcmp(s, "Check / start WeMod in running Steam game") && strcmp(s, "Inspect game and WeMod processes (read-only)") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2801,6 +2801,10 @@ static int pc2_wand_v2_allowed(void){
     const char*flag=getenv("GAMEWELD_PC2_USE_WAND_V2");
     return pc2_steam_no_options_allowed()&&flag&&!strcmp(flag,"1");
 }
+static int pc2_wand_v2_gpu_safe_allowed(void){
+    const char*flag=getenv("GAMEWELD_PC2_WEMOD_SOFTWARE_RENDERING");
+    return pc2_wand_v2_allowed()&&flag&&!strcmp(flag,"1");
+}
 /* Explicit private testing of the DeckCheatz 1.x command-prefix equivalent.
  * Unlike live WeMod attach this launches the game and trainer together. */
 static int pc2_deckcheatz_onebutton_allowed(void){
@@ -3195,6 +3199,19 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         "Steam is not already launching the game. This asks xdg-open to use "
         "steam://rungameid; it does not edit Steam Launch Options or select "
         "Proton. A second WeMod consent is still required. Continue?":
+        pc2_wand_v2_gpu_safe_allowed()?
+        "Test Wand v2 with WeMod-only software rendering?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "Steam will run your game with its existing graphics settings and "
+        "Launch Options. Wand v2 will start the WeMod Electron client with "
+        "GPU acceleration disabled, to investigate its repeated GPU crash. "
+        "Only WeMod.exe receives the Electron flags; this may slow its UI.\n\n"
+        "GameWeld will NOT restart Steam, change Proton, or install/replace "
+        "any prepared prefix. With your approval, v2 may run WeMod inside "
+        "the existing game prefix, which can modify that prefix. "
+        "You accept up to 8 unreadable same-user processes ONLY after exact "
+        "game executable and unique Proton checks. No existing Wine or "
+        "Proton processes will be killed. Continue?":
         pc2_wand_v2_allowed()?
         "Play with Wand v2, without changing Steam settings?\n\n"
         "%.140s (Steam App ID %s)\n\n"
@@ -3630,6 +3647,27 @@ static void *pc2_steam_wemod_attach_worker(void *data){
             if(appdir&&appdir[0]=='/')
                 snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-wand-v2-proxy.py",appdir);
             else snprintf(helper,sizeof helper,"gameweld-wand-v2-proxy.py");
+            if(pc2_wand_v2_gpu_safe_allowed()){
+                if(j->live && j->allow_start==2)
+                    execlp("python3","python3",helper,"--appid",j->appid,
+                           "--install-dir",j->install_dir,"--launch-client",
+                           "--accept-unreadable-process-risk",
+                           "--client-software-rendering",(char*)NULL);
+                else if(j->live)
+                    execlp("python3","python3",helper,"--appid",j->appid,
+                           "--install-dir",j->install_dir,"--launch-client",
+                           "--client-software-rendering",(char*)NULL);
+                else if(j->allow_start==2)
+                    execlp("python3","python3",helper,"--appid",j->appid,
+                           "--install-dir",j->install_dir,
+                           "--accept-unreadable-process-risk",
+                           "--client-software-rendering",(char*)NULL);
+                else
+                    execlp("python3","python3",helper,"--appid",j->appid,
+                           "--install-dir",j->install_dir,
+                           "--client-software-rendering",(char*)NULL);
+                _exit(127);
+            }
             if(j->live && j->allow_start==2)
                 execlp("python3","python3",helper,"--appid",j->appid,
                        "--install-dir",j->install_dir,"--launch-client",
@@ -4127,7 +4165,8 @@ static GtkWidget *build_home(void){
     GtkWidget*ids=box(GTK_ORIENTATION_VERTICAL,7);G.hero_name=label("Select a game",NULL);gtk_widget_set_name(G.hero_name,"game-title");gtk_label_set_line_wrap((GtkLabel*)G.hero_name,TRUE);pack(ids,G.hero_name,0);G.hero_meta=label("Steam / Heroic • App ID —",NULL);gtk_widget_set_name(G.hero_meta,"meta");gtk_label_set_line_wrap((GtkLabel*)G.hero_meta,TRUE);pack(ids,G.hero_meta,0);pack(ids,meta_chip("LOCAL / SINGLE PLAYER"),0);G.game_detected_detail=label("Choose a game from Library to review its trainer, runtime and exact launch path before starting the session.","muted");gtk_label_set_line_wrap((GtkLabel*)G.game_detected_detail,TRUE);pack(ids,G.game_detected_detail,1);pack(idrow,ids,1);pack(copy,idrow,1);
     if(pc2_discovery_only()){
         GtkWidget*direct=button(pc2_deckcheatz_onebutton_allowed()?
-            "Play with WeMod":pc2_wand_v2_allowed()?"Play with WeMod (v2 development)":
+            "Play with WeMod":pc2_wand_v2_gpu_safe_allowed()?"Play with WeMod (v2 GPU-safe test)":
+            pc2_wand_v2_allowed()?"Play with WeMod (v2 development)":
             pc2_steam_no_options_allowed()?
             "Play with WeMod (no Steam settings)":pc2_steam_wemod_allowed()?
             "Play via Steam + WeMod (private test)":pc2_native_wrapper_allowed()?
@@ -4244,7 +4283,8 @@ static GtkWidget *build_library(void){
     GtkWidget*listpanel=box(GTK_ORIENTATION_VERTICAL,8);style(listpanel,"panel");pack(listpanel,label("GAMES","section-kicker"),0);GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_vexpand(sc,TRUE);G.game_list=gtk_list_box_new();g_signal_connect_data(G.game_list,"row-selected",(GCallback)selected_changed,NULL,NULL,0);
     for(int i=0;i<G.game_count;i++){GtkWidget*r=gtk_list_box_row_new();style(r,"library-row");G.game_rows[i]=r;GtkWidget*rb=box(GTK_ORIENTATION_HORIZONTAL,11);margins(rb,7);GtkWidget*thumb=gtk_image_new();style(thumb,"game-thumb");char art[2048]={0};if(!resolve_game_art(&G.games[i],1,art,sizeof art))resolve_game_art(&G.games[i],0,art,sizeof art);set_image_path(thumb,art[0]?art:NULL,52,70);pack(rb,thumb,0);GtkWidget*txt=box(GTK_ORIENTATION_VERTICAL,3);pack(txt,label(G.games[i].name,"game-row-title"),0);char x[384];if(game_is_steam_shortcut(&G.games[i]))snprintf(x,sizeof x,"Steam shortcut • %s",G.games[i].appid);else if(game_is_steam(&G.games[i]))snprintf(x,sizeof x,"Steam • %s",G.games[i].appid);else if(game_is_lutris(&G.games[i]))snprintf(x,sizeof x,"Lutris • %s",G.games[i].runner[0]?G.games[i].runner:"wine");else snprintf(x,sizeof x,"Heroic • %s",G.games[i].runner);pack(txt,label(x,"muted"),0);pack(rb,txt,1);GtkWidget*installed=label(game_is_lutris(&G.games[i])?"Discovery":"Ready",game_is_lutris(&G.games[i])?"muted":"good");gtk_widget_set_name(installed,"status-pill");pack(rb,installed,0);gtk_container_add(r,rb);gtk_list_box_insert((GtkListBox*)G.game_list,r,-1);}gtk_container_add(sc,G.game_list);pack(listpanel,sc,1);pack(body,listpanel,1);
     GtkWidget*inspect=box(GTK_ORIENTATION_VERTICAL,11);gtk_widget_set_name(inspect,"library-inspector");gtk_widget_set_size_request(inspect,pc2_discovery_only()?350:410,-1);pack(inspect,label("SELECTED GAME","section-kicker"),0);G.library_detail_name=label("Select a game",NULL);gtk_widget_set_name(G.library_detail_name,"library-name");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_name,TRUE);pack(inspect,G.library_detail_name,0);G.library_detail_meta=label("Steam / Heroic / Lutris","library-meta");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_meta,TRUE);pack(inspect,G.library_detail_meta,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH READINESS","section-kicker"),0);G.library_detail_status=label("Choose a game to inspect its runtime and trainer handoff.","muted");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_status,TRUE);pack(inspect,G.library_detail_status,0);G.library_detail_path=label("Install path: —","good");gtk_label_set_line_wrap((GtkLabel*)G.library_detail_path,TRUE);pack(inspect,G.library_detail_path,0);pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("LAUNCH WITH","section-kicker"),0);GtkWidget*lb1=button("Assigned / detected trainer","primary-action");GtkWidget*lbct=button("Cheat Engine Table (.CT) — Choose / Launch","action");GtkWidget*lbw=button("WeMod","action");GtkWidget*lba=button("Cheat Happens Aurora","action");GtkWidget*lbc=button("Cheat Evolution","action");GtkWidget*lbx=button("Choose custom trainer EXE…","action");GtkWidget*lb2=button("Game only","action");GtkWidget*lb3=button("Open game folder","action");GtkWidget*preview=button("Preview Steam launch (no action)","action");GtkWidget*steam_only=button("Launch Steam game only (opt-in)","action");gtk_widget_set_sensitive(steam_only,pc2_steam_launch_allowed());GtkWidget*session_check=button("Check Steam session (read-only)","action");GtkWidget*deckcheatz_detect=button("DeckCheatz 1.x — Detect (no Steam options)","action");g_signal_connect_data(deckcheatz_detect,"clicked",(GCallback)on_pc2_deckcheatz_detect,NULL,NULL,0);GtkWidget*deckcheatz_install=button("Install DeckCheatz 1.x (managed)","action");g_signal_connect_data(deckcheatz_install,"clicked",(GCallback)on_pc2_deckcheatz_install,NULL,NULL,0);GtkWidget*deckcheatz_preview=button("DeckCheatz 1.x — Preview selected game (read-only)","action");g_signal_connect_data(deckcheatz_preview,"clicked",(GCallback)on_pc2_deckcheatz_preview,NULL,NULL,0);GtkWidget*deckcheatz_test=button(pc2_deckcheatz_onebutton_allowed()?
-            "Play with WeMod":pc2_wand_v2_allowed()?"Play with WeMod (v2 development)":
+            "Play with WeMod":pc2_wand_v2_gpu_safe_allowed()?"Play with WeMod (v2 GPU-safe test)":
+            pc2_wand_v2_allowed()?"Play with WeMod (v2 development)":
             pc2_steam_no_options_allowed()?
             "Play with WeMod (no Steam settings)":pc2_steam_wemod_allowed()?
             "Play via Steam + WeMod (private test)":pc2_native_wrapper_allowed()?
@@ -5515,6 +5555,7 @@ static void pc2_bridge_apply_primary(const char *state,const char *reason){
     for(int i=0;i<2;i++)if(buttons[i]){
         gtk_button_set_label((GtkButton*)buttons[i],
             pc2_deckcheatz_onebutton_allowed()?"Play with WeMod":
+            pc2_wand_v2_gpu_safe_allowed()?"Play with WeMod (v2 GPU-safe test)":
             pc2_wand_v2_allowed()?"Play with WeMod (v2 development)":
             pc2_steam_no_options_allowed()?"Play with WeMod (no Steam settings)":
             pc2_steam_wemod_allowed()?"Play via Steam + WeMod (private test)":
