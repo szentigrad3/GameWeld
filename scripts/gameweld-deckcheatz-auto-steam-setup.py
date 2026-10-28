@@ -115,7 +115,7 @@ def saved_option_value(raw: bytes, appid: str, options) -> str | None:
         raise SetupBlocked("Steam game config entry is not a VDF object")
     value = options.only(node, "LaunchOptions")
     if value is not None and (not isinstance(value, str)
-                              or len(value) > options.MAX_OPTION):
+                              or len(value) > 16384):
         raise SetupBlocked("Steam Launch Options have an unsafe value")
     return value
 
