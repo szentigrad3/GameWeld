@@ -29,7 +29,7 @@ CATEGORY_WORDS = {
     "wemod_or_trainer": re.compile(r"wemod|trainer|inject|attach", re.I),
     "network_or_download": re.compile(r"https?|ssl|connection|timeout|download|request|dns", re.I),
     "filesystem_or_permission": re.compile(
-        r"file not found|no such file|permission denied|directory|filesystem|path", re.I),
+        r"filenotfounderror|file not found|no such file|missing|permission denied|directory|filesystem|path", re.I),
     "dependencies_or_modules": re.compile(
         r"dll|dotnet|\.net|module|importerror|runtime|mono|winetricks", re.I),
     "gui_or_display": re.compile(r"tkinter|tclerror|display|wayland|x11|gtk|qt", re.I),
