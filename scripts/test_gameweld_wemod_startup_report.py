@@ -70,6 +70,21 @@ class WeModStartupReportTests(unittest.TestCase):
         self.assertEqual(out["failure_category_counts"], {})
         self.assertFalse(out["wemod_window_verified"])
 
+    def test_v2_log_root_is_separate_from_old_live_handoff(self):
+        with tempfile.TemporaryDirectory() as home:
+            with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": home}):
+                self.assertEqual(mod.default_log_root(v2=True),
+                                 Path(home) / "wand/sessions")
+                self.assertEqual(mod.default_log_root(),
+                                 Path(home) / "gameweld/wemod-live")
+                session_dir = mod.default_log_root(v2=True)
+                session_dir.mkdir(parents=True)
+                artifact = session_dir / "3008130-1793192433761672762.log"
+                artifact.write_bytes(b"Proton: runinprefix error\\n")
+                result = mod.summarize("3008130", mod.choose_log("3008130", session_dir))
+                self.assertTrue(result["failure_category_counts"]["other_failure_keyword"])
+                self.assertFalse(result["raw_log_content_included"])
+
     def test_invalid_appid_and_size_fail_closed(self):
         good = self.log("1793192433761672762", b"error\n")
         with self.assertRaisesRegex(mod.Blocked, "Invalid Steam AppID"):
