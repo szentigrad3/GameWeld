@@ -54,6 +54,16 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('Retry launch via the registered Steam URL handler?', GUI)
         self.assertIn('"--require-idle-before-launch"', GUI)
 
+    def test_process_exit_inspector_is_read_only_and_never_kills_wine(self):
+        self.assertIn('button("Inspect game and WeMod processes (read-only)"', GUI)
+        self.assertIn('on_pc2_steam_wemod_lifecycle,NULL,NULL,0', GUI)
+        self.assertIn('pc2_steam_wemod_attach_selected_ex(0,0,1)', GUI)
+        self.assertIn('if(j->lifecycle){', GUI)
+        self.assertIn('"--appid",j->appid,"--details","--lifecycle"', GUI)
+        self.assertIn('GameWeld did not terminate any process.', GUI)
+        self.assertIn('pc2_steam_wemod_attach_selected_ex(0,0,0)', GUI)
+        self.assertIn('if(!j->live&&ready&&matching&&j->allow_start)', GUI)
+
     def test_visible_feedback_instead_of_dead_button(self):
         self.assertIn('strcmp(s, "Check / start WeMod in running Steam game")', GUI)
         self.assertIn("on_pc2_steam_wemod_check,NULL,NULL,0", GUI)
