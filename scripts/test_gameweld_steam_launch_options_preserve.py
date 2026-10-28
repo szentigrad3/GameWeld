@@ -310,6 +310,12 @@ class PreserveTests(unittest.TestCase):
         self.assertTrue(parsed["legacy_historical_original_unverified"])
         self.assertEqual(current.stat().st_mode & 0o777, 0o600)
         self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), "")
+        rc, restore_output, restore_error = self.run_main_with_fixture("--restore-original")
+        self.assertEqual(rc, 0, restore_error)
+        restore = json.loads(restore_output)
+        self.assertEqual(restore["restore_source"], "verified_current_before_setup")
+        self.assertTrue(restore["historical_original_unverified"])
+        self.assertEqual(restore["original_launch_option"], "")
         self.assertEqual(legacy.read_bytes(), old_bytes)
         self.assertEqual(legacy.stat().st_mtime_ns, old_mtime)
         rc, output, error = self.run_main_with_fixture(
