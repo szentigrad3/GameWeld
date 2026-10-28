@@ -3574,7 +3574,7 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
                 "Read-only details:\n%.2600s":
                 "WeMod %s\n\n%.2800s\n\n"
                 "Steam Launch Options unchanged. Trainer attachment UNVERIFIED. "
-                "If WeMod did not open, run scripts/gameweld-wemod-startup-report.py --appid 3008130.",
+                "If WeMod did not open, run scripts/gameweld-wemod-startup-report.py --appid <Steam AppID>.",
             wemod_existing?(j->output[0]?j->output:"Helper returned no output."):
                 (j->live?"handoff response":"preview"),
             j->output[0]?j->output:"Helper returned no output.");
