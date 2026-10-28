@@ -63,6 +63,56 @@ class SavedSteamReadinessTests(unittest.TestCase):
         self.launcher.unlink()
         self.assertEqual(self.check(f"{self.launcher} %command%")["state"], "needs_setup")
 
+    def test_old_gameweld_bridge_selection_is_incompatible_with_deckcheatz(self):
+        """Do not allow nested legacy bridge -> DeckCheatz -> Proton launch."""
+        from types import SimpleNamespace
+        class Bridge:
+            @staticmethod
+            def steam_compat_selection(_appid, *, steam_roots=None):
+                return "GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+        class Options:
+            @staticmethod
+            def find_config(_appid, _root, _account):
+                return self.launcher, "123"
+            @staticmethod
+            def launch_option(_cfg, _appid):
+                return ""
+        class Shim:
+            @staticmethod
+            def installed_wrapper_path():
+                return self.shim
+        peers = {
+            "gameweld-steam-launch-options-preserve.py": Options,
+            "gameweld-deckcheatz-session.py": Shim,
+            "gameweld-steam-compat-bridge.py": Bridge,
+        }
+        with patch.object(module, "import_peer",
+                          side_effect=lambda filename, label: peers[filename]):
+            report = module.readiness(
+                self.appid, self.launcher, steam_root=self.launcher.parent)
+        self.assertEqual(report["state"], "incompatible_bridge_selected")
+        self.assertEqual(report["saved_compatibility"]["state"],
+                         "gameweld_bridge_selected")
+        self.assertIn("real Proton", report["reason"])
+        self.assertFalse(report["steam_options_modified"])
+
+    def test_compatibility_tool_is_only_classified_when_explicitly_selected(self):
+        class Bridge:
+            selection = "OTHER TOOL SELECTED (saved Steam mapping: GE-Proton)"
+            @classmethod
+            def steam_compat_selection(cls, _appid, *, steam_roots=None):
+                return cls.selection
+        with patch.object(module, "import_peer", return_value=Bridge):
+            result = module.saved_compatibility_bridge_state(self.appid)
+            self.assertEqual(result["state"],
+                             "other_compatibility_tool_selected")
+            Bridge.selection = "UNVERIFIED (no saved exact game mapping readable)"
+            result = module.saved_compatibility_bridge_state(self.appid)
+            self.assertEqual(result["state"], "unverified")
+            Bridge.selection = "GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            result = module.saved_compatibility_bridge_state(self.appid)
+            self.assertEqual(result["state"], "gameweld_bridge_selected")
+
     def test_live_and_saved_options_are_not_mistaken_for_each_other(self):
         with patch.object(module, "import_peer", side_effect=ValueError("read failed")):
             with self.assertRaisesRegex(ValueError, "read failed"):
