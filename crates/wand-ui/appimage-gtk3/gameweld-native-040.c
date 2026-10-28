@@ -3174,6 +3174,20 @@ static void pc2_deckcheatz_steam_onebutton(void){
         log_line("Steam saved config contains validated one-shot DeckCheatz shim for %s.",g->name);
         pc2_steam_launch_selected(1);return;
     }
+    if(!strcmp(state,"incompatible_bridge_selected")){
+        log_line("Steam DeckCheatz launch blocked: saved compatibility tool is the old GameWeld Bridge for AppID %s. No game requested.",g->appid);
+        pc2_steam_launch_notice(
+            "Dying Light's saved Steam Compatibility setting selects the old "
+            "GameWeld Bridge. DeckCheatz must receive the game's real Proton "
+            "launch command; wrapping the legacy bridge caused a broken "
+            "Steam launch chain in the previous log.\n\n"
+            "Close the game. In Steam > Dying Light: The Beast > Properties > "
+            "Compatibility, select a verified working Proton tool rather "
+            "than GameWeld Bridge. Restart Steam to ensure the selection is "
+            "loaded, then try GameWeld again.\n\n"
+            "GameWeld has NOT changed Steam, the game's prefix, or its Launch Options.");
+        return;
+    }
     if(!strcmp(state,"needs_setup")){
         GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
