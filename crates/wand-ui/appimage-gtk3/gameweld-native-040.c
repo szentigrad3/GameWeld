@@ -2791,6 +2791,7 @@ typedef struct {
     int session_mode;
     int steam_managed_wemod;
     int steam_uri;
+    char install_dir[2048];
     char deckcheatz_launcher[4096];
 } PC2SteamLaunchJob;
 static int pc2_steam_launch_busy=0;
@@ -2798,6 +2799,7 @@ static gboolean pc2_steam_launch_done(gpointer data){
     PC2SteamLaunchJob*j=(PC2SteamLaunchJob*)data;
     pc2_steam_launch_busy=0;
     const char *state=strstr(j->output,"Launch result: FAILED")?"FAILED":
+        strstr(j->output,"Launch result: GAME_EXECUTABLE_OBSERVED")?"GAME EXECUTABLE OBSERVED":
         strstr(j->output,"Launch result: STEAM_ASSOCIATION_OBSERVED")?"ASSOCIATED PROCESS OBSERVED":
         "UNCONFIRMED";
     log_line("PC2 Steam %s [%s] %s (app %s): %.3000s",
@@ -2817,11 +2819,14 @@ static gboolean pc2_steam_launch_done(gpointer data){
             "Steam launch UNCONFIRMED. Check Steam's Downloads/game status and Activity.":
             j->expect_deckcheatz?
             "Steam process detected; existing Launch Options may have run. WeMod not verified.":
+            !strcmp(state,"GAME EXECUTABLE OBSERVED")?
+            "Steam game executable observed. WeMod connection and in-game effect NOT VERIFIED.":
             "Steam process association observed; game window and trainer still unverified.");
     }
-    /* Only after Steam association was observed, preview the separate WeMod
-     * handoff. Do not launch a client or modify the prefix without consent. */
-    if(j->steam_managed_wemod && !strcmp(state,"ASSOCIATED PROCESS OBSERVED") &&
+    /* A verified game EXE or fresh AppID-associated process can lead to a
+     * read-only WeMod check; trainer launch still has its own consent gate. */
+    if(j->steam_managed_wemod && (!strcmp(state,"GAME EXECUTABLE OBSERVED") ||
+       !strcmp(state,"ASSOCIATED PROCESS OBSERVED")) &&
        G.selected>=0 && G.selected<G.game_count &&
        !strcmp(G.games[G.selected].appid,j->appid)){
         pc2_steam_wemod_attach_selected(0);
@@ -2902,14 +2907,15 @@ static void *pc2_steam_launch_worker(void *data){
          * Running sessions use the separate read-only WeMod check button. */
         if(j->steam_uri)
             execlp("python3","python3",helper,"launch","--appid",j->appid,
-                   "--confirm","--require-idle-before-launch",
+                   "--install-dir",j->install_dir,"--confirm","--require-idle-before-launch",
                    "--transport","steam-uri",(char*)NULL);
         else if(j->expect_deckcheatz||j->steam_managed_wemod)
             execlp("python3","python3",helper,"launch","--appid",j->appid,
+                   "--install-dir",j->install_dir,
                    "--confirm","--require-idle-before-launch",(char*)NULL);
         else
             execlp("python3","python3",helper,"launch","--appid",j->appid,
-                   "--confirm",(char*)NULL);
+                   "--install-dir",j->install_dir,"--confirm",(char*)NULL);
         _exit(127);
     }
     close(pipes[1]);
@@ -3050,6 +3056,7 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
     j->expect_deckcheatz=expect_deckcheatz;
     j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz;
     j->steam_uri=use_uri;
+    snprintf(j->install_dir,sizeof j->install_dir,"%s",g->install_dir);
     j->session_mode=session_mode;
     if(session_mode)snprintf(j->deckcheatz_launcher,
                              sizeof j->deckcheatz_launcher,"%s",launcher);
