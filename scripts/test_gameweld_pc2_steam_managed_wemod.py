@@ -54,7 +54,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         # Cancelling the token on a wrapper-only observation silently launches
         # the game without the intended trainer.
         self.assertIn('int request_sent=strstr(j->output,"Steam applaunch command: STARTED")', GUI)
-        self.assertIn("if(!request_sent){", GUI)
+        self.assertIn("if(!request_sent || explicit_failure){", GUI)
         self.assertIn('pc2_deckcheatz_session_helper("disarm",j->appid', GUI)
         self.assertIn("Steam launch request sent, but the game EXE was not observed", GUI)
         self.assertIn('strstr(j->output,"Launch result: STEAM_ASSOCIATION_ONLY")', GUI)
