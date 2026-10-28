@@ -6627,6 +6627,64 @@ static void pc2_deckcheatz_show_preview(const char *result){
     gtk_dialog_run((GtkDialog*)dlg);
     gtk_widget_destroy(dlg);
 }
+static int pc2_deckcheatz_current_options_dialog(const char *appid,char *result,size_t cap){
+    /* Read a saved snapshot as a convenience; require confirmation against
+     * CURRENT Steam Properties. Never mutate Steam's localconfig.vdf. */
+    char saved[16385]={0}, report[32768]={0};
+    int fd[2];
+    if(pipe(fd)==0){
+        pid_t pid=fork();
+        if(pid==0){
+            close(fd[0]);
+            dup2(fd[1],STDOUT_FILENO);
+            dup2(fd[1],STDERR_FILENO);
+            close(fd[1]);
+            clear_desktop_activation_env();
+            const char *appdir=getenv("APPDIR");
+            char helper[4096]={0};
+            if(appdir&&appdir[0]=='/')
+                snprintf(helper,sizeof helper,
+                         "%s/usr/libexec/gameweld-deckcheatz-session-options.py",appdir);
+            else snprintf(helper,sizeof helper,
+                          "gameweld-deckcheatz-session-options.py");
+            execlp("python3","python3",helper,"--read-saved","--appid",appid,(char*)NULL);
+            _exit(127);
+        }
+        close(fd[1]);
+        if(pid>0 && bounded_child_output(pid,fd[0],report,sizeof report,10) &&
+           strstr(report,"\"status\": \"saved_snapshot\""))
+            json_string(report,"value",saved,sizeof saved);
+        else if(pid<=0)close(fd[0]);
+    }
+    GtkWidget *dlg=gtk_dialog_new_with_buttons(
+        "Custom Steam Launch Options for this session",(GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,"Cancel",GTK_RESPONSE_CANCEL,
+        "Use these options",GTK_RESPONSE_OK,NULL);
+    GtkWidget *area=gtk_dialog_get_content_area((GtkDialog*)dlg);
+    GtkWidget *hint=label(
+        "Verify the exact CURRENT text in Steam > Game Properties > Launch Options.\n"
+        "Saved options are prefilled where available but may be stale. Paste your\n"
+        "custom options here, or leave empty ONLY if Steam currently shows empty.\n"
+        "GameWeld combines supported options for THIS launch and NEVER edits\n"
+        "the original Steam setting. Unsupported wrappers safely block launch.",
+        "muted");
+    gtk_label_set_line_wrap((GtkLabel*)hint,TRUE);
+    pack(area,hint,0);
+    GtkWidget *entry=gtk_entry_new();
+    gtk_entry_set_max_length((GtkEntry*)entry,16384);
+    gtk_entry_set_text((GtkEntry*)entry,saved);
+    pack(area,entry,0);
+    gtk_widget_show_all(dlg);
+    int accepted=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_OK;
+    if(accepted){
+        const char *value=gtk_entry_get_text((GtkEntry*)entry);
+        if(strlen(value)>=cap)accepted=0;
+        else snprintf(result,cap,"%s",value);
+    }
+    gtk_widget_destroy(dlg);
+    return accepted;
+}
+
 static void pc2_deckcheatz_flow(int experimental_launch){
     if(!pc2_provider_controls_allowed())return;
     if(G.selected<0 || G.selected>=G.game_count){
@@ -6645,6 +6703,13 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
         log_line("DeckCheatz is not installed. GameWeld can download official 1.x automatically.");
         pc2_deckcheatz_request_install(experimental_launch);
+        return;
+    }
+    char current_steam_options[16385]={0};
+    if(experimental_launch &&
+       !pc2_deckcheatz_current_options_dialog(g->appid,current_steam_options,
+                                                sizeof current_steam_options)){
+        log_line("DeckCheatz session: current Steam options confirmation cancelled.");
         return;
     }
     if(g->executable[0] && pc2_deckcheatz_file(g->executable))
@@ -6786,7 +6851,9 @@ static void pc2_deckcheatz_flow(int experimental_launch){
         execlp("python3","python3",helper,"--preview","--appid",g->appid,
             "--launcher",launcher,"--proton",proton,"--game-exe",exe,
             "--install-dir",g->install_dir,"--compatdata",compat,
-            "--steam-root",steam,(char*)NULL);
+            "--steam-root",steam,
+            "--steam-launch-options",current_steam_options,
+            "--steam-options-verified",(char*)NULL);
         _exit(127);
     }
     close(fd[1]);
@@ -6858,6 +6925,8 @@ static void pc2_deckcheatz_flow(int experimental_launch){
             "--launcher",launcher,"--proton",proton,"--game-exe",exe,
             "--install-dir",g->install_dir,"--compatdata",compat,
             "--steam-root",steam,
+            "--steam-launch-options",current_steam_options,
+            "--steam-options-verified",
             "--confirm-prefix-changes","--experimental-direct-launch",(char*)NULL);
         dprintf(STDERR_FILENO,"GameWeld: could not execute experimental DeckCheatz helper.\\n");
         _exit(127);
