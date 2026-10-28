@@ -287,7 +287,8 @@ class PreserveTests(unittest.TestCase):
 
     def test_legacy_empty_backup_migrates_to_separate_verified_current_snapshot(self):
         legacy = options.backup_file(APPID, ACCOUNT, self.backups)
-        legacy.parent.mkdir(parents=True, mode=0o700)
+        legacy.parent.parent.mkdir(parents=True, mode=0o700)
+        legacy.parent.mkdir(mode=0o700)
         legacy.write_text(json.dumps({
             "version": 1, "appid": APPID, "account": ACCOUNT, "original": ""
         }), encoding="utf-8")
@@ -320,7 +321,8 @@ class PreserveTests(unittest.TestCase):
 
     def test_legacy_backup_nonempty_current_options_must_not_be_relabelled(self):
         legacy = options.backup_file(APPID, ACCOUNT, self.backups)
-        legacy.parent.mkdir(parents=True, mode=0o700)
+        legacy.parent.parent.mkdir(parents=True, mode=0o700)
+        legacy.parent.mkdir(mode=0o700)
         legacy.write_text(json.dumps({
             "version": 1, "appid": APPID, "account": ACCOUNT, "original": ""
         }), encoding="utf-8")
@@ -339,7 +341,8 @@ class PreserveTests(unittest.TestCase):
 
     def test_verified_baseline_refuses_legacy_tampering_or_symlink(self):
         legacy = options.backup_file(APPID, ACCOUNT, self.backups)
-        legacy.parent.mkdir(parents=True, mode=0o700)
+        legacy.parent.parent.mkdir(parents=True, mode=0o700)
+        legacy.parent.mkdir(mode=0o700)
         legacy.write_text(json.dumps({
             "version": 1, "appid": APPID, "account": ACCOUNT, "original": ""
         }), encoding="utf-8")
