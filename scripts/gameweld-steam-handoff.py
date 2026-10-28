@@ -599,6 +599,7 @@ def run_launch(appid: str, *, steam: str | None = None,
             try:
                 print("Steam " + transport + " command: STARTED", flush=True)
                 deadline = time.monotonic() + max(0, duration)
+                associated_only_observed = False
                 while True:
                     status = child.poll()
                     if status is not None and status != 0:
@@ -617,12 +618,10 @@ def run_launch(appid: str, *, steam: str | None = None,
                             print(note, flush=True)
                         return 0
                     if observed and (not previous or observed > previous):
-                        print(f"Steam app-ID associated processes: {observed}", flush=True)
-                        print("Launch result: STEAM_ASSOCIATION_OBSERVED", flush=True)
-                        print("Game executable, visible window and trainer: NOT VERIFIED.", flush=True)
-                        for note in log_probe.summary(appid):
-                            print(note, flush=True)
-                        return 0
+                        # Steam may mark a wrapper, reaper or Proton bootstrap as
+                        # Running long before the game EXE exists. Never equate
+                        # process association with confirmed game startup.
+                        associated_only_observed = True
                     if time.monotonic() >= deadline:
                         if status is None:
                             print("Steam command: STILL RUNNING (left untouched).", flush=True)
@@ -630,8 +629,13 @@ def run_launch(appid: str, *, steam: str | None = None,
                             print(f"Steam command exit status: {status}", flush=True)
                         if observed:
                             print(f"Existing app-ID associated processes: {observed}", flush=True)
-                        print("Launch result: UNCONFIRMED (no new game-associated process evidence).", flush=True)
-                        print("Steam may still be starting the game; check Steam or its game logs.", flush=True)
+                        if associated_only_observed:
+                            print("Launch result: STEAM_ASSOCIATION_ONLY (launcher process observed; game EXE not verified).", flush=True)
+                            print("Steam may show Running while DeckCheatz/Proton is still preparing or stalled.", flush=True)
+                        else:
+                            print("Launch result: UNCONFIRMED (no new game-associated process evidence).", flush=True)
+                            print("Steam may still be starting the game; check Steam or its game logs.", flush=True)
+                        print("No game window or WeMod/trainer startup was verified.", flush=True)
                         for note in log_probe.summary(appid):
                             print(note, flush=True)
                         return 2
