@@ -178,6 +178,96 @@ class SteamHandoffTests(unittest.TestCase):
         self.assertIn("Steam log gameprocess_log.txt AppID events: process_added=1", report)
         self.assertNotIn("private-info", report)
 
+    def make_steam_game_process_fixture(self):
+        root = self.root / "Steam"
+        game = root / "steamapps/common/Dying Light Beast"
+        game.mkdir(parents=True)
+        (root / "steamapps/appmanifest_3008130.acf").write_text(
+            '"AppState" { "appid" "3008130" }')
+        exe = game / "DyingLightGame.exe"
+        exe.write_bytes(b"MZ")
+        proc = self.root / "proc"
+        proc.mkdir(exist_ok=True)
+        p = proc / "1234"
+        p.mkdir()
+        (p / "cmdline").write_bytes(
+            b"/usr/bin/wine64-preloader\0" +
+            ("Z:" + str(exe).replace("/", "\\")).encode() + b"\0")
+        (p / "environ").write_bytes(b"SteamAppId=3008130\0")
+        (p / "comm").write_text("wine64\n")
+        (p / "exe").symlink_to("/usr/bin/wine64-preloader")
+        return game, proc, p
+
+    def test_game_executable_detected_independently_of_wemod_appid_count(self):
+        game, proc, item = self.make_steam_game_process_fixture()
+        self.assertEqual(
+            steam.observed_game_executable_pids("3008130", game, str(proc)),
+            {1234})
+        self.assertEqual(
+            steam.observed_game_executable_pids("3008131", game, str(proc)),
+            set())
+        item.joinpath("cmdline").write_bytes(
+            b"/usr/bin/wine64-preloader\0C:\\WeMod\\WeMod.exe\0")
+        self.assertEqual(
+            steam.observed_game_executable_pids("3008130", game, str(proc)),
+            set())
+
+    def test_rejects_missing_manifest_or_game_exe_outside_selected_directory(self):
+        game, proc, item = self.make_steam_game_process_fixture()
+        self.assertEqual(len(steam.observed_game_executable_pids(
+            "3008130", game, str(proc))), 1)
+        (game.parent.parent / "appmanifest_3008130.acf").unlink()
+        self.assertEqual(steam.observed_game_executable_pids(
+            "3008130", game, str(proc)), set())
+        outside = self.root / "Outside.exe"
+        outside.write_bytes(b"MZ")
+        (game.parent.parent / "appmanifest_3008130.acf").write_text("manifest")
+        item.joinpath("cmdline").write_bytes(
+            b"wine64\0" + str(outside).encode() + b"\0")
+        self.assertEqual(steam.observed_game_executable_pids(
+            "3008130", game, str(proc)), set())
+
+    def test_lifecycle_distinguishes_wemod_remnant_without_terminating_it(self):
+        game, proc, game_process = self.make_steam_game_process_fixture()
+        wemod = proc / "525322"
+        wemod.mkdir()
+        (wemod / "environ").write_bytes(b"SteamAppId=3008130\0")
+        (wemod / "comm").write_text("wine64\n")
+        (wemod / "exe").symlink_to("/usr/bin/wine64-preloader")
+        (wemod / "cmdline").write_bytes(
+            b"wine64-preloader\0C:\\Program Files\\WeMod\\WeMod.exe\0")
+        before = steam.game_session_lifecycle("3008130", game, root=str(proc))
+        self.assertEqual(before["game_executable_candidates"], 1)
+        self.assertEqual(before["wemod_only_wine_clients"], 1)
+        self.assertFalse(before["game_closed_verified"])
+        game_process.joinpath("cmdline").write_bytes(b"wine64-preloader\0")
+        after = steam.game_session_lifecycle("3008130", game, root=str(proc))
+        self.assertEqual(after["game_executable_candidates"], 0)
+        self.assertEqual(after["wemod_only_wine_clients"], 1)
+        self.assertEqual(after["other_appid_associated_processes"], 1)
+        self.assertTrue(wemod.exists())
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            steam.print_game_lifecycle(after)
+        self.assertIn("WeMod is present but game EXE was not verified", output.getvalue())
+        self.assertIn("No process was terminated", output.getvalue())
+
+    def test_launch_confirms_new_game_exe_without_new_appid_process(self):
+        marker = self.root / "steam-invoked"
+        self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
+        game, proc, item = self.make_steam_game_process_fixture()
+        with patch.object(steam, "associated_process_count", return_value=1), \
+             patch.object(steam, "observed_game_executable_pids",
+                          side_effect=[set(), {1234}]), \
+             patch.object(steam, "associated_non_client_processes",
+                          return_value=([], 1)):
+            status, report = self.capture(
+                "3008130", steam=str(self.command), install_dir=game,
+                require_idle_before_launch=True, duration=0.3)
+        self.assertEqual(status, 0, report)
+        self.assertIn("Launch result: GAME_EXECUTABLE_OBSERVED", report)
+        self.assertNotIn("Trainer attachment: VERIFIED", report)
+
     def test_read_only_details_identify_appid_helper_without_exposing_environment(self):
         proc = self.root / "proc"
         proc.mkdir()
