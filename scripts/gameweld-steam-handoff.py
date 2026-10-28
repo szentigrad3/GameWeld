@@ -176,6 +176,102 @@ def valid_appid(text: str) -> bool:
     )
 
 
+
+def _verified_game_dir(appid: str, requested: pathlib.Path | None) -> pathlib.Path | None:
+    """Accept only a manifest-backed installed Steam title, not arbitrary paths."""
+    if requested is None or not requested.is_absolute() or requested.is_symlink():
+        return None
+    try:
+        game_dir = requested.resolve(strict=True)
+        apps = game_dir.parent.parent
+        if (game_dir.parent.name != "common" or apps.name != "steamapps"
+                or not game_dir.is_dir()):
+            return None
+        manifest = apps / f"appmanifest_{appid}.acf"
+        if not manifest.is_file() or manifest.is_symlink():
+            return None
+        return game_dir
+    except (OSError, ValueError):
+        return None
+
+
+def _process_game_target(tokens: list[bytes], cwd: pathlib.Path | None,
+                         install_dir: pathlib.Path) -> bool:
+    """Verify a concrete on-disk Windows EXE in the selected game directory.
+
+    Do not guess from AppID environment tokens, short Windows executable names
+    or arbitrary extra arguments. A Wine process may share the AppID with WeMod.
+    """
+    if len(tokens) < 2:
+        return False
+    for raw in tokens[:3]:
+        if not raw or len(raw) > 2048:
+            continue
+        name = raw.decode("utf-8", "replace").strip(" \t\"'")
+        if not name.lower().endswith(".exe") or "\x00" in name:
+            continue
+        base = pathlib.PureWindowsPath(name).name.lower()
+        if base in ("wemod.exe", "services.exe", "explorer.exe",
+                    "conhost.exe", "winedevice.exe", "rpcss.exe",
+                    "plugplay.exe", "cmd.exe", "rundll32.exe"):
+            continue
+        candidate = None
+        if name.startswith("/"):
+            candidate = pathlib.Path(name)
+        elif len(name) >= 3 and name[:3].lower() == "z:\\":
+            candidate = pathlib.Path("/" + name[3:].replace("\\", "/"))
+        elif "\\" not in name and "/" not in name and cwd is not None:
+            candidate = cwd / name
+        if candidate is None:
+            continue
+        try:
+            actual = candidate.resolve(strict=True)
+            if (actual.is_file() and actual != install_dir and
+                    install_dir in actual.parents):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def observed_game_executable_pids(appid: str, install_dir: pathlib.Path | None,
+                                  root: str = "/proc") -> set[int]:
+    """Same-UID on-disk Steam game EXE evidence; no process contents reported."""
+    selected = _verified_game_dir(appid, install_dir)
+    if selected is None:
+        return set()
+    found = set()
+    try:
+        entries = os.scandir(root)
+    except OSError:
+        return set()
+    count = 0
+    with entries:
+        for item in entries:
+            if not item.name.isascii() or not item.name.isdecimal():
+                continue
+            count += 1
+            if count > MAX_PROC:
+                break
+            process = pathlib.Path(item.path)
+            try:
+                if process.stat().st_uid != os.getuid():
+                    continue
+                with (process / "cmdline").open("rb") as stream:
+                    data = stream.read(8193)
+                if not data or len(data) > 8192 or not data.endswith(b"\0"):
+                    continue
+                cwd = None
+                try:
+                    cwd = (process / "cwd").resolve(strict=True)
+                except OSError:
+                    pass
+                if _process_game_target(data.split(b"\0"), cwd, selected):
+                    found.add(int(item.name))
+            except (OSError, ValueError):
+                continue
+    return found
+
 def associated_processes(appid: str, root: str = "/proc") -> list[pathlib.Path]:
     """Return same-user PIDs with exact AppID environment tokens; no guessing.
 
@@ -384,7 +480,8 @@ def run_launch(appid: str, *, steam: str | None = None,
                duration: float = OBSERVE_SECONDS,
                require_idle_before_launch: bool = False,
                transport: str = "applaunch",
-               steam_root: pathlib.Path | None = None) -> int:
+               steam_root: pathlib.Path | None = None,
+               install_dir: pathlib.Path | None = None) -> int:
     if transport not in ("applaunch", "steam-uri"):
         print("Launch result: FAILED (unsupported Steam transport).", flush=True)
         return 3
@@ -397,6 +494,11 @@ def run_launch(appid: str, *, steam: str | None = None,
     print("Steam launch transport: " + transport, flush=True)
     log_probe = SteamLogProbe(steam_root)
     previous = associated_process_count(appid)
+    game_before = observed_game_executable_pids(appid, install_dir)
+    if game_before and require_idle_before_launch:
+        print("Launch result: FAILED (selected Steam game's executable is already present).", flush=True)
+        print("Existing on-disk game executable evidence: found; not launching a duplicate.", flush=True)
+        return 3
     if previous:
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
     if require_idle_before_launch and previous:
@@ -464,6 +566,14 @@ def run_launch(appid: str, *, steam: str | None = None,
                             print(note, flush=True)
                         return 3
                     observed = associated_process_count(appid)
+                    game_after = observed_game_executable_pids(appid, install_dir)
+                    if game_after - game_before:
+                        print("Steam game executable: OBSERVED in selected installation.", flush=True)
+                        print("Launch result: GAME_EXECUTABLE_OBSERVED", flush=True)
+                        print("Game window and trainer attachment: NOT VERIFIED.", flush=True)
+                        for note in log_probe.summary(appid):
+                            print(note, flush=True)
+                        return 0
                     if observed and (not previous or observed > previous):
                         print(f"Steam app-ID associated processes: {observed}", flush=True)
                         print("Launch result: STEAM_ASSOCIATION_OBSERVED", flush=True)
@@ -505,6 +615,8 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "launch"))
     parser.add_argument("--appid", required=True)
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--install-dir", type=pathlib.Path,
+                        help="Manifest-backed Steam install directory for read-only game EXE detection")
     parser.add_argument("--steam-root", type=pathlib.Path,
                         help="Steam client root to inspect read-only logs")
     parser.add_argument("--steam-log-summary", action="store_true",
@@ -545,7 +657,8 @@ def main() -> int:
     return run_launch(args.appid,
                       require_idle_before_launch=args.require_idle_before_launch,
                       transport=args.transport,
-                      steam_root=args.steam_root)
+                      steam_root=args.steam_root,
+                      install_dir=args.install_dir)
 
 
 if __name__ == "__main__":
