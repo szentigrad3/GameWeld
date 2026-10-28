@@ -94,19 +94,19 @@ class SteamHandoffTests(unittest.TestCase):
         marker = self.root / "steam-invoked"
         self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
         with patch.object(steam, "associated_process_count",
-                          side_effect=[1, 2]), \
+                          side_effect=[1] + [2] * 60), \
              patch.object(steam, "associated_non_client_processes",
                           return_value=([], 1)):
             status, report = self.capture(
                 "3008130", steam=str(self.command),
                 require_idle_before_launch=True, duration=0.2)
-        self.assertEqual(status, 0, report)
+        self.assertEqual(status, 2, report)
         deadline = time.monotonic() + 2
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         self.assertTrue(marker.exists())
         self.assertIn("Recognized existing WeMod-only Wine client(s): 1", report)
-        self.assertIn("STEAM_ASSOCIATION_OBSERVED", report)
+        self.assertIn("STEAM_ASSOCIATION_ONLY", report)
         self.assertIn("NOT VERIFIED", report)
 
     def test_steam_launch_aborts_if_wemod_only_evidence_changes(self):
@@ -467,11 +467,11 @@ class SteamHandoffTests(unittest.TestCase):
         # already-running unrelated/old association must not prove a new start.
         appid = "4294967294"
         self.fake_steam("exit 0\n")
-        with patch.object(steam, "associated_process_count", side_effect=[0, 1]):
-            status, report = self.capture(appid, steam=str(self.command), duration=1)
-        self.assertEqual(status, 0, report)
-        self.assertIn("STEAM_ASSOCIATION_OBSERVED", report)
-        self.assertIn("Game executable, visible window and trainer: NOT VERIFIED", report)
+        with patch.object(steam, "associated_process_count", side_effect=[0] + [1] * 60):
+            status, report = self.capture(appid, steam=str(self.command), duration=0.2)
+        self.assertEqual(status, 2, report)
+        self.assertIn("STEAM_ASSOCIATION_ONLY", report)
+        self.assertIn("No game window or WeMod/trainer startup was verified.", report)
 
     def test_existing_process_does_not_prove_new_game_launch(self):
         self.fake_steam("exit 0\n")
