@@ -3112,7 +3112,7 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
         j->live?"client handoff":"read-only live preview",j->game,j->appid,
         j->output[0]?j->output:"No report from helper.");
     const int wemod_existing = strstr(j->output,
-        "\\"wemod_already_visible\\": true") != NULL;
+        "\"wemod_already_visible\": true") != NULL;
     if(matching&&G.library_detail_status)
         set_label(G.library_detail_status,
             j->live?(j->ok?
