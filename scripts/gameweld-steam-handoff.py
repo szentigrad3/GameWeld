@@ -181,6 +181,59 @@ def associated_process_context(appid: str, pid: int, root: str = "/proc") -> tup
     return (parent, state, hint)
 
 
+def recognizable_wemod_client_only(directory: pathlib.Path) -> bool:
+    """Conservatively recognize a Wine loader running ONLY WeMod.exe.
+
+    This permits a *Steam game-only* request in the presence of an already
+    running client; it does not verify WeMod attachment or allow direct Proton
+    or prefix changes. Fail closed on missing, truncated or ambiguous data.
+    """
+    try:
+        comm = (directory / "comm").read_bytes()
+        if len(comm) > 128 or comm.strip().lower() not in (
+                b"wine64", b"wine64-preloader", b"wemod.exe"):
+            return False
+        exe = os.path.basename(os.readlink(directory / "exe")).lower()
+        if exe not in ("wine64", "wine64-preloader"):
+            return False
+        with (directory / "cmdline").open("rb") as stream:
+            raw = stream.read(8193)
+        if not raw or len(raw) > 8192 or not raw.endswith(b"\0"):
+            return False
+        executable_names = []
+        for token in raw.split(b"\0"):
+            if not token:
+                continue
+            if len(token) > 1024:
+                return False
+            decoded = token.decode("utf-8", "replace").strip(' "\'')
+            name = pathlib.PureWindowsPath(decoded).name.lower()
+            if name.endswith(".exe"):
+                if _safe_process_basename(name) in ("redacted", "unavailable"):
+                    return False
+                executable_names.append(name)
+        return executable_names == ["wemod.exe"]
+    except (OSError, UnicodeError):
+        return False
+
+
+def associated_non_client_processes(
+        appid: str, root: str = "/proc") -> tuple[list[pathlib.Path], int]:
+    """An exact AppID Wine/WeMod client alone does not make a game active.
+
+    All uncertain processes remain blockers. A client exemption is explicitly
+    limited to Steam-managed game-only launches with the idle-before-launch gate.
+    """
+    blocking = []
+    client_count = 0
+    for directory in associated_processes(appid, root):
+        if recognizable_wemod_client_only(directory):
+            client_count += 1
+        else:
+            blocking.append(directory)
+    return blocking, client_count
+
+
 def run_launch(appid: str, *, steam: str | None = None,
                duration: float = OBSERVE_SECONDS,
                require_idle_before_launch: bool = False,
@@ -199,14 +252,36 @@ def run_launch(appid: str, *, steam: str | None = None,
     if previous:
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
     if require_idle_before_launch and previous:
-        for pid, comm, executable, role in associated_process_details(appid):
-            parent, state, target = associated_process_context(appid, pid)
-            print(f"Blocking AppID association: PID={pid} role={role} "
-                  f"comm={comm} executable={executable} PPID={parent} "
-                  f"state={state} windows_target_hint={target}", flush=True)
-        print("Launch result: FAILED (this Steam AppID already has a running associated process).", flush=True)
-        print("The game and any WeMod session must be closed before requesting a new wrapper launch.", flush=True)
-        return 3
+        blockers, clients = associated_non_client_processes(appid)
+        if clients:
+            print(f"Recognized existing WeMod-only Wine client(s): {clients}. "
+                  "This is NOT proof of trainer attachment.", flush=True)
+        if blockers:
+            blocking_pids = {int(directory.name) for directory in blockers}
+            for pid, comm, executable, role in associated_process_details(appid):
+                if pid not in blocking_pids:
+                    continue
+                parent, state, target = associated_process_context(appid, pid)
+                print(f"Blocking AppID association: PID={pid} role={role} "
+                      f"comm={comm} executable={executable} PPID={parent} "
+                      f"state={state} windows_target_hint={target}", flush=True)
+            print("Launch result: FAILED (unverified non-WeMod process associated "
+                  "with this Steam AppID).", flush=True)
+            print("The game may already be running. No duplicate request sent.", flush=True)
+            return 3
+        if clients == 0:
+            # A process exited or changed during inspection. Never assert an
+            # idle game based on a vanished or unreadable association.
+            print("Launch result: FAILED (AppID association changed during "
+                  "preflight; retry after checking Steam status).", flush=True)
+            return 3
+        # Rescan immediately before the Steam command. An uncertain newcomer
+        # must not be ignored because the first observation saw WeMod only.
+        blockers_again, clients_again = associated_non_client_processes(appid)
+        if blockers_again or clients_again != clients:
+            print("Launch result: FAILED (AppID process evidence changed "
+                  "during preflight; no Steam request sent).", flush=True)
+            return 3
     # The running Steam client may accept IPC and return immediately; stdout
     # therefore goes to an ephemeral file, not a pipe that keeps GameWeld
     # waiting forever because a game inherited the file descriptor.
