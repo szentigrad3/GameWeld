@@ -84,6 +84,12 @@ class SavedSteamReadinessTests(unittest.TestCase):
         peers = {
             "gameweld-steam-launch-options-preserve.py": Options,
             "gameweld-deckcheatz-session.py": Shim,
+            "gameweld-deckcheatz-auto-steam-setup.py": type(
+                "FirstRun", (), {
+                    "read_config_bytes": staticmethod(lambda cfg: b""),
+                    "saved_option_value": staticmethod(
+                        lambda raw, appid, options: None),
+                }),
             "gameweld-steam-compat-bridge.py": Bridge,
         }
         with patch.object(module, "import_peer",
@@ -93,7 +99,7 @@ class SavedSteamReadinessTests(unittest.TestCase):
         self.assertEqual(report["state"], "incompatible_bridge_selected")
         self.assertEqual(report["saved_compatibility"]["state"],
                          "gameweld_bridge_selected")
-        self.assertIn("actual Proton command", report["reason"])
+        self.assertIn("Automatic compatibility migration is not implemented", report["reason"])\n        self.assertFalse(report["managed_compatibility_migration_available"])
         self.assertFalse(report["steam_options_modified"])
 
     def test_compatibility_tool_is_only_classified_when_explicitly_selected(self):
@@ -155,6 +161,12 @@ class SavedSteamReadinessTests(unittest.TestCase):
         peers = {
             "gameweld-steam-launch-options-preserve.py": Options,
             "gameweld-deckcheatz-session.py": Shim,
+            "gameweld-deckcheatz-auto-steam-setup.py": type(
+                "FirstRun", (), {
+                    "read_config_bytes": staticmethod(lambda cfg: b""),
+                    "saved_option_value": staticmethod(
+                        lambda raw, appid, options: None),
+                }),
             "gameweld-steam-compat-bridge.py": Bridge,
         }
         root = self.launcher.parent
