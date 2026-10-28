@@ -1,0 +1,27 @@
+name: PC2 State Hardening Tests
+
+on:
+  pull_request:
+    paths:
+      - 'crates/wand-state/**'
+      - 'crates/wand-core/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/pc2-state-hardening-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-state:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check and test wand-state
+        run: |
+          cargo test -p wand-state --lib
+          cargo test -p wandd --bin wandd
+          cargo check -p wandd
