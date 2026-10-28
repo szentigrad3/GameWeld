@@ -105,17 +105,80 @@ def associated_process_details(appid: str, root: str = "/proc") -> list[tuple[in
                 "steamwebhelper", "steam-runtime", "steamservice",
                 "pressure-vessel", "reaper")):
             role = "steam_helper"
+        elif comm.lower().endswith(".exe") and not any(
+                name in names for name in (
+                    "services.exe", "explorer.exe", "conhost.exe",
+                    "winedevice.exe", "rpcss.exe", "plugplay.exe")):
+            role = "windows_executable_candidate"
         elif any(part in names for part in (
                 "wineserver", "services.exe", "explorer.exe", "conhost.exe",
-                "winedevice.exe", "rpcss.exe", "plugplay.exe",
-                "wine64", "wine-preloader")):
+                "winedevice.exe", "rpcss.exe", "plugplay.exe")):
             role = "wine_runtime"
-        elif comm.lower().endswith(".exe"):
-            role = "windows_executable_candidate"
+        elif "wine64" in names or "wine-preloader" in names:
+            # A wine64-preloader can HOST a game executable. Its own
+            # executable name cannot distinguish game from runtime.
+            role = "wine_loader_ambiguous"
         else:
             role = "other_associated"
         records.append((pid, comm, executable, role))
     return sorted(records)
+
+
+def associated_process_context(appid: str, pid: int, root: str = "/proc") -> tuple[str, str, str]:
+    """Return only PPID, one-letter state and a safe Windows EXE basename hint.
+
+    Read access is restricted to the exact-AppID, same-UID process set.
+    This remains untrusted diagnostic evidence, NOT a permission to launch.
+    """
+    if pid <= 0 or pid not in {
+            int(directory.name) for directory in associated_processes(appid, root)}:
+        return ("unavailable", "?", "unavailable")
+    directory = pathlib.Path(root) / str(pid)
+    parent = "unavailable"
+    state = "?"
+    try:
+        with (directory / "status").open("rb") as stream:
+            raw = stream.read(8193)
+        if len(raw) <= 8192:
+            for line in raw.splitlines():
+                if line.startswith(b"PPid:"):
+                    candidate = line.partition(b":")[2].strip()
+                    if candidate.isascii() and candidate.isdigit():
+                        parent = candidate.decode("ascii")
+                elif line.startswith(b"State:"):
+                    candidate = line.partition(b":")[2].strip()[:1]
+                    if candidate in (b"R", b"S", b"D", b"T", b"t",
+                                     b"Z", b"X", b"I"):
+                        state = candidate.decode("ascii")
+    except OSError:
+        pass
+
+    hint = "unavailable"
+    try:
+        with (directory / "cmdline").open("rb") as stream:
+            raw = stream.read(8193)
+        if len(raw) <= 8192:
+            for token in raw.split(b"\0")[:48]:
+                if not token or len(token) > 1024:
+                    continue
+                # Windows paths can use backslashes; never print the path
+                # or any other argument, even when it resembles an EXE.
+                value = token.decode("utf-8", "replace").strip(' "\'')
+                name = pathlib.PureWindowsPath(value).name
+                if not name.lower().endswith(".exe"):
+                    continue
+                safe = _safe_process_basename(name)
+                if safe in ("redacted", "unavailable"):
+                    continue
+                if safe.lower() in (
+                        "services.exe", "explorer.exe", "conhost.exe",
+                        "winedevice.exe", "rpcss.exe", "plugplay.exe"):
+                    continue
+                hint = safe
+                break
+    except OSError:
+        pass
+    return (parent, state, hint)
 
 
 def run_launch(appid: str, *, steam: str | None = None,
@@ -137,8 +200,10 @@ def run_launch(appid: str, *, steam: str | None = None,
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
     if require_idle_before_launch and previous:
         for pid, comm, executable, role in associated_process_details(appid):
+            parent, state, target = associated_process_context(appid, pid)
             print(f"Blocking AppID association: PID={pid} role={role} "
-                  f"comm={comm} executable={executable}", flush=True)
+                  f"comm={comm} executable={executable} PPID={parent} "
+                  f"state={state} windows_target_hint={target}", flush=True)
         print("Launch result: FAILED (this Steam AppID already has a running associated process).", flush=True)
         print("The game and any WeMod session must be closed before requesting a new wrapper launch.", flush=True)
         return 3
@@ -232,9 +297,11 @@ def main() -> int:
             if not details:
                 print("Process details: none visible", flush=True)
             for pid, comm, executable, role in details:
+                parent, state, target = associated_process_context(args.appid, pid)
                 print(f"AppID association: PID={pid} role={role} "
-                      f"comm={comm} executable={executable}", flush=True)
-            print("Process roles are heuristic; no game executable verified.", flush=True)
+                      f"comm={comm} executable={executable} PPID={parent} "
+                      f"state={state} windows_target_hint={target}", flush=True)
+            print("Process roles and Windows target hints are heuristic; no game executable verified.", flush=True)
         print("No Steam command or trainer was launched.", flush=True)
         return 0
     if not args.confirm:
