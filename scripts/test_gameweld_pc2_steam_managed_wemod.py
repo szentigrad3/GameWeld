@@ -169,6 +169,19 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("Steam session changed; re-run preview before client launch", ATTACH)
         self.assertIn('"steam_launch_options_changed": False', ATTACH)
 
+    def test_wand_v2_development_mode_is_explicit_no_fallback_and_no_steam_edits(self):
+        self.assertIn("--enable-v2-wemod-test", RUNNER)
+        self.assertIn("unset GAMEWELD_PC2_USE_WAND_V2", RUNNER)
+        self.assertIn("export GAMEWELD_PC2_USE_WAND_V2=1", RUNNER)
+        self.assertIn("pc2_wand_v2_allowed(void)", GUI)
+        self.assertIn("Play with WeMod (v2 development)", GUI)
+        self.assertIn('strcmp(s, "Play with WeMod (v2 development)")', GUI)
+        self.assertIn('"gameweld-wand-v2-proxy.py"', GUI)
+        self.assertIn('if(!j->lifecycle && pc2_wand_v2_allowed())', GUI)
+        self.assertIn('"--install-dir",j->install_dir,"--launch-client"', GUI)
+        self.assertIn('if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_steam_onebutton()', GUI)
+        self.assertIn('else if(pc2_steam_no_options_allowed())pc2_steam_launch_selected(0)', GUI)
+
     def test_explicit_steam_url_fallback_is_not_automatic(self):
         self.assertIn('button("Launch via Steam URL (fallback)"', GUI)
         self.assertIn('on_pc2_steam_uri_fallback,NULL,NULL,0', GUI)
