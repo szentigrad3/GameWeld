@@ -109,6 +109,37 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("Start the existing WeMod client in THIS game's Proton prefix?", GUI)
         self.assertIn('"trainer_attachment_verified": False', ATTACH)
 
+    def test_no_steam_options_one_click_mode_is_separate_and_opt_in(self):
+        self.assertIn("--enable-no-steam-options-test", RUNNER)
+        self.assertIn("unset GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS", RUNNER)
+        self.assertIn("export GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS=1", RUNNER)
+        self.assertIn("pc2_steam_no_options_allowed(void)", GUI)
+        self.assertIn("pc2_steam_no_options_allowed())pc2_steam_launch_selected(0)", GUI)
+        self.assertIn("Play with WeMod (no Steam settings)", GUI)
+        self.assertIn("Steam will NOT be restarted", GUI)
+        self.assertIn("Launch Options and Compatibility", GUI)
+        self.assertIn("j->no_options_onebutton=pc2_steam_no_options_allowed()", GUI)
+        self.assertIn("j->no_options_onebutton?2:1", GUI)
+        self.assertIn("if(!j->live&&ready&&matching&&j->allow_start==2)", GUI)
+        self.assertIn("pc2_steam_wemod_attach_selected(1);", GUI)
+        # Pending one-shot tokens or existing direct wrappers cannot silently
+        # start a second trainer when the new launch route is selected.
+        self.assertIn('pc2_deckcheatz_session_helper("status",id,NULL,pending', GUI)
+        self.assertIn('strstr(pending,"\\\"session_armed\\\": true")', GUI)
+        self.assertIn('!strcmp(mode,"direct_wrapper_configured")', GUI)
+        self.assertIn('!strcmp(mode,"incompatible_bridge_selected")', GUI)
+        self.assertIn("GameWeld will not start a second WeMod client", GUI)
+
+    def test_no_options_one_click_reuses_live_prefix_safety_rechecks(self):
+        self.assertIn("if(j->steam_managed_wemod && (!strcmp(state,", GUI)
+        self.assertIn('"Launch result: GAME_EXECUTABLE_OBSERVED"', GUI)
+        self.assertIn('j->ok && strstr(j->output,', GUI)
+        self.assertIn('"can_attempt_with_explicit_consent": true', GUI.replace('\\\\', ''))
+        self.assertIn("pc2_steam_wemod_attach_selected_ex(0,j->no_options_onebutton?2:1,0)", GUI)
+        self.assertIn('argv = [str(runtime["proton"]), "runinprefix", str(client / "WeMod.exe")]', ATTACH)
+        self.assertIn("Steam session changed; re-run preview before client launch", ATTACH)
+        self.assertIn('"steam_launch_options_changed": False', ATTACH)
+
     def test_explicit_steam_url_fallback_is_not_automatic(self):
         self.assertIn('button("Launch via Steam URL (fallback)"', GUI)
         self.assertIn('on_pc2_steam_uri_fallback,NULL,NULL,0', GUI)
