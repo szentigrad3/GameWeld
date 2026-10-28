@@ -89,7 +89,17 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
                              "cannot authorize a trainer launch")
         cfg, account = next(iter(matches.values()))
         original = options.launch_option(cfg, appid)
-        result = classify_saved_option(original, launcher, shimmod.installed_wrapper_path(), appid)
+        shim = shimmod.installed_wrapper_path()
+        result = classify_saved_option(original, launcher, shim, appid)
+        if result["state"] == "one_shot_shim_configured":
+            # Saved text alone does not prove the installed shim still exists
+            # or matches the source we reviewed. A stale shim could strand a
+            # Steam launch even if the token arm action succeeds.
+            source = Path(__file__).resolve().with_name("gameweld-deckcheatz-session.py")
+            if (shim.is_symlink() or not shim.is_file() or source.is_symlink()
+                    or not source.is_file() or shim.read_bytes() != source.read_bytes()):
+                result["state"] = "needs_setup"
+                result["reason"] = "Installed one-shot Steam shim missing or differs from GameWeld source"
         result["steam_account"] = account
         return result
     except (OSError, ValueError) as exc:
