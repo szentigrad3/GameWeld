@@ -6992,21 +6992,27 @@ static GtkWidget *build_settings(void){
     if(1){
         GtkWidget*tabs=gtk_notebook_new();
         GtkWidget*quick=box(GTK_ORIENTATION_VERTICAL,12);
-        GtkWidget*first=card("Play with WeMod",
-            "For Steam Windows games, the validated Steam Bridge launches the game and WeMod "
-            "inside the same Proton runtime. Open Advanced Providers to inspect an existing "
-            "Steam Bridge setup. First-time compatibility-tool registration is still manual. "
-            "Other provider launchers remain separate options.",
-            NULL);
+        GtkWidget*first=pc2_deckcheatz_onebutton_allowed()?
+            card("Play with WeMod",
+                 "Choose a Steam game in Library and click Play with WeMod. "
+                 "GameWeld prepares DeckCheatz as needed and combines user-verified "
+                 "Steam launch options for the current session without editing Steam. "
+                 "This direct route is experimental; Steam runtime parity and trainer attachment are unverified.",
+                 NULL):
+            card("Play with WeMod",
+                 "For Steam Windows games, the validated Steam Bridge launches the game and WeMod "
+                 "inside the same Proton runtime. Open Advanced Providers to inspect an existing "
+                 "Steam Bridge setup. First-time compatibility-tool registration is still manual. "
+                 "Other provider launchers remain separate options.",NULL);
         pack(quick,first,0);
         GtkWidget*open_wemod=button("Open WeMod & DeckCheatz setup","primary-action");
         g_signal_connect_data(open_wemod,"clicked",(GCallback)on_settings_open_wemod,tabs,NULL,0);
-        pack(quick,open_wemod,0);
-        pack(quick,card("Tested game: Astrometica",
+        if(!pc2_deckcheatz_onebutton_allowed())pack(quick,open_wemod,0);
+        if(!pc2_deckcheatz_onebutton_allowed())pack(quick,card("Tested game: Astrometica",
             "GameWeld Steam Bridge + Proton Experimental + Steam Linux Runtime 4 "
             "successfully launched Astrometica and WeMod together; the trainer worked in-game "
             "on one CachyOS system. Other games still need individual validation.",NULL),0);
-        pack(quick,card("Keep your installation working",
+        if(!pc2_deckcheatz_onebutton_allowed())pack(quick,card("Keep your installation working",
             "DeckCheatz downloads, version checks and opt-in updates are under the DeckCheatz tab. "
             "Source-level trainer providers, compatibility fixes and patch diagnostics are under Advanced Providers. "
             "GameWeld does not perform background DeckCheatz updates.",NULL),0);
@@ -7025,8 +7031,10 @@ static GtkWidget *build_settings(void){
         gtk_container_add(advanced_expander,cols);
         pack(advancedpage,advanced_expander,0);
         gtk_notebook_append_page((GtkNotebook*)tabs,quick,label("Quick Start",NULL));
-        gtk_notebook_append_page((GtkNotebook*)tabs,deckpage,label("WeMod & DeckCheatz",NULL));
-        gtk_notebook_append_page((GtkNotebook*)tabs,advancedpage,label("Advanced Providers",NULL));
+        if(!pc2_deckcheatz_onebutton_allowed()){
+            gtk_notebook_append_page((GtkNotebook*)tabs,deckpage,label("WeMod & DeckCheatz",NULL));
+            gtk_notebook_append_page((GtkNotebook*)tabs,advancedpage,label("Advanced Providers",NULL));
+        }
         gtk_notebook_set_current_page((GtkNotebook*)tabs,0);
         pack(p,tabs,1);
     }else pack(p,cols,1);
