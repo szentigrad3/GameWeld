@@ -99,7 +99,7 @@ class DeckCheatzDirectTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 with patch.object(backend.subprocess, "run") as process:
                     with self.assertRaisesRegex(backend.Blocked, "requires BOTH"):
-                        backend.main(["--launch", *self.flags, *extra])
+                        backend.main(["--launch", *self.flags, "--steam-options-verified", *extra])
                     process.assert_not_called()
 
     def test_full_consent_spawns_only_external_launcher_not_steam(self):
@@ -110,6 +110,7 @@ class DeckCheatzDirectTests(unittest.TestCase):
                     self.assertEqual(backend.main([
                         "--launch", *self.flags,
                         "--game-arg=--windowed",
+                        "--steam-options-verified",
                         "--confirm-prefix-changes", "--experimental-direct-launch",
                     ]), 0)
         args, kwargs = process.call_args
@@ -123,11 +124,37 @@ class DeckCheatzDirectTests(unittest.TestCase):
         self.assertNotIn("steam", [Path(x).name for x in args[0]])
         self.assertNotIn("shell", kwargs)
 
+    def test_direct_launch_requires_verified_current_steam_options(self):
+        with patch.object(backend.subprocess, "run") as proc:
+            with self.assertRaisesRegex(backend.Blocked, "CURRENT Steam Launch Options"):
+                backend.main(["--launch", *self.flags,
+                              "--confirm-prefix-changes", "--experimental-direct-launch"])
+            proc.assert_not_called()
+
+    def test_custom_steam_options_are_composed_without_steam_edits(self):
+        with patch.object(backend.subprocess, "run",
+                          return_value=SimpleNamespace(returncode=0)) as process:
+            with patch.object(backend, "active_game_process", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(backend.main([
+                        "--launch", *self.flags,
+                        "--steam-launch-options", "PROTON_LOG=1 mangohud %command% -windowed",
+                        "--steam-options-verified",
+                        "--confirm-prefix-changes", "--experimental-direct-launch",
+                    ]), 0)
+        argv = process.call_args.args[0]
+        self.assertEqual(argv[0], "mangohud")
+        self.assertEqual(argv[-1], "-windowed")
+        self.assertEqual(process.call_args.kwargs["env"]["PROTON_LOG"], "1")
+        self.assertFalse((self.steam / "userdata").exists())
+        self.assertEqual((self.compat / "pfx").is_dir(), True)
+
     def test_active_game_refuses_duplicate_launch(self):
         with patch.object(backend, "active_game_process", return_value=True):
             with patch.object(backend.subprocess, "run") as process:
                 with self.assertRaisesRegex(backend.Blocked, "already has an active process"):
                     backend.main(["--launch", *self.flags,
+                                  "--steam-options-verified",
                                   "--confirm-prefix-changes",
                                   "--experimental-direct-launch"])
                 process.assert_not_called()
