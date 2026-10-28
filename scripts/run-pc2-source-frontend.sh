@@ -36,7 +36,7 @@ unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON
 if [[ "${1:-}" == "--enable-deckcheatz-onebutton-test" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1
   export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
-  printf '%s\n' 'PC2 Steam-managed DeckCheatz experiment: read existing saved launch options automatically, use verified DeckCheatz wrapper through steam -applaunch; first-time Steam wrapper setup may be required.'
+  printf '%s\n' 'PC2 Steam-managed DeckCheatz experiment: automatic consented Steam shutdown/restart registers one-shot wrapper with protected backup; no manual Launch Options paste.'
   set --
 fi
 if [[ "${1:-}" == "--enable-steam-wemod-test" && "$#" -eq 1 ]]; then
