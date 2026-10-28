@@ -6408,8 +6408,10 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     }
     json_string(saved,"proposed_launch_option",confirmed,36000);
     json_string(saved,"original_launch_option",confirmed_original,18000);
+    int backup_reused=strstr(saved,"\"ORIGINAL_BACKUP_REUSED\"")!=NULL;
+    int backup_created=strstr(saved,"\"ORIGINAL_BACKUP_SAVED\"")!=NULL;
     if(strcmp(original,confirmed_original) || strcmp(merged,confirmed) ||
-       !strstr(saved,"\"ORIGINAL_BACKUP_SAVED\"")){
+       (!backup_created && !backup_reused)){
         pc2_steam_option_message("Steam options changed during preparation",
             "The proposed command no longer matches the preview. "
             "No replacement has been copied. Steam remains unchanged.",NULL);
@@ -6418,11 +6420,15 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
     GtkClipboard*clip=gtk_clipboard_get(gdk_atom_intern_static_string("CLIPBOARD"));
     if(!clip){log_line("Steam option protection: clipboard unavailable; Steam unchanged.");goto done;}
     gtk_clipboard_set_text(clip,merged,-1);
-    pc2_steam_option_message("Original options backed up; merged command copied",
-        "Paste this in the selected game's Steam Properties > General > Launch Options. "
-        "A separate Restore Original button can copy back your pre-GameWeld options. "
-        "GameWeld has not edited Steam.",merged);
-    log_line("Saved exact original Steam options for AppID %s; copied safe combined command. Steam itself unchanged.",g->appid);
+    pc2_steam_option_message(
+        backup_reused?"Existing original backup verified; combined command copied":
+        "Original options backed up; combined command copied",
+        "The protected original Steam Launch Options backup is safely retained. "
+        "Paste the combined command into this game's Steam Properties > General > Launch Options. "
+        "Restore Original can recover the saved original. GameWeld did not edit Steam.",merged);
+    log_line("Steam AppID %s: %s; copied safe combined command; Steam unchanged.",
+             g->appid,backup_reused?"verified existing original backup":
+             "saved a new original backup");
 done:
     free(preview);free(saved);free(original);free(merged);free(confirmed);free(confirmed_original);free(decision);
 }
