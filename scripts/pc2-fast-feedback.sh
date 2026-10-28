@@ -13,6 +13,7 @@ python3 -m py_compile \
   scripts/gameweld-wemod-native-route.py \
   scripts/gameweld-wemod-live-attach.py \
   scripts/gameweld-deckcheatz-session-options.py \
+  scripts/gameweld-deckcheatz-steam-readiness.py \
   scripts/gameweld-prepared-prefix-import.py \
   scripts/gameweld-prepared-prefix-activate.py \
   scripts/gameweld-prefix-runtime-preflight.py \
@@ -64,6 +65,7 @@ suites=(
   test_gameweld_wemod_live_attach.py
   test_gameweld_deckcheatz_direct.py
   test_gameweld_deckcheatz_session_options.py
+  test_gameweld_deckcheatz_steam_readiness.py
   test_gameweld_prepared_prefix_import.py
   test_gameweld_prepared_prefix_activate.py
 )
