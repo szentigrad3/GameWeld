@@ -2813,6 +2813,7 @@ static gboolean pc2_steam_launch_done(gpointer data){
     pc2_steam_launch_busy=0;
     const char *state=strstr(j->output,"Launch result: FAILED")?"FAILED":
         strstr(j->output,"Launch result: GAME_EXECUTABLE_OBSERVED")?"GAME EXECUTABLE OBSERVED":
+        strstr(j->output,"Launch result: STEAM_ASSOCIATION_ONLY")?"WRAPPER ONLY":
         strstr(j->output,"Launch result: STEAM_ASSOCIATION_OBSERVED")?"ASSOCIATED PROCESS OBSERVED":
         "UNCONFIRMED";
     log_line("PC2 Steam %s [%s] %s (app %s): %.3000s",
@@ -2828,6 +2829,8 @@ static gboolean pc2_steam_launch_done(gpointer data){
        !strcmp(G.games[G.selected].appid,j->appid)&&G.library_detail_status){
         set_label(G.library_detail_status,!strcmp(state,"FAILED")?
             "Steam launch FAILED. Check Activity for the command error.":
+            !strcmp(state,"WRAPPER ONLY")?
+            "Steam wrapper is running, but game EXE not observed. Steam may say Running without a game window. Check session; don't relaunch.":
             !strcmp(state,"UNCONFIRMED")?
             "Steam launch UNCONFIRMED. Check Steam's Downloads/game status and Activity.":
             j->expect_deckcheatz?
