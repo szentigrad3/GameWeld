@@ -2969,7 +2969,12 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
     char*body=NULL;int code=0;
     if(http_request("GET",request_path,NULL,&body,&code)<0||code!=200||!body){
         log_line("PC2 backend did not approve a safe preview for %s (HTTP %d). Nothing launched.",g->name,code);
-        pc2_steam_launch_notice("Local backend launch-preview unavailable. The game was not started; review GameWeld's backend startup.");
+        char backend_reason[512]={0},notice[900]={0};
+        if(body)json_string(body,"error",backend_reason,sizeof backend_reason);
+        snprintf(notice,sizeof notice,"Steam AppID %s launch-preview failed (HTTP %d). %s",
+            id,code,backend_reason[0]?backend_reason:
+            "The local backend could not approve this game. No Steam request was sent.");
+        pc2_steam_launch_notice(notice);
         free(body);return;
     }
     char mode[64]={0},provider[64]={0},reply_id[64]={0},uri[256]={0};
