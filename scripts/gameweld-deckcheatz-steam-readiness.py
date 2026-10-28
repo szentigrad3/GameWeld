@@ -68,7 +68,26 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
     options = import_peer("gameweld-steam-launch-options-preserve.py", "gw_steam_read")
     shimmod = import_peer("gameweld-deckcheatz-session.py", "gw_shim_read")
     try:
-        cfg, account = options.find_config(appid, steam_root, steam_account)
+        # Native and Flatpak Steam have different per-account userdata roots.
+        # Never choose the first of several distinct files: that might read a
+        # different user's saved options and launch the wrong configuration.
+        home = Path.home()
+        roots = [steam_root] if steam_root is not None else [
+            home / ".local/share/Steam", home / ".steam/root",
+            home / ".steam/steam",
+            home / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+        ]
+        matches = {}
+        for root in roots:
+            try:
+                cfg, account = options.find_config(appid, root, steam_account)
+            except (OSError, ValueError):
+                continue
+            matches[str(cfg.resolve(strict=True))] = (cfg, account)
+        if len(matches) != 1:
+            raise ValueError("Steam saved options are missing or multiple accounts/clients match; "
+                             "cannot authorize a trainer launch")
+        cfg, account = next(iter(matches.values()))
         original = options.launch_option(cfg, appid)
         result = classify_saved_option(original, launcher, shimmod.installed_wrapper_path(), appid)
         result["steam_account"] = account
