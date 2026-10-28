@@ -129,7 +129,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('!strcmp(mode,"trainer_wrapper_present")', GUI)
         self.assertIn('!strcmp(mode,"incompatible_bridge_selected")', GUI)
         self.assertIn('!strcmp(mode,"unverified")', GUI)
-        self.assertIn('"preserve-custom-options"', GUI)
+        self.assertIn('"--preserve-custom-options"', GUI)
         self.assertIn('pc2_deckcheatz_saved_readiness(g,NULL,readiness,sizeof readiness)', GUI)
         self.assertIn("GameWeld will not start a second WeMod client", GUI)
 
