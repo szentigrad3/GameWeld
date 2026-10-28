@@ -1732,10 +1732,10 @@ mod tests {
         // Regression guard for the hard-coded per-user Windows profile and
         // expansion of untrusted USERPROFILE content into generated CMD.
         let src = include_str!("lib.rs");
-        assert!(!src.contains("USERPROFILE=C:"));
-        assert!(!src.contains("WAND_SAVED_USERPROFILE"));
-        assert!(!src.contains("echo wand-user=%USERPROFILE%"));
-        assert!(!src.contains("echo game-user=%USERPROFILE%"));
+        assert!(!src.contains(concat!("USER", "PROFILE=C:")));
+        assert!(!src.contains(concat!("WAND_SAVED_", "USERPROFILE")));
+        assert!(!src.contains(concat!("echo wand-user=", "%USERPROFILE%")));
+        assert!(!src.contains(concat!("echo game-user=", "%USERPROFILE%")));
     }
 
     #[test]
