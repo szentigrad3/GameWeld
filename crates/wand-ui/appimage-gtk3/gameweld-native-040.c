@@ -635,6 +635,7 @@ static int pc2_deckcheatz_find_launcher(char *,size_t);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
 static void pc2_deckcheatz_flow(int experimental_launch);
 static void pc2_deckcheatz_steam_onebutton(void);
+static int pc2_deckcheatz_folder(const char *p);
 static void pc2_deckcheatz_request_install(int resume_mode);
 static void on_pc2_deckcheatz_install(GtkButton*,void*);
 static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
