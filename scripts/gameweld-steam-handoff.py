@@ -72,8 +72,10 @@ def associated_process_count(appid: str, root: str = "/proc") -> int:
     return len(associated_processes(appid, root))
 
 
-def _safe_process_basename(text: str) -> str:
-    name = os.path.basename(text.strip().removesuffix(" (deleted)"))
+def _safe_process_basename(text: str, *, path: bool = False) -> str:
+    name = text.strip().removesuffix(" (deleted)")
+    if path:
+        name = os.path.basename(name)
     if not name or len(name) > 80:
         return "unavailable"
     if all(ch.isascii() and (ch.isalnum() or ch in "._+-") for ch in name):
@@ -95,7 +97,7 @@ def associated_process_details(appid: str, root: str = "/proc") -> list[tuple[in
             except ValueError:
                 continue
         try:
-            executable = _safe_process_basename(os.readlink(directory / "exe"))
+            executable = _safe_process_basename(os.readlink(directory / "exe"), path=True)
         except OSError:
             executable = "unavailable"
         names = (comm + " " + executable).lower()
