@@ -3111,11 +3111,15 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
     log_line("Steam-managed WeMod %s for %.140s (AppID %s): %.2600s",
         j->live?"client handoff":"read-only live preview",j->game,j->appid,
         j->output[0]?j->output:"No report from helper.");
+    const int wemod_existing = strstr(j->output,
+        "\\"wemod_already_visible\\": true") != NULL;
     if(matching&&G.library_detail_status)
         set_label(G.library_detail_status,
             j->live?(j->ok?
                 "WeMod client process requested; game attachment NOT VERIFIED.":
                 "WeMod client handoff BLOCKED. No game or Steam settings changed by GameWeld.") :
+            wemod_existing?
+                "WeMod.exe is already running; no duplicate started. Open WeMod to connect to the game. Attachment UNVERIFIED.":
             ready?"Game is running; WeMod handoff prerequisites detected (client still NOT attached).":
                 "WeMod handoff not ready; see the exact blockers in the dialog.");
     if(!j->live&&ready&&matching&&j->allow_start){
@@ -3134,9 +3138,19 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
     }else{
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,j->ok?GTK_MESSAGE_INFO:GTK_MESSAGE_QUESTION,
-            GTK_BUTTONS_OK,"WeMod %s\n\n%.2800s\n\n"
-            "Steam Launch Options unchanged. Trainer attachment UNVERIFIED.",
-            j->live?"handoff response":"preview",j->output[0]?j->output:"Helper returned no output.");
+            GTK_BUTTONS_OK,wemod_existing?
+                "WeMod.exe is already running in the selected prefix.\n\n"
+                "GameWeld did not start or kill another copy. An existing WeMod "
+                "client may remain running after the game exits; this does not "
+                "mean it is attached.\n\n"
+                "Open the existing WeMod window, select the running game and "
+                "test connection manually.\n\n"
+                "Read-only details:\n%.2600s":
+                "WeMod %s\n\n%.2800s\n\n"
+                "Steam Launch Options unchanged. Trainer attachment UNVERIFIED.",
+            wemod_existing?(j->output[0]?j->output:"Helper returned no output."):
+                (j->live?"handoff response":"preview"),
+            j->output[0]?j->output:"Helper returned no output.");
         gtk_dialog_run((GtkDialog*)notice);
         gtk_widget_destroy(notice);
     }
