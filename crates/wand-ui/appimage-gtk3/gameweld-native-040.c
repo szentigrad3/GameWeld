@@ -2781,6 +2781,7 @@ static int pc2_steam_wemod_allowed(void){
     return pc2_discovery_only()&&flag&&!strcmp(flag,"1")&&pc2_steam_launch_allowed();
 }
 static void pc2_steam_wemod_attach_selected(int live);
+static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start);
 /* A game-only Steam request must not be logged as successful until we can
  * inspect the Steam command's result and same-user process association.
  * This worker is opt-in and never starts any trainer or changes settings. */
@@ -2831,6 +2832,11 @@ static gboolean pc2_steam_launch_done(gpointer data){
        !strcmp(G.games[G.selected].appid,j->appid)){
         pc2_steam_wemod_attach_selected(0);
     }else if(j->steam_managed_wemod){
+        /* An unconfirmed Steam process count must not suppress a read-only
+         * WeMod check, but MUST NOT trigger automatic client startup. */
+        if(strstr(j->output,"Steam applaunch command: STARTED") ||
+           strstr(j->output,"Steam steam-uri command: STARTED"))
+            pc2_steam_wemod_attach_selected_ex(0,0);
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
             "Steam launch not verified for %.140s.\n\n%.2100s\n\n"
@@ -3092,7 +3098,7 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
  * separate user confirmation. Spawning WeMod is not trainer attachment. */
 typedef struct {
     char appid[32], game[256], install_dir[2048], output[4096];
-    int live, ok;
+    int live, ok, allow_start;
 } PC2WemodAttachJob;
 static int pc2_steam_wemod_attach_busy=0;
 static gboolean pc2_steam_wemod_attach_done(gpointer data){
@@ -3112,7 +3118,7 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
                 "WeMod client handoff BLOCKED. No game or Steam settings changed by GameWeld.") :
             ready?"Game is running; WeMod handoff prerequisites detected (client still NOT attached).":
                 "WeMod handoff not ready; see the exact blockers in the dialog.");
-    if(!j->live&&ready&&matching){
+    if(!j->live&&ready&&matching&&j->allow_start){
         GtkWidget*confirm=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
             "Steam game session detected for %.140s.\n\n"
@@ -3174,7 +3180,7 @@ static void *pc2_steam_wemod_attach_worker(void *data){
     g_idle_add(pc2_steam_wemod_attach_done,j);
     return NULL;
 }
-static void pc2_steam_wemod_attach_selected(int live){
+static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start){
     if(!pc2_steam_wemod_allowed())return;
     if(pc2_steam_wemod_attach_busy){
         log_line("Steam-managed WeMod inspection already in progress.");return;
@@ -3191,6 +3197,7 @@ static void pc2_steam_wemod_attach_selected(int live){
     snprintf(j->game,sizeof j->game,"%.240s",g->name);
     snprintf(j->install_dir,sizeof j->install_dir,"%s",g->install_dir);
     j->live=live;
+    j->allow_start=allow_start;
     pc2_steam_wemod_attach_busy=1;
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_steam_wemod_attach_worker,j)==0){
@@ -3202,6 +3209,9 @@ static void pc2_steam_wemod_attach_selected(int live){
         pc2_steam_wemod_attach_busy=0;free(j);
         log_line("Cannot start WeMod live handoff inspector.");
     }
+}
+static void pc2_steam_wemod_attach_selected(int live){
+    pc2_steam_wemod_attach_selected_ex(live,1);
 }
 static void on_pc2_steam_wemod_check(GtkButton*b,void*d){
     (void)b;(void)d;pc2_steam_wemod_attach_selected(0);
