@@ -23,4 +23,5 @@ jobs:
       - name: Check and test wand-state
         run: |
           cargo test -p wand-state --lib
+          cargo test -p wandd --bin wandd
           cargo check -p wandd
