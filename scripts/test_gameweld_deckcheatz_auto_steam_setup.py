@@ -92,6 +92,51 @@ class AutoSteamTests(unittest.TestCase):
                 auto.register_steam_shim(self.APPID)
         self.assertEqual(self.config.read_bytes(), self.raw)
 
+    def test_end_to_end_registration_uses_test_localconfig_no_live_steam(self):
+        from types import SimpleNamespace
+        import shutil
+        cfg = self.config
+        opts = self.opts
+        account = "4548901"
+        wrapper = self.root / "steam-session.py"
+        wrapper.write_text("#!/usr/bin/python3")
+        wrapper.chmod(0o700)
+        backup_calls = []
+        def make_options():
+            return SimpleNamespace(
+                find_config=lambda appid, root, user: (cfg, account),
+                launch_option=opts.launch_option,
+                parse_vdf=opts.parse_vdf, only=opts.only, tokens=opts.tokens,
+                save_backup=lambda appid, user, old, **kw: backup_calls.append(
+                    (appid, user, old, kw)),
+            )
+        def make_session():
+            return SimpleNamespace(
+                install_wrapper=lambda: None,
+                installed_wrapper_path=lambda: wrapper,
+                compose=lambda old, dest, aid: (
+                    "/usr/bin/python3 " + str(dest) +
+                    " run --appid " + aid + " -- %command%", "SAFE_EMPTY"),
+            )
+        def peer(name, label):
+            return make_options() if name.endswith("preserve.py") else make_session()
+        state = self.root / "state"
+        with patch.object(auto, "peer", side_effect=peer), \
+             patch.object(auto, "steam_is_running", return_value=False):
+            result = auto.register_steam_shim(self.APPID, state_root=state)
+        self.assertEqual(result["result"], "automatic_steam_wrapper_installed")
+        self.assertTrue(result["original_user_options_preserved"])
+        self.assertEqual(len(backup_calls), 1)
+        self.assertTrue(backup_calls[0][3]["verified_empty"])
+        original_saved = (state / "gameweld/automatic-steam-setup"
+                          / account / (self.APPID + ".original-localconfig.vdf"))
+        self.assertEqual(original_saved.read_bytes(), self.raw)
+        self.assertEqual(original_saved.stat().st_mode & 0o777, 0o600)
+        installed = opts.launch_option(cfg, self.APPID)
+        self.assertIn("steam-session.py", installed)
+        self.assertIn("-- %command%", installed)
+        self.assertIn(b'"LastPlayed" "42"', cfg.read_bytes())
+
     def test_full_config_backup_never_overwritten(self):
         folder = self.root / "private" / "account"
         folder.parent.mkdir(mode=0o700)
