@@ -14,6 +14,19 @@ ATTACH = (ROOT / "scripts/gameweld-wemod-live-attach.py").read_text()
 
 
 class SteamManagedWeModTests(unittest.TestCase):
+    def test_one_button_deckcheatz_command_mode_is_opt_in_and_separate(self):
+        self.assertIn("--enable-deckcheatz-onebutton-test", RUNNER)
+        self.assertIn("unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON", RUNNER)
+        self.assertIn("GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1", RUNNER)
+        self.assertIn("pc2_deckcheatz_onebutton_allowed(void)", GUI)
+        self.assertIn("Play with WeMod (DeckCheatz private test)", GUI)
+        self.assertIn("if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_flow(1)", GUI)
+        self.assertIn("else if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0)", GUI)
+        self.assertIn("pc2_deckcheatz_request_install(experimental_launch)", GUI)
+        self.assertIn('execlp("python3","python3","-u",helper,"--launch"', GUI)
+        self.assertIn('"--confirm-prefix-changes","--experimental-direct-launch"', GUI)
+        self.assertIn("GameWeld will NOT edit Steam Launch Options. Continue?", GUI)
+
     def test_private_mode_launches_through_steam(self):
         self.assertIn("--enable-steam-wemod-test", RUNNER)
         self.assertIn("unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD", RUNNER)
