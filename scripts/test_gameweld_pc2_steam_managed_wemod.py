@@ -134,7 +134,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("if(j->steam_managed_wemod && (!strcmp(state,", GUI)
         self.assertIn('"Launch result: GAME_EXECUTABLE_OBSERVED"', GUI)
         self.assertIn('j->ok && strstr(j->output,', GUI)
-        self.assertIn('"can_attempt_with_explicit_consent": true', GUI.replace('\\\\', ''))
+        self.assertIn('"can_attempt_with_explicit_consent": true', GUI.replace(chr(92), ""))
         self.assertIn("pc2_steam_wemod_attach_selected_ex(0,j->no_options_onebutton?2:1,0)", GUI)
         self.assertIn('argv = [str(runtime["proton"]), "runinprefix", str(client / "WeMod.exe")]', ATTACH)
         self.assertIn("Steam session changed; re-run preview before client launch", ATTACH)
