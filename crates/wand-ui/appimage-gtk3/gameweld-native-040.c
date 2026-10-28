@@ -3109,6 +3109,23 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
     }
     int session_mode=expect_deckcheatz && pc2_session_configured_for_game(id);
     if(pc2_steam_no_options_allowed()&&!expect_deckcheatz){
+        /* Do not silently run both a saved direct wrapper and the separate
+         * no-options client. These are intentionally different modes. */
+        char installed[4096]={0},readiness[8192]={0},mode[80]={0};
+        if(!pc2_deckcheatz_find_launcher(installed,sizeof installed) ||
+           !pc2_deckcheatz_saved_readiness(g,installed,readiness,sizeof readiness)){
+            pc2_steam_launch_notice("The saved Steam launch state is not verifiable. No Steam settings were changed and no game launch was requested.");
+            return;
+        }
+        json_string(readiness,"state",mode,sizeof mode);
+        if(!strcmp(mode,"direct_wrapper_configured") ||
+           !strcmp(mode,"incompatible_bridge_selected") || !strcmp(mode,"unknown")){
+            pc2_steam_launch_notice(
+                "This title has a saved Steam wrapper or incompatible compatibility setting. "
+                "No-options mode will not start another trainer or modify those settings. "
+                "Restore the original Steam setting through GameWeld when convenient.");
+            return;
+        }
         /* A previously armed DeckCheatz token would activate the old shim
          * alongside live attach. Refuse rather than launching two trainers. */
         char pending[4096]={0};
