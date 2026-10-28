@@ -3186,6 +3186,19 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         "Steam is not already launching the game. This asks xdg-open to use "
         "steam://rungameid; it does not edit Steam Launch Options or select "
         "Proton. A second WeMod consent is still required. Continue?":
+        pc2_wand_v2_allowed()?
+        "Play with Wand v2, without changing Steam settings?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "Steam will launch your game using its own Launch Options. Wand v2 "
+        "will then inspect the exact live game and Proton prefix. This private "
+        "test may start WeMod in that EXISTING game prefix and modify it.\n\n"
+        "CachyOS may hide some same-user process environments. By choosing YES, "
+        "you explicitly accept proceeding with at most 8 unreadable processes "
+        "ONLY if Wand v2 independently confirms a unique Proton session and "
+        "the exact running game executable. Unknown Wine processes will NOT "
+        "be silently ignored. GameWeld will not terminate any processes.\n\n"
+        "Your Steam settings will NOT be changed or Steam restarted. "
+        "A prepared-prefix archive is NOT automatically installed. Continue?":
         pc2_steam_no_options_allowed()?
         "Play with WeMod without changing Steam settings?\n\n"
         "%.140s (Steam App ID %s)\n\n"
@@ -3551,7 +3564,8 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
          * possible existing-prefix changes. Re-check live game/proton context
          * in the Python helper before requesting this single client. */
         log_line("No-options Steam game observed; requesting consented WeMod client in live Proton prefix. Attachment unverified.");
-        pc2_steam_wemod_attach_selected(1);
+        if(pc2_wand_v2_allowed())pc2_steam_wemod_attach_selected_ex(1,2,0);
+        else pc2_steam_wemod_attach_selected(1);
     }else if(!j->live&&ready&&matching&&j->allow_start){
         GtkWidget*confirm=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
@@ -3606,9 +3620,17 @@ static void *pc2_steam_wemod_attach_worker(void *data){
             if(appdir&&appdir[0]=='/')
                 snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-wand-v2-proxy.py",appdir);
             else snprintf(helper,sizeof helper,"gameweld-wand-v2-proxy.py");
-            if(j->live)
+            if(j->live && j->allow_start==2)
+                execlp("python3","python3",helper,"--appid",j->appid,
+                       "--install-dir",j->install_dir,"--launch-client",
+                       "--accept-unreadable-process-risk",(char*)NULL);
+            else if(j->live)
                 execlp("python3","python3",helper,"--appid",j->appid,
                        "--install-dir",j->install_dir,"--launch-client",(char*)NULL);
+            else if(j->allow_start==2)
+                execlp("python3","python3",helper,"--appid",j->appid,
+                       "--install-dir",j->install_dir,
+                       "--accept-unreadable-process-risk",(char*)NULL);
             else
                 execlp("python3","python3",helper,"--appid",j->appid,
                        "--install-dir",j->install_dir,(char*)NULL);
