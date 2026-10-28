@@ -40,6 +40,85 @@ class SteamHandoffTests(unittest.TestCase):
             result = steam.run_launch(*args, **kwargs)
         return result, buffer.getvalue()
 
+    def make_wemod_process_fixture(self):
+        proc = self.root / "proc"
+        proc.mkdir(exist_ok=True)
+        directory = proc / "525322"
+        directory.mkdir(exist_ok=True)
+        (directory / "environ").write_bytes(
+            b"SteamAppId=3008130\0SENSITIVE=not-for-output\0")
+        (directory / "comm").write_text("wine64\n")
+        (directory / "exe").symlink_to("/fake/proton/bin/wine64-preloader")
+        (directory / "cmdline").write_bytes(
+            b"/fake/proton/bin/wine64-preloader\0"
+            b"C:\\Program Files\\WeMod\\WeMod.exe\0")
+        return proc, directory
+
+    def test_wemod_only_loader_does_not_block_steam_game_only_request(self):
+        proc, directory = self.make_wemod_process_fixture()
+        blocked, clients = steam.associated_non_client_processes(
+            "3008130", str(proc))
+        self.assertEqual(blocked, [])
+        self.assertEqual(clients, 1)
+        self.assertTrue(steam.recognizable_wemod_client_only(directory))
+        self.assertFalse(steam.recognizable_wemod_client_only(proc))
+
+    def test_same_loader_with_game_or_hidden_executable_remains_blocked(self):
+        proc, directory = self.make_wemod_process_fixture()
+        variants = (
+            b"wine64\0C:\\WeMod\\WeMod.exe\0C:\\Games\\DyingLight.exe\0",
+            b"wine64\0C:\\Games\\DyingLight.exe\0",
+            b"wine64\0C:\\WeMod\\WeMod.exe",  # truncated cmdline
+            b"x" * 8193,  # oversized command line
+            b"wine64\0C:\\WeMod\\WeMod.exe\0--bad=name.exe\0",
+        )
+        for argv in variants:
+            (directory / "cmdline").write_bytes(argv)
+            blocked, clients = steam.associated_non_client_processes(
+                "3008130", str(proc))
+            self.assertEqual(len(blocked), 1, argv[:80])
+            self.assertEqual(clients, 0)
+
+    def test_wemod_only_is_not_claimed_for_other_appid_or_non_wine_process(self):
+        proc, directory = self.make_wemod_process_fixture()
+        blockers, clients = steam.associated_non_client_processes(
+            "3008131", str(proc))
+        self.assertEqual(blockers, [])
+        self.assertEqual(clients, 0)
+        (directory / "exe").unlink()
+        (directory / "exe").symlink_to("/usr/bin/other")
+        self.assertEqual(steam.associated_non_client_processes(
+            "3008130", str(proc))[1], 0)
+
+    def test_steam_launch_can_proceed_with_known_wemod_client_only(self):
+        marker = self.root / "steam-invoked"
+        self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
+        with patch.object(steam, "associated_process_count",
+                          side_effect=[1, 2]), \
+             patch.object(steam, "associated_non_client_processes",
+                          return_value=([], 1)):
+            status, report = self.capture(
+                "3008130", steam=str(self.command),
+                require_idle_before_launch=True, duration=0.2)
+        self.assertEqual(status, 0, report)
+        self.assertTrue(marker.exists())
+        self.assertIn("Recognized existing WeMod-only Wine client(s): 1", report)
+        self.assertIn("STEAM_ASSOCIATION_OBSERVED", report)
+        self.assertIn("NOT VERIFIED", report)
+
+    def test_steam_launch_aborts_if_wemod_only_evidence_changes(self):
+        marker = self.root / "steam-not-invoked"
+        self.fake_steam('touch "' + str(marker) + '"\n')
+        with patch.object(steam, "associated_process_count", return_value=1), \
+             patch.object(steam, "associated_non_client_processes",
+                          side_effect=[([], 1), ([Path("/proc/999")], 1)]):
+            status, report = self.capture(
+                "3008130", steam=str(self.command),
+                require_idle_before_launch=True, duration=0)
+        self.assertEqual(status, 3)
+        self.assertFalse(marker.exists())
+        self.assertIn("process evidence changed during preflight", report)
+
     def test_read_only_details_identify_appid_helper_without_exposing_environment(self):
         proc = self.root / "proc"
         proc.mkdir()
@@ -267,12 +346,20 @@ class SteamHandoffTests(unittest.TestCase):
     def test_wrapper_only_gate_blocks_already_running_exact_appid(self):
         marker = self.root / "steam-was-executed"
         self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
-        with patch.object(steam, "associated_process_count", return_value=1):
+        with patch.object(steam, "associated_process_count", return_value=1), \
+             patch.object(steam, "associated_non_client_processes",
+                          return_value=([Path("/proc/999")], 0)), \
+             patch.object(steam, "associated_process_details",
+                          return_value=[(999, "Game.exe", "wine64-preloader",
+                                         "windows_executable_candidate")]), \
+             patch.object(steam, "associated_process_context",
+                          return_value=("1", "S", "Game.exe")):
             status, report = self.capture(
                 "2353250", steam=str(self.command), duration=0,
                 require_idle_before_launch=True)
         self.assertEqual(status, 3, report)
-        self.assertIn("already has a running associated process", report)
+        self.assertIn("unverified non-WeMod process", report)
+        self.assertIn("Game.exe", report)
         self.assertFalse(marker.exists())
 
     def test_wrapper_only_gate_allows_idle_steam_request_not_trainer_claim(self):
