@@ -264,8 +264,8 @@ class LiveAttachTests(unittest.TestCase):
             p = self.proc / str(2001 + i)
             p.mkdir()
             (p / "environ").write_bytes(b"hidden-environment")
-            (p / "comm").write_text(name + "\\n")
-            (p / "cmdline").write_bytes(name.encode() + b"\\x00")
+            (p / "comm").write_text(name + "\n")
+            (p / "cmdline").write_bytes(name.encode() + b"\x00")
         original = helper.read_env
 
         def protect(proc):
@@ -292,8 +292,8 @@ class LiveAttachTests(unittest.TestCase):
         p = self.proc / "2001"
         p.mkdir()
         (p / "environ").write_bytes(b"hidden-environment")
-        (p / "comm").write_text("gameoverlayui\\n")
-        (p / "cmdline").write_bytes(b"/any/WeMod.exe\\x00")
+        (p / "comm").write_text("gameoverlayui\n")
+        (p / "cmdline").write_bytes(b"/any/WeMod.exe\x00")
         original = helper.read_env
 
         def protect(proc):
@@ -316,8 +316,8 @@ class LiveAttachTests(unittest.TestCase):
         p = self.proc / "2001"
         p.mkdir()
         (p / "environ").write_bytes(b"hidden-environment")
-        (p / "comm").write_text("wineserver\\n")
-        (p / "cmdline").write_bytes(b"wineserver\\x00")
+        (p / "comm").write_text("wineserver\n")
+        (p / "cmdline").write_bytes(b"wineserver\x00")
         original = helper.read_env
 
         def protect(proc):
