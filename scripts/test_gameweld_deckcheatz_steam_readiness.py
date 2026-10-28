@@ -133,6 +133,42 @@ class SavedSteamReadinessTests(unittest.TestCase):
             self.assertEqual(report["state"], "no_exact_per_game_mapping")
             self.assertFalse(report["steam_compatibility_modified"])
 
+    def test_readiness_checks_compatibility_in_explicit_game_steam_root(self):
+        """The user account config and game library can live in different roots."""
+        class Options:
+            @staticmethod
+            def find_config(_appid, _root, _account):
+                return self.launcher, "123"
+            @staticmethod
+            def launch_option(_cfg, _appid):
+                return ""
+        class Shim:
+            @staticmethod
+            def installed_wrapper_path():
+                return self.shim
+        class Bridge:
+            seen = None
+            @classmethod
+            def steam_compat_selection(cls, _appid, *, steam_roots):
+                cls.seen = steam_roots
+                return "UNVERIFIED (no saved exact game mapping readable)"
+        peers = {
+            "gameweld-steam-launch-options-preserve.py": Options,
+            "gameweld-deckcheatz-session.py": Shim,
+            "gameweld-steam-compat-bridge.py": Bridge,
+        }
+        root = self.launcher.parent
+        game_root = self.shim.parent
+        with patch.object(module, "import_peer",
+                          side_effect=lambda filename, label: peers[filename]):
+            result = module.readiness(
+                self.appid, self.launcher, steam_root=root,
+                compat_steam_root=game_root)
+        self.assertEqual(result["state"], "needs_setup")
+        self.assertEqual(result["saved_compatibility"]["state"],
+                         "no_exact_per_game_mapping")
+        self.assertEqual(Bridge.seen[0], game_root)
+
     def test_live_and_saved_options_are_not_mistaken_for_each_other(self):
         with patch.object(module, "import_peer", side_effect=ValueError("read failed")):
             with self.assertRaisesRegex(ValueError, "read failed"):
