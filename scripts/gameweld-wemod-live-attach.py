@@ -26,6 +26,14 @@ APPID = re.compile(r"[1-9][0-9]{0,9}\Z")
 CHUNK = 1024 * 1024
 MAX_PIDS = 50000
 MAX_ACKNOWLEDGED_UNREADABLE = 8
+# Specific Linux desktop services and the Steam overlay are not Wine/Proton
+# clients. Their /proc/PID/environ may be unreadable on protected desktops.
+# Only these exact kernel comm names qualify, and a visible WeMod.exe argv
+# always overrides this exception. Unknown/Wine/Proton processes still block.
+NON_WINE_HOST_NAMES = frozenset((
+    b"systemd", b"(sd-pam)", b"polkit-kde-auth", b"arch-update",
+    b"kwin_wayland", b"gameoverlayui",
+))
 ALLOW_ENV = ("STEAM_COMPAT_DATA_PATH", "STEAM_COMPAT_CLIENT_INSTALL_PATH",
              "STEAM_COMPAT_TOOL_PATHS", "SteamAppId", "SteamGameId",
              "STEAM_COMPAT_APP_ID", "SteamCompatAppId")
@@ -123,6 +131,22 @@ def same_path(value: str, wanted: Path) -> bool:
         return False
 
 
+def known_non_wine_host_with_unreadable_env(process: Path, inspector) -> bool:
+    """Conservatively exempt recognized host/overlay tasks, never Wine/WeMod.
+
+    A missing comm, an unexpected name, or an explicit WeMod.exe cmdline is
+    NOT exempt. Only bounded process names are read; no environment is leaked.
+    """
+    try:
+        with (process / "comm").open("rb") as stream:
+            raw = stream.read(257)
+    except OSError:
+        return False
+    if not (0 < len(raw) <= 256 and raw.strip().lower() in NON_WINE_HOST_NAMES):
+        return False
+    return inspector.is_wemod_process(process) is False
+
+
 def live_context(
     appid: str, compat: Path, *,
     proc_root: Path = Path("/proc"),
@@ -137,6 +161,7 @@ def live_context(
         raise AttachBlocked("Too many processes for an unambiguous runtime preflight")
     matched = 0
     unreadable = 0
+    host_unreadable = 0
     contexts: dict[tuple[str, str], dict] = {}
     client_candidate_seen = False
     # Import our existing read-only name scanner; no code from downloaded ZIPs.
@@ -153,9 +178,16 @@ def live_context(
         try:
             if process.stat(follow_symlinks=False).st_uid != uid:
                 continue
+        except OSError:
+            # Process may have disappeared before UID could be established.
+            continue
+        try:
             found = read_env(process)
         except (OSError, AttachBlocked):
-            unreadable += 1
+            if known_non_wine_host_with_unreadable_env(process, module):
+                host_unreadable += 1
+            else:
+                unreadable += 1
             continue
         if not same_path(found.get("STEAM_COMPAT_DATA_PATH", ""), compat):
             continue
@@ -180,6 +212,7 @@ def live_context(
     return {
         "matched_processes": matched,
         "unreadable_processes": unreadable,
+        "unreadable_recognized_host_processes": host_unreadable,
         "wemod_already_visible": client_candidate_seen,
         "contexts": contexts,
     }
@@ -228,6 +261,7 @@ def plan(
         "unique_proton_context": selected is not None,
         "managed_client_present": client is not None,
         "unreadable_same_user_processes": context["unreadable_processes"],
+        "unreadable_recognized_host_processes": context["unreadable_recognized_host_processes"],
         "unreadable_process_risk_accepted": unknown_risk_accepted,
         "blockers": blockers,
         "can_attempt_with_explicit_consent": not blockers,
