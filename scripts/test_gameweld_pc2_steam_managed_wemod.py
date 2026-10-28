@@ -42,7 +42,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('"--compat-steam-root",', GUI)
         self.assertIn('pc2_deckcheatz_folder(g->steam_root)', GUI)
         self.assertIn('pc2_steam_launch_selected(1);', GUI)
-        self.assertIn('if(ok)on_pc2_deckcheatz_setup_session(NULL,NULL);', GUI)
+        self.assertIn('pc2_deckcheatz_auto_steam_setup(g->appid,launcher);', GUI)
         self.assertIn('if(j->resume_mode==2)pc2_deckcheatz_steam_onebutton();', GUI)
         self.assertIn("else if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0)", GUI)
         self.assertIn("pc2_deckcheatz_request_install(experimental_launch)", GUI)
