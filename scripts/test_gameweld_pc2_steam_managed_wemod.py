@@ -194,6 +194,28 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('else\n                execlp("python3","python3",helper,"--appid",j->appid,', GUI)
         self.assertIn("A prepared-prefix archive is NOT automatically installed.", GUI)
 
+    def test_v2_delayed_game_launch_waits_and_does_not_repeat_steam_command(self):
+        # Steam IPC can return before Proton finishes loading the executable.
+        # The extended observation is V2-only; never issue another Steam launch.
+        self.assertIn('"--observe-seconds","75"', GUI)
+        self.assertIn('(j->no_options_onebutton&&pc2_wand_v2_allowed())?90:28', GUI)
+        self.assertIn('else if(j->no_options_onebutton && pc2_wand_v2_allowed())', GUI)
+        self.assertIn('pc2_steam_wemod_attach_selected_ex(0,j->no_options_onebutton?2:1,0)', GUI)
+        self.assertIn('Steam\'s launcher may still be preparing the game.', GUI)
+        self.assertIn("Do NOT relaunch the game.", GUI)
+        self.assertIn('if(!pc2_wand_v2_allowed() &&', GUI)
+        self.assertIn('!strcmp(state,"GAME EXECUTABLE OBSERVED")', GUI)
+
+    def test_v2_manual_recovery_requires_fresh_consent_and_exact_game(self):
+        self.assertIn('static void on_pc2_steam_wemod_check(GtkButton*b,void*d)', GUI)
+        self.assertIn('Check the running Steam game and start Wand v2 ONLY if safe?', GUI)
+        self.assertIn('GameWeld will NOT ask Steam to launch the game again.', GUI)
+        self.assertIn('You explicitly accept up to 8 unreadable same-user process', GUI)
+        self.assertIn('if(accepted==GTK_RESPONSE_YES)', GUI)
+        self.assertIn('pc2_steam_wemod_attach_selected_ex(0,2,0);', GUI)
+        self.assertIn('if(!game_is_steam(g)||game_is_steam_shortcut(g)||', GUI)
+        self.assertIn('if(pc2_steam_wemod_attach_busy)return;', GUI)
+
     def test_explicit_steam_url_fallback_is_not_automatic(self):
         self.assertIn('button("Launch via Steam URL (fallback)"', GUI)
         self.assertIn('on_pc2_steam_uri_fallback,NULL,NULL,0', GUI)
