@@ -145,7 +145,7 @@ def analyze_deckcheatz_interval(live: dict, after: dict, path: Path) -> dict:
             raise CompareBlocked("Log is unsafe, oversized, or shorter than the saved interval")
         with os.fdopen(fd, "rb", closefd=False) as stream:
             stream.seek(begin)
-            chunk = stream.read(end - begin + 1)
+            chunk = stream.read(end - begin)
         if len(chunk) != end - begin:
             raise CompareBlocked("Saved log interval could not be read exactly")
     finally:
