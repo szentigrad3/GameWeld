@@ -3723,6 +3723,23 @@ static void on_pc2_steam_wemod_check(GtkButton*b,void*d){
     Game*g=&G.games[G.selected];
     if(!game_is_steam(g)||game_is_steam_shortcut(g)||
        !g->appid[0]||g->install_dir[0]!='/')return;
+    char readiness[8192]={0},mode[80]={0},pending[4096]={0};
+    if(!pc2_deckcheatz_saved_readiness(g,NULL,readiness,sizeof readiness) ||
+       !pc2_deckcheatz_session_helper("status",g->appid,NULL,pending,sizeof pending)){
+        pc2_steam_launch_notice("Wand v2 cannot verify this Steam game's saved options "
+            "or pending GameWeld sessions. No second game or trainer was launched.");
+        return;
+    }
+    json_string(readiness,"state",mode,sizeof mode);
+    if(!mode[0]||!strcmp(mode,"trainer_wrapper_present")||
+       !strcmp(mode,"incompatible_bridge_selected")||
+       !strcmp(mode,"unknown")||!strcmp(mode,"unverified")||
+       !strcmp(mode,"needs_setup")||strstr(pending,"\\"session_armed\\": true")){
+        pc2_steam_launch_notice("Wand v2 cannot safely resume: a saved trainer wrapper, "
+            "unknown Steam option or an armed one-shot session may already start WeMod. "
+            "GameWeld has not modified your existing Steam Launch Options.");
+        return;
+    }
     GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
         "Check the running Steam game and start Wand v2 ONLY if safe?\n\n"
