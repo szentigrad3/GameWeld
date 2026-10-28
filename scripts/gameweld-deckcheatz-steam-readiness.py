@@ -130,7 +130,14 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
             raise ValueError("Steam saved options are missing or multiple accounts/clients match; "
                              "cannot authorize a trainer launch")
         cfg, account = next(iter(matches.values()))
-        original = options.launch_option(cfg, appid)
+        # Absence of a saved LaunchOptions field is a setup-needed state,
+        # not an instruction to paste anything into Steam Properties.
+        # Read-only here: the automatic installer still requires Steam shutdown.
+        setup = import_peer("gameweld-deckcheatz-auto-steam-setup.py",
+                            "gw_auto_first_run_inspector")
+        saved = setup.saved_option_value(setup.read_config_bytes(cfg),
+                                         appid, options)
+        original = saved if saved is not None else ""
         shim = shimmod.installed_wrapper_path()
         result = classify_saved_option(original, launcher, shim, appid)
         selection = saved_compatibility_bridge_state(
@@ -139,11 +146,13 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
         if selection["state"] == "gameweld_bridge_selected":
             result["state"] = "incompatible_bridge_selected"
             result["reason"] = (
-                "Steam's saved per-game compatibility selection is GameWeld Bridge. "
-                "DeckCheatz must receive Steam's actual Proton command, not a "
-                "nested GameWeld Bridge launcher. In Steam > Properties > "
-                "Compatibility, select a verified working Proton tool, restart "
-                "Steam to reload saved settings, and retry. No game launched.")
+                "Saved compatibility selects the legacy GameWeld Bridge, which "
+                "cannot pass DeckCheatz the game's verified Proton argv. "
+                "GameWeld must safely migrate that saved selection with a "
+                "backup and explicit consent before one-click play can proceed. "
+                "Automatic compatibility migration is not implemented; "
+                "no game was launched or Steam compatibility changed.")
+            result["managed_compatibility_migration_available"] = False
             result["steam_account"] = account
             return result
         if result["state"] == "one_shot_shim_configured":
