@@ -331,6 +331,10 @@ def remove_exact_launch_option(raw: bytes, appid: str, expected: str, options) -
     if stack or pending is not None or len(locations) != 1:
         raise SetupBlocked("Cannot locate exactly one saved Steam wrapper")
     start, end = locations[0]
+    # Registration inserted a single leading/trailing space around the pair.
+    # Remove those too when still present to restore the original exact bytes.
+    if start > 0 and text[start - 1] == " " and text[end:end + 1] == " ":
+        start, end = start - 1, end + 1
     updated = (text[:start] + text[end:]).encode("utf-8")
     if saved_option_value(updated, appid, options) is not None:
         raise SetupBlocked("Removing Steam wrapper failed validation")
@@ -368,6 +372,7 @@ def restore_steam_shim(appid: str, *, state_root: Path | None = None):
             (Path.home() / ".local/state"))) / "gameweld/automatic-steam-setup" / account
     if not base.is_absolute() or base.is_symlink():
         raise SetupBlocked("Unsafe private backup directory")
+    secure_dir(base)
     snapshot = read_private_snapshot(base / (appid + ".original-localconfig.vdf"))
     saved_original = saved_option_value(snapshot, appid, options)
     original = saved_original if saved_original is not None else ""
@@ -379,7 +384,6 @@ def restore_steam_shim(appid: str, *, state_root: Path | None = None):
         original, session.installed_wrapper_path(), appid)
     if not proposed or not decision.startswith("SAFE_"):
         raise SetupBlocked("Cannot reconstruct the exact managed Steam wrapper")
-    secure_dir(base)
     lock = base / (appid + ".lock")
     if lock.is_symlink():
         raise SetupBlocked("Symlinked Steam setup lock")
