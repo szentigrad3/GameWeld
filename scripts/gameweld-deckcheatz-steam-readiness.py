@@ -64,6 +64,49 @@ def classify_saved_option(option: str, launcher: Path, shim: Path, appid: str) -
     return {**info, "state": "needs_setup",
             "reason": "No verified DeckCheatz Steam wrapper"}
 
+
+def classify_preserved_options(option: str, shim: Path, appid: str) -> dict:
+    """Read-only no-options mode. Steam, not GameWeld, interprets this text.
+
+    No shell execution, interpolation, normalization, or automatic Steam
+    setting changes. Inspect known trainer wrappers only to avoid duplicates.
+    A user's MangoHud/gamescope/custom command is passed through unchanged.
+    """
+    info = {"launch_options_source": "saved_steam_localconfig",
+            "live_client_options_verified": False,
+            "steam_options_modified": False, "appid": appid,
+            "custom_launch_options_preserved_by_gameweld": True,
+            "steam_process_will_parse_saved_options": True,
+            "raw_launch_options_included": False}
+    if not option.strip():
+        return {**info, "state": "preserved_empty_launch_options"}
+    try:
+        parts = shlex.split(option)
+    except ValueError:
+        return {**info, "state": "unverified",
+                "reason": "Cannot safely inspect custom command quoting"}
+    # A saved WeMod wrapper before the Steam-expanded placeholder will
+    # already launch a trainer. Do not start another WeMod in parallel.
+    positions = [i for i, token in enumerate(parts) if token == "%command%"]
+    if len(positions) > 1:
+        return {**info, "state": "unverified",
+                "reason": "Multiple %command% placeholders cannot be classified"}
+    for index in positions:
+        prior = parts[:index]
+        # Only flag direct command-prefix wrappers; environment variables,
+        # MangoHud, gamescope and arbitrary game arguments are not blockers.
+        if any(Path(x).name.casefold() in ("wemod", "wemod.py")
+               for x in prior):
+            return {**info, "state": "trainer_wrapper_present",
+                    "reason": "Steam already has a WeMod command-prefix wrapper"}
+        if (len(prior) >= 6 and prior[-5:] ==
+                [str(shim), "run", "--appid", appid, "--"] and
+                prior[-6] in ("/usr/bin/python3", "/usr/bin/python")):
+            return {**info, "state": "one_shot_shim_configured"}
+    # No %command% is not GameWeld's to repair. Steam can still interpret
+    # its own options (including arguments or custom launch actions).
+    return {**info, "state": "preserved_custom_launch_options"}
+
 def saved_compatibility_bridge_state(appid: str, *, steam_root=None) -> dict:
     """Inspect SAVED per-title mapping without guessing the Steam live tool.
 
@@ -105,8 +148,8 @@ def saved_compatibility_bridge_state(appid: str, *, steam_root=None) -> dict:
             "exact_per_game_mapping": False}
 
 
-def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None,
-              compat_steam_root=None) -> dict:
+def readiness(appid: str, launcher: Path | None, *, steam_root=None, steam_account=None,
+              compat_steam_root=None, preserve_custom_options: bool = False) -> dict:
     options = import_peer("gameweld-steam-launch-options-preserve.py", "gw_steam_read")
     shimmod = import_peer("gameweld-deckcheatz-session.py", "gw_shim_read")
     try:
@@ -139,7 +182,8 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
                                          appid, options)
         original = saved if saved is not None else ""
         shim = shimmod.installed_wrapper_path()
-        result = classify_saved_option(original, launcher, shim, appid)
+        result = (classify_preserved_options(original, shim, appid)
+                  if preserve_custom_options else classify_saved_option(original, launcher, shim, appid))
         selection = saved_compatibility_bridge_state(
             appid, steam_root=compat_steam_root or steam_root)
         result["saved_compatibility"] = selection
@@ -175,16 +219,21 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--appid", required=True)
-    p.add_argument("--launcher", required=True, type=Path)
+    p.add_argument("--launcher", type=Path)
+    p.add_argument("--preserve-custom-options", action="store_true",
+                   help="read-only guard for Steam-managed game + separate WeMod handoff")
     p.add_argument("--steam-root", type=Path)
     p.add_argument("--steam-account")
     p.add_argument("--compat-steam-root", type=Path,
                    help="Game's Steam root to inspect for compatibility mapping only")
     args = p.parse_args(argv)
+    if not args.preserve_custom_options and not args.launcher:
+        p.error("--launcher required for the existing DeckCheatz-wrapper mode")
     try:
         report = readiness(args.appid, args.launcher,
                            steam_root=args.steam_root, steam_account=args.steam_account,
-                           compat_steam_root=args.compat_steam_root)
+                           compat_steam_root=args.compat_steam_root,
+                           preserve_custom_options=args.preserve_custom_options)
     except (OSError, ValueError) as exc:
         report = {"appid": args.appid, "state": "unknown", "reason": str(exc),
                   "steam_options_modified": False}
