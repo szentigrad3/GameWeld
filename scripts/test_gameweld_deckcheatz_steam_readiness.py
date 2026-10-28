@@ -99,7 +99,8 @@ class SavedSteamReadinessTests(unittest.TestCase):
         self.assertEqual(report["state"], "incompatible_bridge_selected")
         self.assertEqual(report["saved_compatibility"]["state"],
                          "gameweld_bridge_selected")
-        self.assertIn("Automatic compatibility migration is not implemented", report["reason"])\n        self.assertFalse(report["managed_compatibility_migration_available"])
+        self.assertIn("Automatic compatibility migration is not implemented", report["reason"])
+        self.assertFalse(report["managed_compatibility_migration_available"])
         self.assertFalse(report["steam_options_modified"])
 
     def test_compatibility_tool_is_only_classified_when_explicitly_selected(self):
