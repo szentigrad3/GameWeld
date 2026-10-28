@@ -2948,13 +2948,25 @@ static void *pc2_steam_launch_worker(void *data){
         if(!j->output[0])snprintf(j->output,sizeof j->output,
             "Launch result: FAILED (helper exited without reporting a status)");
     }
-    if(j->session_mode &&
-       !strstr(j->output,"Launch result: STEAM_ASSOCIATION_OBSERVED")){
-        /* Don't leave a pending DeckCheatz token available to an unrelated
-         * manual Steam launch after a failed or unconfirmed Play request.
-         * If Steam already consumed it, this explicit disarm is harmless. */
-        char ignored[2048]={0};
-        pc2_deckcheatz_session_helper("disarm",j->appid,NULL,ignored,sizeof ignored);
+    if(j->session_mode){
+        /* Do not cancel a one-shot token merely because the short startup
+         * observation saw only Steam's wrapper/reaper. Steam can invoke
+         * %command% later, especially during first-run Proton setup.
+         * Disarm only if Steam was never asked to launch the selected game.
+         * Otherwise the token has a bounded TTL and is atomically consumed
+         * by the actual Steam wrapper; don't silently downgrade WeMod to an
+         * ordinary game launch. */
+        int request_sent=strstr(j->output,"Steam applaunch command: STARTED")!=NULL ||
+                         strstr(j->output,"Steam steam-uri command: STARTED")!=NULL;
+        if(!request_sent){
+            char ignored[2048]={0};
+            pc2_deckcheatz_session_helper("disarm",j->appid,NULL,ignored,sizeof ignored);
+        }else if(strstr(j->output,"Launch result: STEAM_ASSOCIATION_ONLY") ||
+                 strstr(j->output,"Launch result: UNCONFIRMED")){
+            log_line("Steam launch request sent, but the game EXE was not observed. "
+                     "DeckCheatz one-shot token may still be pending for up to "
+                     "10 minutes; do not request another game launch.");
+        }
     }
     g_idle_add(pc2_steam_launch_done,j);
     return NULL;
