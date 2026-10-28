@@ -6731,9 +6731,58 @@ static void pc2_deckcheatz_flow(int experimental_launch){
     }
     if(g->executable[0] && pc2_deckcheatz_file(g->executable))
         snprintf(exe,sizeof exe,"%s",g->executable);
-    else if(!pc2_deckcheatz_choose("Select the Windows game EXE",0,
-                                  g->install_dir,exe,sizeof exe)){
-        log_line("DeckCheatz preview cancelled: no game EXE selected.");return;
+    if(!exe[0]){
+        /* Resolve from the selected game's own Steam appmanifest and on-disk
+         * Windows EXEs before asking the user. Never choose the first EXE.
+         * This helper only reads metadata and returns a unique match. */
+        char resolver[4096]={0},detected[8192]={0};
+        const char *appdir=getenv("APPDIR");
+        if(appdir&&appdir[0]=='/')
+            snprintf(resolver,sizeof resolver,
+                     "%s/usr/libexec/gameweld-deckcheatz-autodetect.py",appdir);
+        else snprintf(resolver,sizeof resolver,
+                      "gameweld-deckcheatz-autodetect.py");
+        int resolve_fd[2];
+        if(pipe(resolve_fd)==0){
+            pid_t lookup=fork();
+            if(lookup==0){
+                close(resolve_fd[0]);setsid();
+                dup2(resolve_fd[1],STDOUT_FILENO);
+                dup2(resolve_fd[1],STDERR_FILENO);
+                close(resolve_fd[1]);
+                clear_desktop_activation_env();
+                execlp("python3","python3",resolver,
+                    "--resolve-game-exe","--appid",g->appid,
+                    "--install-dir",g->install_dir,(char*)NULL);
+                _exit(127);
+            }
+            close(resolve_fd[1]);
+            if(lookup>0){
+                int ok=bounded_child_output(lookup,resolve_fd[0],
+                                             detected,sizeof detected,12);
+                if(ok && strstr(detected,"\"status\": \"resolved\"")){
+                    char picked[4096]={0};
+                    json_string(detected,"selected",picked,sizeof picked);
+                    /* The helper enforces the manifest. The UI also checks
+                     * file existence, extension and game-directory scope. */
+                    size_t base=strlen(g->install_dir);
+                    if(picked[0] && base>0 &&
+                       !strncmp(picked,g->install_dir,base) &&
+                       picked[base]=='/' &&
+                       strlen(picked)>4 &&
+                       !strcasecmp(picked+strlen(picked)-4,".exe") &&
+                       pc2_deckcheatz_file(picked)){
+                        snprintf(exe,sizeof exe,"%s",picked);
+                        log_line("DeckCheatz automatically detected game executable for %s.",g->name);
+                    }
+                }
+            }else close(resolve_fd[0]);
+        }
+    }
+    if(!exe[0] && !pc2_deckcheatz_choose(
+            "Game executable ambiguous — select the Windows game EXE",0,
+            g->install_dir,exe,sizeof exe)){
+        log_line("DeckCheatz launch cancelled: no unambiguous game EXE selected.");return;
     }
     if(g->compat_tool_path[0]){
         if(pc2_deckcheatz_file(g->compat_tool_path))
