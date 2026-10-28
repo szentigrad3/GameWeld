@@ -2865,8 +2865,9 @@ static gboolean pc2_steam_launch_done(gpointer data){
     }else if(j->steam_managed_wemod){
         /* An unconfirmed Steam process count must not suppress a read-only
          * WeMod check, but MUST NOT trigger automatic client startup. */
-        if(strstr(j->output,"Steam applaunch command: STARTED") ||
-           strstr(j->output,"Steam steam-uri command: STARTED"))
+        if(!pc2_wand_v2_allowed() &&
+           (strstr(j->output,"Steam applaunch command: STARTED") ||
+            strstr(j->output,"Steam steam-uri command: STARTED")))
             pc2_steam_wemod_attach_selected_ex(0,0,0);
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
