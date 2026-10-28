@@ -63,13 +63,18 @@ def associated_process_count(appid: str, root: str = "/proc") -> int:
 
 def run_launch(appid: str, *, steam: str | None = None,
                duration: float = OBSERVE_SECONDS,
-               require_idle_before_launch: bool = False) -> int:
-    executable = steam or shutil.which("steam")
+               require_idle_before_launch: bool = False,
+               transport: str = "applaunch") -> int:
+    if transport not in ("applaunch", "steam-uri"):
+        print("Launch result: FAILED (unsupported Steam transport).", flush=True)
+        return 3
+    executable = steam or shutil.which("xdg-open" if transport == "steam-uri" else "steam")
     if not executable:
         print("Steam executable: NOT FOUND on GameWeld's PATH.", flush=True)
         print("Launch result: FAILED (Steam command unavailable).", flush=True)
         return 3
     print("Steam executable: FOUND", flush=True)
+    print("Steam launch transport: " + transport, flush=True)
     previous = associated_process_count(appid)
     if previous:
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
@@ -82,13 +87,18 @@ def run_launch(appid: str, *, steam: str | None = None,
     # waiting forever because a game inherited the file descriptor.
     try:
         with tempfile.TemporaryFile(mode="w+b") as output:
+            # A Steam URI is a separate, manually selected retry path, never
+            # an automatic second launch after an unconfirmed first request.
+            argv = ([executable, "steam://rungameid/" + appid]
+                    if transport == "steam-uri" else
+                    [executable, "-applaunch", appid])
             child = subprocess.Popen(
-                [executable, "-applaunch", appid],
+                argv,
                 stdin=subprocess.DEVNULL, stdout=output,
                 stderr=subprocess.STDOUT, start_new_session=True,
             )
             try:
-                print("Steam -applaunch command: STARTED", flush=True)
+                print("Steam " + transport + " command: STARTED", flush=True)
                 deadline = time.monotonic() + max(0, duration)
                 while True:
                     status = child.poll()
@@ -134,6 +144,8 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "launch"))
     parser.add_argument("--appid", required=True)
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--transport", choices=("applaunch", "steam-uri"),
+                        default="applaunch", help="Explicit Steam handoff transport")
     parser.add_argument("--require-idle-before-launch", action="store_true",
                         help="Fail before launching if the exact AppID has an existing process")
     args = parser.parse_args()
@@ -151,7 +163,8 @@ def main() -> int:
     if not args.confirm:
         parser.error("Steam launch requires an explicit --confirm from GameWeld's user dialog")
     return run_launch(args.appid,
-                      require_idle_before_launch=args.require_idle_before_launch)
+                      require_idle_before_launch=args.require_idle_before_launch,
+                      transport=args.transport)
 
 
 if __name__ == "__main__":
