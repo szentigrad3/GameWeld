@@ -161,6 +161,16 @@ def pending_one_shot_state(appid: str) -> dict:
             "launcher_path_included": False}
 
 
+def saved_compatibility_tool_state(appid: str) -> dict:
+    """Report selected legacy bridge without revealing Steam paths or config."""
+    try:
+        inspector = peer("gameweld-deckcheatz-steam-readiness.py",
+                         "gw_stall_dc_compat_state")
+        return inspector.saved_compatibility_bridge_state(appid)
+    except (OSError, ValueError, ImportError, AttributeError):
+        return {"state": "unverified", "source": "saved_steam_compatibility"}
+
+
 def diagnose(appid: str, root: Path, install_dir: Path | None = None) -> dict:
     if not APPID.fullmatch(appid) or int(appid) >= 2**32:
         raise ValueError("Invalid Steam AppID")
@@ -184,6 +194,7 @@ def diagnose(appid: str, root: Path, install_dir: Path | None = None) -> dict:
     result["lifecycle"] = life
     result["recognized_launcher_processes"] = recognized_launchers()
     result["saved_steam_launch_options"] = saved_steam_option_state(appid)
+    result["saved_steam_compatibility"] = saved_compatibility_tool_state(appid)
     result["pending_one_shot"] = pending_one_shot_state(appid)
     result["steam_events_historical_only"] = handoff.SteamLogProbe(root).summary(
         appid, historical=True)
