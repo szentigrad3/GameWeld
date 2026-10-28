@@ -235,7 +235,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("Proton processes will be killed.", GUI)
         # The prepared game launch itself never receives client flags.
         pos=GUI.index('static void *pc2_steam_launch_worker(void *data)')
-        end=GUI.index('static int pc2_deckcheatz_session_helper(', pos) if 'static int pc2_deckcheatz_session_helper(' in GUI[pos:] else len(GUI)
+        end=GUI.index('static void pc2_steam_launch_selected_transport(', pos)
         self.assertNotIn('--client-software-rendering', GUI[pos:end])
         self.assertNotIn('steam -applaunch', RUNNER)
 
