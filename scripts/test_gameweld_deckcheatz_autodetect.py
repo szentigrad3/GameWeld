@@ -115,6 +115,45 @@ class AutoDiscoveryTests(unittest.TestCase):
         self.assertEqual(auto.libraries(self.steam), [self.steam, self.library])
         self.assertEqual(auto.find_install(self.steam, self.appid)[0], self.game)
 
+    def test_actual_dying_light_exe_name_resolves_without_file_picker(self):
+        original = self.exe
+        actual = original.with_name("DyingLightGame_TheBeast_x64_rwdi.exe")
+        original.rename(actual)
+        try:
+            selected = auto.resolve_exe_for_install(self.appid, self.game)
+            self.assertEqual(selected, actual)
+            out = io.StringIO()
+            with patch.dict(os.environ, {"GAME_EXE": "/tmp/unrelated.exe"}):
+                with contextlib.redirect_stdout(out):
+                    self.assertEqual(auto.main([
+                        "--resolve-game-exe", "--appid", self.appid,
+                        "--install-dir", str(self.game)]), 0)
+            result = json.loads(out.getvalue())
+            self.assertEqual(result["selected"], str(actual))
+            self.assertFalse(result["game_launched"])
+            self.assertFalse(result["steam_options_modified"])
+        finally:
+            actual.rename(original)
+        self.unchanged()
+
+    def test_auto_exe_resolver_refuses_ambiguous_or_wrong_manifest(self):
+        other = self.game / "DyingLightTheBeastLauncher.exe"
+        other.write_bytes(b"MZ")
+        with self.assertRaisesRegex(auto.DiscoveryBlocked, "Ambiguous"):
+            auto.resolve_exe_for_install(self.appid, self.game)
+        other.unlink()
+        with self.assertRaisesRegex(auto.DiscoveryBlocked, "Invalid Steam AppID"):
+            auto.resolve_exe_for_install("3008130;rm", self.game)
+        manifest = self.library / "steamapps/appmanifest_3008130.acf"
+        before = manifest.read_bytes()
+        manifest.write_text('"AppState" {"appid" "999999" "installdir" "Dying Light The Beast"}')
+        try:
+            with self.assertRaisesRegex(auto.DiscoveryBlocked, "does not match"):
+                auto.resolve_exe_for_install(self.appid, self.game)
+        finally:
+            manifest.write_bytes(before)
+        self.unchanged()
+
     def test_exe_ambiguity_blocks_instead_of_choosing_first_or_x64(self):
         another = self.game / "DyingLightTheBeastLauncher.exe"
         another.write_bytes(b"MZ")
