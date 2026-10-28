@@ -16,6 +16,11 @@ ATTACH = (ROOT / "scripts/gameweld-wemod-live-attach.py").read_text()
 class SteamManagedWeModTests(unittest.TestCase):
     def test_one_button_deckcheatz_command_mode_is_opt_in_and_separate(self):
         self.assertIn("--enable-deckcheatz-onebutton-test", RUNNER)
+        self.assertIn("export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1", RUNNER)
+        self.assertIn("pc2_deckcheatz_current_options_dialog", GUI)
+        self.assertIn('"--steam-launch-options",current_steam_options', GUI)
+        self.assertIn('"--steam-options-verified"', GUI)
+        self.assertIn("if(pc2_deckcheatz_onebutton_allowed())", GUI)
         self.assertIn("unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON", RUNNER)
         self.assertIn("GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1", RUNNER)
         self.assertIn("pc2_deckcheatz_onebutton_allowed(void)", GUI)
