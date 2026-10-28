@@ -691,7 +691,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Play via Steam + WeMod (private test)") && strcmp(s, "Check / start WeMod in running Steam game") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Play via Steam + WeMod (private test)") && strcmp(s, "Launch via Steam URL (fallback)") && strcmp(s, "Check / start WeMod in running Steam game") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2790,6 +2790,7 @@ typedef struct {
     int expect_deckcheatz;
     int session_mode;
     int steam_managed_wemod;
+    int steam_uri;
     char deckcheatz_launcher[4096];
 } PC2SteamLaunchJob;
 static int pc2_steam_launch_busy=0;
@@ -2898,7 +2899,11 @@ static void *pc2_steam_launch_worker(void *data){
         else snprintf(helper,sizeof helper,"gameweld-steam-handoff.py");
         /* Never request another Steam launch for an already-running game.
          * Running sessions use the separate read-only WeMod check button. */
-        if(j->expect_deckcheatz||j->steam_managed_wemod)
+        if(j->steam_uri)
+            execlp("python3","python3",helper,"launch","--appid",j->appid,
+                   "--confirm","--require-idle-before-launch",
+                   "--transport","steam-uri",(char*)NULL);
+        else if(j->expect_deckcheatz||j->steam_managed_wemod)
             execlp("python3","python3",helper,"launch","--appid",j->appid,
                    "--confirm","--require-idle-before-launch",(char*)NULL);
         else
@@ -2935,7 +2940,7 @@ static void pc2_steam_launch_notice(const char *reason){
     gtk_dialog_run((GtkDialog*)dialog);
     gtk_widget_destroy(dialog);
 }
-static void pc2_steam_launch_selected(int expect_deckcheatz){
+static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_uri){
     if(!pc2_steam_launch_allowed()){
         if(expect_deckcheatz){
             log_line("DeckCheatz Steam setup only. Use --enable-steam-game-launch to opt into launches.");
@@ -2981,6 +2986,10 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
         return;
     }
     int session_mode=expect_deckcheatz && pc2_session_configured_for_game(id);
+    if(use_uri && !pc2_steam_wemod_allowed()){
+        pc2_steam_launch_notice("Steam URL fallback requires explicit private Steam-managed test mode.");
+        return;
+    }
     GtkWidget*confirm=gtk_message_dialog_new(
         (GtkWindow*)G.window,GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
         session_mode?
@@ -2998,6 +3007,13 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
         "%%command%% to THIS game in Steam Properties > Launch Options. "
         "GameWeld cannot verify these Steam settings. Game and WeMod must "
         "be closed before launch. No Steam setting will be changed. Continue?":
+        use_uri?
+        "Retry launch via the registered Steam URL handler?\\n\\n"
+        "%.140s (Steam App ID %s)\\n\\n"
+        "Only use this if the previous Steam launch attempt was UNCONFIRMED and "
+        "Steam is not already launching the game. This asks xdg-open to use "
+        "steam://rungameid; it does not edit Steam Launch Options or select "
+        "Proton. A second WeMod consent is still required. Continue?":
         pc2_steam_wemod_allowed()?
         "Play via Steam, then inspect WeMod handoff?\n\n"
         "%.140s (Steam App ID %s)\n\n"
@@ -3027,6 +3043,7 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
     snprintf(j->game_name,sizeof j->game_name,"%.240s",g->name);
     j->expect_deckcheatz=expect_deckcheatz;
     j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz;
+    j->steam_uri=use_uri;
     j->session_mode=session_mode;
     if(session_mode)snprintf(j->deckcheatz_launcher,
                              sizeof j->deckcheatz_launcher,"%s",launcher);
@@ -3042,6 +3059,14 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
         pc2_steam_launch_busy=0;free(j);
         log_line("PC2 Steam launch FAILED: could not start launch-check worker.");
     }
+}
+static void pc2_steam_launch_selected(int expect_deckcheatz){
+    pc2_steam_launch_selected_transport(expect_deckcheatz,0);
+}
+static void on_pc2_steam_uri_fallback(GtkButton*b,void*d){
+    (void)b;(void)d;
+    if(!pc2_steam_wemod_allowed())return;
+    pc2_steam_launch_selected_transport(0,1);
 }
 static void on_pc2_steam_game_only(GtkButton*b,void*d){
     (void)b;(void)d;
@@ -3654,6 +3679,9 @@ static GtkWidget *build_library(void){
         gtk_label_set_line_wrap((GtkLabel*)G.pc2_deckcheatz_library_status,TRUE);
         pack(inspect,G.pc2_deckcheatz_library_status,0);
         if(pc2_steam_wemod_allowed()){
+            GtkWidget*via_uri=button("Launch via Steam URL (fallback)","action");
+            g_signal_connect_data(via_uri,"clicked",(GCallback)on_pc2_steam_uri_fallback,NULL,NULL,0);
+            pack(inspect,via_uri,0);
             GtkWidget*manual=button("Check / start WeMod in running Steam game","action");
             g_signal_connect_data(manual,"clicked",(GCallback)on_pc2_steam_wemod_check,NULL,NULL,0);
             pack(inspect,manual,0);
