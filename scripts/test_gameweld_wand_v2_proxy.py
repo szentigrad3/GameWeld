@@ -45,6 +45,37 @@ class V2ProxyTests(unittest.TestCase):
                     module.invoke("3008130", Path("/tmp/game"), launch=True)
                 self.assertIn("--approve-existing-prefix-change",call.call_args.args[0])
 
+    def test_opt_in_unreadable_process_flag_forwarded_only_with_explicit_request(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / "gameweld/wand-v2/src/wand_launcher"
+            root.mkdir(parents=True)
+            (root / "__init__.py").write_text("safe")
+            (root / "entrypoint.py").write_text("safe")
+            class Process:
+                returncode=0
+                stdout=json.dumps({"state": "live_preview",
+                                  "can_attempt_with_explicit_consent": True,
+                                  "steam_launch_options_changed": False})
+            with patch.dict(os.environ, {"XDG_DATA_HOME": home}):
+                with patch.object(module.subprocess, "run", return_value=Process()) as proc:
+                    module.invoke("3008130", Path("/tmp/game"), launch=False)
+                    self.assertNotIn("--accept-unreadable-process-risk",
+                                     proc.call_args.args[0])
+                with patch.object(module.subprocess, "run", return_value=Process()) as proc:
+                    module.invoke("3008130", Path("/tmp/game"), launch=False,
+                                  accept_unreadable_process_risk=True)
+                    self.assertIn("--accept-unreadable-process-risk",
+                                   proc.call_args.args[0])
+                    self.assertNotIn("--approve-existing-prefix-change",
+                                     proc.call_args.args[0])
+                with patch.object(module.subprocess, "run", return_value=Process()) as proc:
+                    module.invoke("3008130", Path("/tmp/game"), launch=True,
+                                  accept_unreadable_process_risk=True)
+                    self.assertIn("--accept-unreadable-process-risk",
+                                   proc.call_args.args[0])
+                    self.assertIn("--approve-existing-prefix-change",
+                                   proc.call_args.args[0])
+
     def test_invalid_identity_or_symlink_fails_closed(self):
         with self.assertRaisesRegex(module.ProxyBlocked,"invalid_appid"):
             module.invoke("not-a-number",Path("/tmp/game"),launch=False)
