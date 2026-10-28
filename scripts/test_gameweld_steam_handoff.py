@@ -101,6 +101,9 @@ class SteamHandoffTests(unittest.TestCase):
                 "3008130", steam=str(self.command),
                 require_idle_before_launch=True, duration=0.2)
         self.assertEqual(status, 0, report)
+        deadline = time.monotonic() + 2
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
         self.assertTrue(marker.exists())
         self.assertIn("Recognized existing WeMod-only Wine client(s): 1", report)
         self.assertIn("STEAM_ASSOCIATION_OBSERVED", report)
