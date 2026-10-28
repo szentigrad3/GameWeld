@@ -71,9 +71,70 @@ class AutoSteamTests(unittest.TestCase):
     def test_missing_value_and_changed_original_fail_closed(self):
         with self.assertRaises((auto.SetupBlocked, self.opts.Blocked)):
             auto.replace_launch_option(self.raw, self.APPID, "MANGOHUD=1", "abc", self.opts)
+        # No live-client inference: a missing field is distinct from an
+        # explicitly saved empty value and must not use the wrong baseline.
         missing = self.raw.replace(b'"LaunchOptions" ""', b'"Other" ""', 1)
+        self.assertIsNone(auto.saved_option_value(missing, self.APPID, self.opts))
         with self.assertRaises((auto.SetupBlocked, self.opts.Blocked)):
             auto.replace_launch_option(missing, self.APPID, "", "abc", self.opts)
+        self.assertEqual(self.config.read_bytes(), self.raw)
+
+    def test_absent_saved_option_in_existing_game_is_inserted_once(self):
+        missing = self.raw.replace(b'"LaunchOptions" ""', b'"Other" ""', 1)
+        command = "/usr/bin/python3 /private/steam-session.py run --appid 3008130 -- %command%"
+        changed = auto.replace_launch_option(missing, self.APPID, None, command, self.opts)
+        self.assertEqual(auto.saved_option_value(changed, self.APPID, self.opts), command)
+        self.assertIn(b'"Other" ""', changed)
+        self.assertIn(b'"LaunchOptions" "-safe"', changed)
+        self.assertIn(b'// preserve this comment', changed)
+        with self.assertRaises((auto.SetupBlocked, self.opts.Blocked)):
+            auto.replace_launch_option(changed, self.APPID, None, command, self.opts)
+        self.assertEqual(auto.saved_option_value(missing, self.APPID, self.opts), None)
+        self.assertEqual(self.config.read_bytes(), self.raw)
+
+    def test_absent_app_entry_and_duplicate_app_entries_are_blocked(self):
+        missing_app = self.raw.replace(b'"3008130"', b'"1234567"', 1)
+        with self.assertRaises((auto.SetupBlocked, self.opts.Blocked)):
+            auto.replace_launch_option(missing_app, self.APPID, None, "abc", self.opts)
+        duplicate_app = self.raw.replace(
+            b'"999999" {', b'"3008130" {', 1)
+        with self.assertRaises((auto.SetupBlocked, self.opts.Blocked)):
+            auto.replace_launch_option(duplicate_app, self.APPID, None, "abc", self.opts)
+
+    def test_absent_option_registration_is_offline_and_backed_up(self):
+        from types import SimpleNamespace
+        cfg, account = self.config, "4548901"
+        missing = self.raw.replace(b'"LaunchOptions" ""', b'"Other" ""', 1)
+        cfg.write_bytes(missing)
+        wrapper = self.root / "steam-session.py"
+        wrapper.write_text("#!/usr/bin/python3")
+        wrapper.chmod(0o700)
+        saved_baselines = []
+        opts = SimpleNamespace(
+            find_config=lambda appid, root, user: (cfg, account),
+            parse_vdf=self.opts.parse_vdf,
+            only=self.opts.only,
+            tokens=self.opts.tokens,
+            save_backup=lambda appid, user, old, **kw: saved_baselines.append((old, kw)),
+        )
+        session = SimpleNamespace(
+            install_wrapper=lambda: None,
+            installed_wrapper_path=lambda: wrapper,
+            compose=lambda old, dest, aid: (
+                "/usr/bin/python3 " + str(dest) +
+                " run --appid " + aid + " -- %command%", "SAFE_EMPTY"),
+        )
+        with patch.object(auto, "peer",
+                          side_effect=lambda name, label: opts if name.endswith("preserve.py") else session), \
+             patch.object(auto, "steam_is_running", return_value=False):
+            report = auto.register_steam_shim(self.APPID, state_root=self.root / "state")
+        self.assertEqual(report["result"], "automatic_steam_wrapper_installed")
+        self.assertEqual(saved_baselines, [("", {"verified_empty": True})])
+        backup = (self.root / "state/gameweld/automatic-steam-setup" /
+                  account / (self.APPID + ".original-localconfig.vdf"))
+        self.assertEqual(backup.read_bytes(), missing)
+        self.assertIsNotNone(auto.saved_option_value(cfg.read_bytes(), self.APPID, self.opts))
+        self.assertEqual(cfg.stat().st_mode & 0o777, 0o600)
 
     def test_atomic_write_preserves_permissions_and_blocks_stale_config(self):
         other = self.raw.replace(b'"LastPlayed" "42"', b'"LastPlayed" "43"')
