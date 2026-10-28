@@ -3735,7 +3735,9 @@ static GtkWidget *build_library(void){
         gtk_scrolled_window_set_policy((GtkScrolledWindow*)pc2_outer,GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC);
         gtk_container_add(pc2_outer,p);
     }
-    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("LIBRARY","page-kicker"),0);pack(ht,label("All detected games","workspace-title"),0);pack(ht,label("Steam, Steam shortcuts, Heroic and Lutris titles in one working set. Fully resolved Lutris entries support Test 4 launch + same-session local-trainer handoff.","page-subtitle"),0);pack(head,ht,1);char count[64];snprintf(count,sizeof count,"%d games",G.game_count);GtkWidget*ct=label(count,"good");gtk_widget_set_name(ct,"status-pill");pack(head,ct,0);pack(p,head,0);
+    GtkWidget*head=box(GTK_ORIENTATION_HORIZONTAL,10);GtkWidget*ht=box(GTK_ORIENTATION_VERTICAL,2);pack(ht,label("LIBRARY","page-kicker"),0);pack(ht,label("All detected games","workspace-title"),0);pack(ht,label(pc2_deckcheatz_onebutton_allowed()?
+        "Choose a game, then Play with WeMod or launch it normally through Steam.":
+        "Steam, Steam shortcuts, Heroic and Lutris titles in one working set. Fully resolved Lutris entries support Test 4 launch + same-session local-trainer handoff.","page-subtitle"),0);pack(head,ht,1);char count[64];snprintf(count,sizeof count,"%d games",G.game_count);GtkWidget*ct=label(count,"good");gtk_widget_set_name(ct,"status-pill");pack(head,ct,0);pack(p,head,0);
     GtkWidget*body=box(GTK_ORIENTATION_HORIZONTAL,14);
     GtkWidget*listpanel=box(GTK_ORIENTATION_VERTICAL,8);style(listpanel,"panel");pack(listpanel,label("GAMES","section-kicker"),0);GtkWidget*sc=gtk_scrolled_window_new(NULL,NULL);gtk_widget_set_vexpand(sc,TRUE);G.game_list=gtk_list_box_new();g_signal_connect_data(G.game_list,"row-selected",(GCallback)selected_changed,NULL,NULL,0);
     for(int i=0;i<G.game_count;i++){GtkWidget*r=gtk_list_box_row_new();style(r,"library-row");G.game_rows[i]=r;GtkWidget*rb=box(GTK_ORIENTATION_HORIZONTAL,11);margins(rb,7);GtkWidget*thumb=gtk_image_new();style(thumb,"game-thumb");char art[2048]={0};if(!resolve_game_art(&G.games[i],1,art,sizeof art))resolve_game_art(&G.games[i],0,art,sizeof art);set_image_path(thumb,art[0]?art:NULL,52,70);pack(rb,thumb,0);GtkWidget*txt=box(GTK_ORIENTATION_VERTICAL,3);pack(txt,label(G.games[i].name,"game-row-title"),0);char x[384];if(game_is_steam_shortcut(&G.games[i]))snprintf(x,sizeof x,"Steam shortcut • %s",G.games[i].appid);else if(game_is_steam(&G.games[i]))snprintf(x,sizeof x,"Steam • %s",G.games[i].appid);else if(game_is_lutris(&G.games[i]))snprintf(x,sizeof x,"Lutris • %s",G.games[i].runner[0]?G.games[i].runner:"wine");else snprintf(x,sizeof x,"Heroic • %s",G.games[i].runner);pack(txt,label(x,"muted"),0);pack(rb,txt,1);GtkWidget*installed=label(game_is_lutris(&G.games[i])?"Discovery":"Ready",game_is_lutris(&G.games[i])?"muted":"good");gtk_widget_set_name(installed,"status-pill");pack(rb,installed,0);gtk_container_add(r,rb);gtk_list_box_insert((GtkListBox*)G.game_list,r,-1);}gtk_container_add(sc,G.game_list);pack(listpanel,sc,1);pack(body,listpanel,1);
@@ -3748,6 +3750,12 @@ static GtkWidget *build_library(void){
         G.pc2_deckcheatz_library_status=label("Select an installed Steam game to use WeMod.","muted");
         gtk_label_set_line_wrap((GtkLabel*)G.pc2_deckcheatz_library_status,TRUE);
         pack(inspect,G.pc2_deckcheatz_library_status,0);
+        if(pc2_deckcheatz_onebutton_allowed()){
+            /* Minimal PC2 game view: one trainer launch, normal Steam launch,
+             * and read-only session check. Advanced/legacy tools stay hidden. */
+            pack(inspect,steam_only,0);
+            pack(inspect,session_check,0);
+        }
         if(pc2_steam_wemod_allowed()){
             GtkWidget*via_uri=button("Launch via Steam URL (fallback)","action");
             g_signal_connect_data(via_uri,"clicked",(GCallback)on_pc2_steam_uri_fallback,NULL,NULL,0);
@@ -3775,13 +3783,20 @@ static GtkWidget *build_library(void){
         pack(tools,steam_only,0);
         pack(tools,session_check,0);
         pack(tools,preview,0);
-        pack(inspect,advanced,0);
+        if(!pc2_deckcheatz_onebutton_allowed())pack(inspect,advanced,0);
     }else{
         pack(inspect,lb1,0);pack(inspect,lbct,0);pack(inspect,lbw,0);
         pack(inspect,lba,0);pack(inspect,lbc,0);pack(inspect,lbx,0);
         pack(inspect,lb2,0);pack(inspect,lb3,0);pack(inspect,preview,0);
         pack(inspect,steam_only,0);pack(inspect,session_check,0);
-    }pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);pack(inspect,label("TIP","section-kicker"),0);GtkWidget*tip=label("Use the search dropdown above to choose All games, Steam, Steam shortcuts, Heroic, Lutris, or Trainers. Lutris launch integration is intentionally disabled in Test 1; trainer searches jump directly to Trainer Library.","muted");gtk_label_set_line_wrap((GtkLabel*)tip,TRUE);pack(inspect,tip,0);pack(body,inspect,0);
+    }
+    if(!pc2_deckcheatz_onebutton_allowed()){
+        pack(inspect,gtk_separator_new(GTK_ORIENTATION_HORIZONTAL),0);
+        pack(inspect,label("TIP","section-kicker"),0);
+    }
+    GtkWidget*tip=label("Use the search dropdown above to choose All games, Steam, Steam shortcuts, Heroic, Lutris, or Trainers. Lutris launch integration is intentionally disabled in Test 1; trainer searches jump directly to Trainer Library.","muted");gtk_label_set_line_wrap((GtkLabel*)tip,TRUE);
+    if(!pc2_deckcheatz_onebutton_allowed())pack(inspect,tip,0);
+    pack(body,inspect,0);
     if(pc2_discovery_only()){
         PC2LibraryAdaptive *adaptive=calloc(1,sizeof *adaptive);
         if(adaptive){
