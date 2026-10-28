@@ -51,6 +51,16 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("GameWeld will NOT edit Steam Launch Options. Continue?", GUI)
         self.assertIn("Steam itself will launch the game", GUI)
 
+    def test_all_steam_deckcheatz_launches_require_verified_wrapper(self):
+        self.assertIn("static int pc2_deckcheatz_saved_readiness(", GUI)
+        self.assertIn("if(expect_deckcheatz){\n        char verified[8192]", GUI)
+        self.assertIn('strcmp(mode,"direct_wrapper_configured")', GUI)
+        self.assertIn('strcmp(mode,"one_shot_shim_configured")', GUI)
+        self.assertIn('No Steam request was sent.', GUI)
+        self.assertIn('!pc2_session_configured_for_game(id)', GUI)
+        self.assertIn('if(!pc2_deckcheatz_saved_readiness(g,launcher,report,sizeof report))', GUI)
+        self.assertIn('if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))', GUI)
+
     def test_one_shot_token_remains_valid_during_slow_steam_startup(self):
         # A Steam IPC request can precede the DeckCheatz shim invocation.
         # Cancelling the token on a wrapper-only observation silently launches
