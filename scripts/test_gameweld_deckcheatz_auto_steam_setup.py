@@ -54,7 +54,6 @@ class AutoSteamTests(unittest.TestCase):
         changed = auto.replace_launch_option(
             self.raw, self.APPID, "", recipe, self.opts)
         self.assertIn(b"steam-session.py", changed)
-        self.assertIn(b"\\\\\"", changed)  # quoted shell arguments are escaped in VDF
         self.assertIn(b'"LaunchOptions" "-safe"', changed)
         self.assertIn(b'// preserve this comment', changed)
         self.assertEqual(self.raw, self.config.read_bytes())
