@@ -41,6 +41,19 @@ PATTERNS = {
         rb"(?:download|https?|connection|authentication|login).{0,60}(?:failed|error|refused|timed out)", re.I),
     "other_failure_keyword": re.compile(rb"error|fatal|fail(?:ed|ure)?|exception|could not|unable to", re.I),
 }
+# Specific fixed GPU/Electron signatures. Counts may include repeated copies
+# of the same error; never serialize raw lines, paths, error codes or tokens.
+GPU_SIGNATURES = {
+    "gpu_process_launch_failed": re.compile(rb"gpu process launch failed", re.I),
+    "gpu_process_exited_unexpectedly": re.compile(rb"gpu process exited unexpectedly", re.I),
+    "gpu_process_not_usable": re.compile(rb"gpu process isn.t usable", re.I),
+    "gpu_process_crashed": re.compile(rb"gpu.process.{0,50}(?:crash|terminated)", re.I),
+    "vulkan_initialization_failed": re.compile(
+        rb"(?:vulkan|vk_error).{0,75}(?:error|fail|unavailable|unsupported)", re.I),
+    "direct_composition_error": re.compile(rb"direct.composition.{0,80}(?:error|fail)", re.I),
+    "gpu_sandbox_failure": re.compile(rb"gpu.sandbox.{0,80}(?:error|fail)", re.I),
+}
+
 STAGES = {
     "proton_invoked": re.compile(rb"Proton:|runinprefix", re.I),
     "wine_invoked": re.compile(rb"\bwine(?:64)?(?:-preloader)?\b|wineserver", re.I),
@@ -108,6 +121,8 @@ def summarize(appid: str, path: Path) -> dict:
               for name, rx in PATTERNS.items()}
     stages = {name: sum(bool(rx.search(line[:4096])) for line in lines)
               for name, rx in STAGES.items()}
+    gpu_signatures = {name: sum(bool(rx.search(line[:4096])) for line in lines)
+                      for name, rx in GPU_SIGNATURES.items()}
     return {
         "steam_appid": appid,
         "state": "redacted_log_triage",
@@ -117,6 +132,8 @@ def summarize(appid: str, path: Path) -> dict:
         "lines_examined": len(lines),
         "failure_category_counts": {k: v for k, v in counts.items() if v},
         "observed_stage_marker_counts": {k: v for k, v in stages.items() if v},
+        "gpu_failure_signature_counts": {k: v for k, v in gpu_signatures.items() if v},
+        "category_counts_may_overlap_or_repeat": True,
         "raw_log_content_included": False,
         "steam_options_changed": False,
         "game_launched_by_diagnostic": False,
@@ -141,6 +158,8 @@ def main(argv=None) -> int:
             args.appid, default_log_root(v2=args.v2))
         result = summarize(args.appid, path)
         result["launcher_channel"] = "wand_v2_private_session" if args.v2 else "gameweld_live_handoff"
+        result["source"] = ("latest_owned_wand_v2_private_session_log" if args.v2
+                            else "latest_owned_gameweld_wemod_live_log")
     except (Blocked, OSError) as exc:
         # Do not return exception text containing a user-supplied path.
         print(json.dumps({"steam_appid": args.appid,
