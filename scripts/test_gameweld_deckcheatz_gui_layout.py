@@ -52,7 +52,7 @@ class DeckCheatzGuiLayoutTests(unittest.TestCase):
         self.assertIn('strcmp(mode,"preview_only")', text)
         self.assertIn('if(accepted!=GTK_RESPONSE_YES)', text)
         self.assertIn('j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz;', text)
-        self.assertIn('if(!j->live&&ready&&matching)', text)
+        self.assertIn('if(!j->live&&ready&&matching&&j->allow_start)', text)
         self.assertIn('if(consent==GTK_RESPONSE_YES)pc2_steam_wemod_attach_selected(1);', text)
         self.assertIn('pc2_steam_bridge_action("play")', text)  # Legacy remains optional
         self.assertIn('pc2_bridge_readiness_generation', text)
