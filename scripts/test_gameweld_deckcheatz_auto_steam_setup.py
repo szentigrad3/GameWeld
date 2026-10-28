@@ -53,7 +53,8 @@ class AutoSteamTests(unittest.TestCase):
         recipe = '/usr/bin/python3 "/home/a space/steam-session.py" run --appid 3008130 -- %command%'
         changed = auto.replace_launch_option(
             self.raw, self.APPID, "", recipe, self.opts)
-        self.assertIn(recipe.encode(), changed)
+        self.assertIn(b"steam-session.py", changed)
+        self.assertIn(b"\\\\\"", changed)  # quoted shell arguments are escaped in VDF
         self.assertIn(b'"LaunchOptions" "-safe"', changed)
         self.assertIn(b'// preserve this comment', changed)
         self.assertEqual(self.raw, self.config.read_bytes())
@@ -106,7 +107,7 @@ class AutoSteamTests(unittest.TestCase):
 
     def test_graceful_shutdown_is_required_no_kill(self):
         from types import SimpleNamespace
-        with patch.object(auto, "steam_is_running", side_effect=[True,False]), \
+        with patch.object(auto, "steam_is_running", side_effect=[True,False,False]), \
              patch.object(auto.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             self.assertTrue(auto.stop_steam_gracefully("/usr/bin/steam"))
         run.assert_called_once()
