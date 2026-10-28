@@ -38,7 +38,8 @@ def source_path() -> Path:
             raise ProxyBlocked("v2_source_not_directory")
     return root
 
-def invoke(appid: str, game_dir: Path, *, launch: bool) -> dict:
+def invoke(appid: str, game_dir: Path, *, launch: bool,
+           accept_unreadable_process_risk: bool = False) -> dict:
     if not appid.isdecimal() or not 0 < int(appid) < 2**32:
         raise ProxyBlocked("invalid_appid")
     if not game_dir.is_absolute():
@@ -50,6 +51,8 @@ def invoke(appid: str, game_dir: Path, *, launch: bool) -> dict:
            "--appid", appid, "--install-dir", str(game_dir)]
     if launch:
         cmd.append("--approve-existing-prefix-change")
+    if accept_unreadable_process_risk:
+        cmd.append("--accept-unreadable-process-risk")
     p = subprocess.run(cmd, env=env, capture_output=True, text=True,
                        timeout=40, check=False)
     if p.returncode not in (0, 2, 3):
@@ -70,9 +73,12 @@ def main(argv=None):
     p.add_argument("--appid", required=True)
     p.add_argument("--install-dir", required=True, type=Path)
     p.add_argument("--launch-client", action="store_true")
+    p.add_argument("--accept-unreadable-process-risk", action="store_true",
+                   help="only with explicit GameWeld user approval; <=8 unreadable processes")
     a = p.parse_args(argv)
     try:
-        r = invoke(a.appid, a.install_dir, launch=a.launch_client)
+        r = invoke(a.appid, a.install_dir, launch=a.launch_client,
+                   accept_unreadable_process_risk=a.accept_unreadable_process_risk)
     except (ProxyBlocked, OSError, subprocess.TimeoutExpired) as exc:
         r = {"state":"blocked", "reason_code":
              str(exc) if isinstance(exc, ProxyBlocked) else type(exc).__name__,
