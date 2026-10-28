@@ -58,6 +58,20 @@ class StalledSteamReportTests(unittest.TestCase):
         self.assertFalse(result["raw_option_text_included"])
         self.assertNotIn("PROTON_LOG", str(result))
 
+    def test_stuck_report_passes_the_requested_steam_root_to_compat_lookup(self):
+        from unittest.mock import patch
+        class Readiness:
+            @staticmethod
+            def saved_compatibility_bridge_state(appid, *, steam_root=None):
+                self.assertEqual(appid, "3008130")
+                self.assertEqual(steam_root, Path("/mnt/games/Steam"))
+                return {"state": "no_exact_per_game_mapping",
+                        "live_client_selection_verified": False}
+        with patch.object(report, "peer", return_value=Readiness):
+            state = report.saved_compatibility_tool_state(
+                "3008130", Path("/mnt/games/Steam"))
+        self.assertEqual(state["state"], "no_exact_per_game_mapping")
+
     def test_pending_one_shot_status_reads_without_changing_token(self):
         import json
         import os
