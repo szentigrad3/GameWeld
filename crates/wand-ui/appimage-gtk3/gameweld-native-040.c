@@ -3734,7 +3734,7 @@ static void on_pc2_steam_wemod_check(GtkButton*b,void*d){
     if(!mode[0]||!strcmp(mode,"trainer_wrapper_present")||
        !strcmp(mode,"incompatible_bridge_selected")||
        !strcmp(mode,"unknown")||!strcmp(mode,"unverified")||
-       !strcmp(mode,"needs_setup")||strstr(pending,"\\"session_armed\\": true")){
+       !strcmp(mode,"needs_setup")||strstr(pending,"\"session_armed\": true")){
         pc2_steam_launch_notice("Wand v2 cannot safely resume: a saved trainer wrapper, "
             "unknown Steam option or an armed one-shot session may already start WeMod. "
             "GameWeld has not modified your existing Steam Launch Options.");
