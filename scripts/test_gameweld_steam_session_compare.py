@@ -128,6 +128,29 @@ class SteamSessionCompareTests(unittest.TestCase):
         self.assertNotIn("DO_NOT_SHARE", str(outcome))
         self.assertNotIn("TOKEN=PRIVATE", str(outcome))
 
+    def test_upstream_stage_markers_and_failure_signatures_are_allowlisted(self):
+        live, after = self.reports()
+        content = (b"Communicating with the process\n"
+                   b"Process finished\n"
+                   b"Error while loading the wine server waiter: /PRIVATE_DATA\n"
+                   b"Failed to unpack prefix: /SENSITIVE_PATH\n"
+                   b"ERR:\n"
+                   b"Exit command with 1\n")
+        live["deckcheatz_logs"][0]["size_bytes"] = 0
+        after["deckcheatz_logs"][0]["size_bytes"] = len(content)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "wemod.log"
+            path.write_bytes(content)
+            outcome = compare.analyze_deckcheatz_interval(live, after, path)
+        self.assertEqual(outcome["known_upstream_failure_signature_counts"]["wine_server_wait_error"], 1)
+        self.assertEqual(outcome["known_upstream_failure_signature_counts"]["prefix_download_or_extraction_error"], 1)
+        self.assertEqual(outcome["known_upstream_failure_signature_counts"]["unhandled_upstream_exception"], 1)
+        self.assertEqual(outcome["observed_upstream_stage_markers_in_interval"]["game_process_wait_finished"], 1)
+        self.assertEqual(outcome["observed_upstream_stage_markers_in_interval"]["upstream_troubleshooter_returned"], 1)
+        self.assertFalse(outcome["absent_stage_markers_mean_stage_never_ran"])
+        self.assertNotIn("PRIVATE_DATA", str(outcome))
+        self.assertNotIn("SENSITIVE_PATH", str(outcome))
+
     def test_log_interval_refuses_symlinks_oversize_and_truncated_logs(self):
         live, after = self.reports()
         live["deckcheatz_logs"][0]["size_bytes"] = 0
