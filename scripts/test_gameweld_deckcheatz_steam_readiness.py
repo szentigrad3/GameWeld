@@ -93,7 +93,7 @@ class SavedSteamReadinessTests(unittest.TestCase):
         self.assertEqual(report["state"], "incompatible_bridge_selected")
         self.assertEqual(report["saved_compatibility"]["state"],
                          "gameweld_bridge_selected")
-        self.assertIn("real Proton", report["reason"])
+        self.assertIn("actual Proton command", report["reason"])
         self.assertFalse(report["steam_options_modified"])
 
     def test_compatibility_tool_is_only_classified_when_explicitly_selected(self):
