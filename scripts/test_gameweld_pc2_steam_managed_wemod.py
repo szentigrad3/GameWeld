@@ -49,6 +49,16 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("GameWeld will NOT edit Steam Launch Options. Continue?", GUI)
         self.assertIn("Steam itself will launch the game", GUI)
 
+    def test_one_shot_token_remains_valid_during_slow_steam_startup(self):
+        # A Steam IPC request can precede the DeckCheatz shim invocation.
+        # Cancelling the token on a wrapper-only observation silently launches
+        # the game without the intended trainer.
+        self.assertIn('int request_sent=strstr(j->output,"Steam applaunch command: STARTED")', GUI)
+        self.assertIn("if(!request_sent){", GUI)
+        self.assertIn('pc2_deckcheatz_session_helper("disarm",j->appid', GUI)
+        self.assertIn("Steam launch request sent, but the game EXE was not observed", GUI)
+        self.assertIn('strstr(j->output,"Launch result: STEAM_ASSOCIATION_ONLY")', GUI)
+
     def test_private_mode_launches_through_steam(self):
         self.assertIn("--enable-steam-wemod-test", RUNNER)
         self.assertIn("unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD", RUNNER)
