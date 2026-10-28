@@ -492,6 +492,26 @@ class SteamHandoffTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(marker.exists())
 
+    def test_bounded_observe_seconds_preserves_steam_cli_consent(self):
+        marker = self.root / "executed"
+        self.fake_steam('touch "' + str(marker) + '"\\nexit 0\\n')
+        env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ.get("PATH","/usr/bin"))
+        for seconds in ("-1", "91", "999999"):
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "launch", "--appid", "2353250",
+                 "--confirm", "--observe-seconds", seconds],
+                env=env, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
+        with patch.object(steam, "run_launch", return_value=2) as runner:
+            with patch.object(sys, "argv", [str(SCRIPT), "launch", "--appid",
+                                            "2353250", "--confirm",
+                                            "--observe-seconds", "75"]):
+                status = steam.main()
+        self.assertEqual(status, 2)
+        self.assertEqual(runner.call_args.kwargs["duration"], 75)
+        self.assertTrue(runner.call_args.kwargs["require_idle_before_launch"] is False)
+
     def test_wrapper_only_gate_blocks_already_running_exact_appid(self):
         marker = self.root / "steam-was-executed"
         self.fake_steam('touch "' + str(marker) + '"\nexit 0\n')
