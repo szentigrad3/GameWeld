@@ -635,6 +635,7 @@ static int pc2_deckcheatz_find_launcher(char *,size_t);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
 static void pc2_deckcheatz_flow(int experimental_launch);
 static void pc2_deckcheatz_steam_onebutton(void);
+static void pc2_deckcheatz_auto_steam_setup(const char *appid,const char *launcher);
 static int pc2_deckcheatz_folder(const char *p);
 static void pc2_deckcheatz_request_install(int resume_mode);
 static void on_pc2_deckcheatz_install(GtkButton*,void*);
@@ -3176,6 +3177,121 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
 static void pc2_steam_launch_selected(int expect_deckcheatz){
     pc2_steam_launch_selected_transport(expect_deckcheatz,0);
 }
+/* Private opt-in one-button Steam setup.
+ * This invokes the separate safe helper, which requests a graceful Steam
+ * shutdown, verifies that Steam really exited, backs up and atomically
+ * updates only this game's saved option, then launches through Steam.
+ * No shell, clipboard, manual paste, prefix replacement or broad Wine kills.
+ */
+typedef struct {
+    char appid[32],launcher[4096],output[8192];
+    int selected_index,ok;
+} PC2AutoSteamSetupJob;
+static int pc2_auto_steam_setup_busy=0;
+static gboolean pc2_auto_steam_setup_done(gpointer data){
+    PC2AutoSteamSetupJob*j=(PC2AutoSteamSetupJob*)data;
+    pc2_auto_steam_setup_busy=0;
+    int matching=j->selected_index==G.selected&&G.selected>=0&&
+                 G.selected<G.game_count&&
+                 !strcmp(G.games[G.selected].appid,j->appid);
+    int requested=j->ok && strstr(j->output,
+                                  "\"result\": \"steam_launch_requested\"")!=NULL;
+    int registered=j->ok && strstr(j->output,
+                                  "\"steam_launch_options_registered\": true")!=NULL;
+    if(registered && requested){
+        log_line("GameWeld automatically registered Steam one-shot DeckCheatz "
+                 "for AppID %s and requested launch through Steam. "
+                 "Game and WeMod windows are NOT yet verified.",j->appid);
+        if(matching&&G.library_detail_status)
+            set_label(G.library_detail_status,
+              "Steam launch requested with one-shot WeMod. Awaiting real game and trainer evidence.");
+        pc2_steam_launch_notice(
+            "GameWeld backed up the original Steam settings, registered the "
+            "one-shot DeckCheatz launcher automatically and requested Steam "
+            "to start the selected game. No manual Steam Launch Options paste "
+            "was necessary.\n\nThis is an experimental request: game window "
+            "and WeMod attachment remain unverified. If Steam says Running "
+            "without a window, do not request another launch.");
+    }else{
+        log_line("Automatic Steam DeckCheatz setup BLOCKED for AppID %s: %.4000s",
+                 j->appid,j->output[0]?j->output:"No result.");
+        if(matching&&G.library_detail_status)
+            set_label(G.library_detail_status,
+                      "Automatic Steam integration blocked; see the diagnostic. No WeMod launch requested.");
+        pc2_steam_launch_notice(
+            "Automatic Steam one-shot setup did not complete. No game launch "
+            "was requested. GameWeld will NOT ask you to paste Steam launch "
+            "options. Review Activity before retrying.");
+    }
+    free(j);return FALSE;
+}
+static void *pc2_auto_steam_setup_worker(void *data){
+    PC2AutoSteamSetupJob*j=(PC2AutoSteamSetupJob*)data;
+    int fd[2];if(pipe(fd)!=0){
+        snprintf(j->output,sizeof j->output,"Could not create result pipe");
+        g_idle_add(pc2_auto_steam_setup_done,j);return NULL;
+    }
+    pid_t child=fork();
+    if(child==0){
+        close(fd[0]);setsid();
+        dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);
+        close(fd[1]);clear_desktop_activation_env();
+        const char*appdir=getenv("APPDIR");
+        char helper[4096]={0};
+        if(appdir&&appdir[0]=='/')
+            snprintf(helper,sizeof helper,
+                     "%s/usr/libexec/gameweld-deckcheatz-auto-steam-setup.py",appdir);
+        else snprintf(helper,sizeof helper,
+                      "gameweld-deckcheatz-auto-steam-setup.py");
+        execlp("python3","python3",helper,"--appid",j->appid,
+               "--launcher",j->launcher,"--confirm","--shutdown-and-launch",
+               (char*)NULL);
+        _exit(127);
+    }
+    close(fd[1]);
+    if(child<0){
+        close(fd[0]);
+        snprintf(j->output,sizeof j->output,"Could not start Steam helper");
+    }else j->ok=bounded_child_output(child,fd[0],j->output,sizeof j->output,180);
+    g_idle_add(pc2_auto_steam_setup_done,j);
+    return NULL;
+}
+static void pc2_deckcheatz_auto_steam_setup(const char*appid,const char*launcher){
+    if(pc2_auto_steam_setup_busy||pc2_steam_launch_busy){
+        pc2_steam_launch_notice("A Steam launch or setup is already in progress.");
+        return;
+    }
+    if(!appid||!launcher||!launcher[0])return;
+    GtkWidget*dialog=gtk_message_dialog_new((GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        "Automatically configure and launch WeMod through Steam?\n\n"
+        "GameWeld will ask Steam to exit GRACEFULLY, which may close any other "
+        "running Steam games. Then it will save a protected backup of your "
+        "existing Steam configuration, install the one-shot DeckCheatz "
+        "wrapper for this game, restart Steam and request the game launch.\n\n"
+        "You will NOT paste or type anything in Steam. Normal launches use "
+        "the saved options and run without WeMod whenever its one-shot "
+        "token is not armed. The neutral wrapper remains installed until "
+        "explicitly unregistered.\n\n"
+        "Close other Steam games first. Approve graceful Steam restart?");
+    int accepted=gtk_dialog_run((GtkDialog*)dialog)==GTK_RESPONSE_YES;
+    gtk_widget_destroy(dialog);
+    if(!accepted)return;
+    PC2AutoSteamSetupJob*j=(PC2AutoSteamSetupJob*)calloc(1,sizeof *j);
+    if(!j)return;
+    snprintf(j->appid,sizeof j->appid,"%s",appid);
+    snprintf(j->launcher,sizeof j->launcher,"%s",launcher);
+    j->selected_index=G.selected;
+    pthread_t thread;pc2_auto_steam_setup_busy=1;
+    if(pthread_create(&thread,NULL,pc2_auto_steam_setup_worker,j)==0){
+        pthread_detach(thread);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+          "Requesting graceful Steam restart and backing up one-shot launcher setup…");
+    }else{
+        pc2_auto_steam_setup_busy=0;free(j);
+        pc2_steam_launch_notice("Cannot start automatic Steam setup worker.");
+    }
+}
 /* A real Steam-managed DeckCheatz session must receive Steam's %command%.
  * Never invoke a reconstructed direct Proton command from primary Play.
  * Inspect only saved Steam Launch Options (live cache may differ); fail closed
@@ -3233,21 +3349,9 @@ static void pc2_deckcheatz_steam_onebutton(void){
         return;
     }
     if(!strcmp(state,"needs_setup")){
-        GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
-            GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
-            "Steam launches %.140s normally, but WeMod is not connected to Steam.\n\n"
-            "GameWeld automatically read this game's saved Steam Launch Options: "
-            "no verified DeckCheatz %%command%% wrapper is installed. "
-            "Steam will therefore NOT launch WeMod from GameWeld.\n\n"
-            "Prepare the backed-up, one-time Steam wrapper setup? "
-            "GameWeld copies the exact combined setting so you do NOT need "
-            "to enter existing launch commands. You will still need to paste "
-            "it into Steam Properties once. No game, prefix, or Steam setting "
-            "will be changed automatically.",
-            g->name);
-        int ok=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES;
-        gtk_widget_destroy(dlg);
-        if(ok)on_pc2_deckcheatz_setup_session(NULL,NULL);
+        /* The user explicitly chose GameWeld-managed Steam setup, not a
+         * clipboard proposal or a request to edit Steam Properties. */
+        pc2_deckcheatz_auto_steam_setup(g->appid,launcher);
         return;
     }
     char message[1024]={0};
