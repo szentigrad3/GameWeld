@@ -3001,7 +3001,7 @@ static void pc2_steam_launch_notice(const char *reason){
 static int pc2_deckcheatz_saved_readiness(const Game*g,
                                          const char*launcher,
                                          char*report,size_t cap){
-    if(!g||!launcher||!*launcher||!report||cap<256)return 0;
+    if(!g||!report||cap<256)return 0;
     report[0]=0;
     const char*appdir=getenv("APPDIR");
     char helper[4096]={0};
@@ -3015,13 +3015,26 @@ static int pc2_deckcheatz_saved_readiness(const Game*g,
         close(fd[0]);setsid();
         dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);
         close(fd[1]);clear_desktop_activation_env();
-        if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
-            execlp("python3","python3",helper,"--appid",g->appid,
-                   "--launcher",launcher,"--compat-steam-root",
-                   g->steam_root,(char*)NULL);
-        else
-            execlp("python3","python3",helper,"--appid",g->appid,
-                   "--launcher",launcher,(char*)NULL);
+        if(launcher&&*launcher){
+            if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
+                execlp("python3","python3",helper,"--appid",g->appid,
+                       "--launcher",launcher,"--compat-steam-root",
+                       g->steam_root,(char*)NULL);
+            else
+                execlp("python3","python3",helper,"--appid",g->appid,
+                       "--launcher",launcher,(char*)NULL);
+        }else{
+            /* Generic user-owned Steam launch options. Steam owns parsing
+             * and execution; this read-only check just excludes a second
+             * already-configured WeMod trainer command. */
+            if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
+                execlp("python3","python3",helper,"--appid",g->appid,
+                       "--preserve-custom-options","--compat-steam-root",
+                       g->steam_root,(char*)NULL);
+            else
+                execlp("python3","python3",helper,"--appid",g->appid,
+                       "--preserve-custom-options",(char*)NULL);
+        }
         _exit(127);
     }
     close(fd[1]);
@@ -3111,19 +3124,21 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
     if(pc2_steam_no_options_allowed()&&!expect_deckcheatz){
         /* Do not silently run both a saved direct wrapper and the separate
          * no-options client. These are intentionally different modes. */
-        char installed[4096]={0},readiness[8192]={0},mode[80]={0};
-        if(!pc2_deckcheatz_find_launcher(installed,sizeof installed) ||
-           !pc2_deckcheatz_saved_readiness(g,installed,readiness,sizeof readiness)){
+        char readiness[8192]={0},mode[80]={0};
+        if(!pc2_deckcheatz_saved_readiness(g,NULL,readiness,sizeof readiness)){
             pc2_steam_launch_notice("The saved Steam launch state is not verifiable. No Steam settings were changed and no game launch was requested.");
             return;
         }
         json_string(readiness,"state",mode,sizeof mode);
-        if(!strcmp(mode,"direct_wrapper_configured") ||
-           !strcmp(mode,"incompatible_bridge_selected") || !strcmp(mode,"unknown")){
+        if(!strcmp(mode,"trainer_wrapper_present") ||
+           !strcmp(mode,"incompatible_bridge_selected") ||
+           !strcmp(mode,"unknown") || !strcmp(mode,"unverified") ||
+           !strcmp(mode,"needs_setup") || !mode[0]){
             pc2_steam_launch_notice(
-                "This title has a saved Steam wrapper or incompatible compatibility setting. "
-                "No-options mode will not start another trainer or modify those settings. "
-                "Restore the original Steam setting through GameWeld when convenient.");
+                "This game's saved Steam command may already start a trainer or "
+                "could not be verified. No-options mode will not overwrite your "
+                "Launch Options or start a second trainer. Check Steam's command; "
+                "GameWeld can restore only its own backed-up wrapper.");
             return;
         }
         /* A previously armed DeckCheatz token would activate the old shim
