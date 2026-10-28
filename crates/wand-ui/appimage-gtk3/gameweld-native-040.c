@@ -2788,6 +2788,15 @@ static int pc2_steam_wemod_allowed(void){
     const char*flag=getenv("GAMEWELD_PC2_ENABLE_STEAM_WEMOD");
     return pc2_discovery_only()&&flag&&!strcmp(flag,"1")&&pc2_steam_launch_allowed();
 }
+/* No-options mode is independent from the original DeckCheatz command wrapper.
+ * Steam starts the game normally; GameWeld separately requests a live-prefix
+ * WeMod client after exact-AppID evidence. It never registers Launch Options.
+ * The saved one-shot shim, if previously installed, must have no armed token.
+ * This is opt-in private testing: client attachment remains unverified. */
+static int pc2_steam_no_options_allowed(void){
+    const char*flag=getenv("GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS");
+    return pc2_steam_wemod_allowed()&&flag&&!strcmp(flag,"1");
+}
 /* Explicit private testing of the DeckCheatz 1.x command-prefix equivalent.
  * Unlike live WeMod attach this launches the game and trainer together. */
 static int pc2_deckcheatz_onebutton_allowed(void){
@@ -2805,6 +2814,7 @@ typedef struct {
     int expect_deckcheatz;
     int session_mode;
     int steam_managed_wemod;
+    int no_options_onebutton;
     int steam_uri;
     char install_dir[2048];
     char deckcheatz_launcher[4096];
@@ -2847,7 +2857,7 @@ static gboolean pc2_steam_launch_done(gpointer data){
        !strcmp(state,"ASSOCIATED PROCESS OBSERVED")) &&
        G.selected>=0 && G.selected<G.game_count &&
        !strcmp(G.games[G.selected].appid,j->appid)){
-        pc2_steam_wemod_attach_selected(0);
+        pc2_steam_wemod_attach_selected_ex(0,j->no_options_onebutton?2:1,0);
     }else if(j->steam_managed_wemod){
         /* An unconfirmed Steam process count must not suppress a read-only
          * WeMod check, but MUST NOT trigger automatic client startup. */
@@ -3098,6 +3108,19 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         return;
     }
     int session_mode=expect_deckcheatz && pc2_session_configured_for_game(id);
+    if(pc2_steam_no_options_allowed()&&!expect_deckcheatz){
+        /* A previously armed DeckCheatz token would activate the old shim
+         * alongside live attach. Refuse rather than launching two trainers. */
+        char pending[4096]={0};
+        if(!pc2_deckcheatz_session_helper("status",id,NULL,pending,sizeof pending) ||
+           strstr(pending,"\"session_armed\": true")){
+            pc2_steam_launch_notice(
+                "An active or unverifiable DeckCheatz one-shot token is present. "
+                "GameWeld will not start a second WeMod client or edit Steam. "
+                "Let the pending launch finish or cancel it in GameWeld first.");
+            return;
+        }
+    }
     if(use_uri && !pc2_steam_wemod_allowed()){
         pc2_steam_launch_notice("Steam URL fallback requires explicit private Steam-managed test mode.");
         return;
@@ -3127,6 +3150,16 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         "Steam is not already launching the game. This asks xdg-open to use "
         "steam://rungameid; it does not edit Steam Launch Options or select "
         "Proton. A second WeMod consent is still required. Continue?":
+        pc2_steam_no_options_allowed()?
+        "Play with WeMod without changing Steam settings?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
+        "Steam will launch the original game. After exact game-process "
+        "evidence, GameWeld will try starting WeMod in that running Proton "
+        "prefix, without another confirmation. This is EXPERIMENTAL; "
+        "Proton/WeMod may change the game's prefix. Make a backup first.\n\n"
+        "Steam will NOT be restarted; Launch Options and Compatibility "
+        "settings will NOT be changed. A saved but unarmed legacy wrapper "
+        "will still pass the normal game through. Continue?":
         pc2_steam_wemod_allowed()?
         "Play via Steam, then inspect WeMod handoff?\n\n"
         "%.140s (Steam App ID %s)\n\n"
@@ -3156,6 +3189,7 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
     snprintf(j->game_name,sizeof j->game_name,"%.240s",g->name);
     j->expect_deckcheatz=expect_deckcheatz;
     j->steam_managed_wemod=pc2_steam_wemod_allowed()&&!expect_deckcheatz;
+    j->no_options_onebutton=pc2_steam_no_options_allowed()&&!expect_deckcheatz;
     j->steam_uri=use_uri;
     snprintf(j->install_dir,sizeof j->install_dir,"%s",g->install_dir);
     j->session_mode=session_mode;
@@ -3472,7 +3506,13 @@ static gboolean pc2_steam_wemod_attach_done(gpointer data){
                 "WeMod.exe is already running; no duplicate started. Open WeMod to connect to the game. Attachment UNVERIFIED.":
             ready?"Game is running; WeMod handoff prerequisites detected (client still NOT attached).":
                 "WeMod handoff not ready; see the exact blockers in the dialog.");
-    if(!j->live&&ready&&matching&&j->allow_start){
+    if(!j->live&&ready&&matching&&j->allow_start==2){
+        /* The selected-game pre-launch confirmation explicitly approved the
+         * possible existing-prefix changes. Re-check live game/proton context
+         * in the Python helper before requesting this single client. */
+        log_line("No-options Steam game observed; requesting consented WeMod client in live Proton prefix. Attachment unverified.");
+        pc2_steam_wemod_attach_selected(1);
+    }else if(!j->live&&ready&&matching&&j->allow_start){
         GtkWidget*confirm=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
             "Steam game session detected for %.140s.\n\n"
@@ -6073,6 +6113,7 @@ static void on_pc2_bridge_primary(GtkButton*b,void*d){
          * then separately preview/confirm the client handoff. Legacy modes
          * retain their explicitly selected launch behaviour. */
         if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_steam_onebutton();
+        else if(pc2_steam_no_options_allowed())pc2_steam_launch_selected(0);
         else if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);
         else if(pc2_native_wrapper_allowed())pc2_native_wrapper_action(1);
         else pc2_steam_launch_selected(1);
