@@ -20,6 +20,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1", RUNNER)
         self.assertIn("pc2_deckcheatz_onebutton_allowed(void)", GUI)
         self.assertIn("Play with WeMod (DeckCheatz private test)", GUI)
+        self.assertIn('strcmp(s, "Play with WeMod (DeckCheatz private test)")', GUI)
         self.assertIn("if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_flow(1)", GUI)
         self.assertIn("else if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0)", GUI)
         self.assertIn("pc2_deckcheatz_request_install(experimental_launch)", GUI)
