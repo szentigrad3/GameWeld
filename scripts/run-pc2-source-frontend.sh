@@ -34,6 +34,7 @@ unset GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER
 unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD
 unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON
 unset GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS
+unset GAMEWELD_PC2_USE_WAND_V2
 if [[ "${1:-}" == "--enable-deckcheatz-onebutton-test" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1
   export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
@@ -47,6 +48,16 @@ if [[ "${1:-}" == "--enable-no-steam-options-test" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
   export GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS=1
   printf '%s\n' 'PC2 NO-STEAM-OPTIONS experiment: normal Steam game launch then consented live-prefix WeMod client handoff. Never restarts Steam or edits its Launch Options. Attachment still needs verification.'
+  set --
+fi
+# Explicit v2 development route. Requires an independently installed, user-owned
+# v2 source tree. No automatic fallback to the old live helper or Steam wrapper.
+if [[ "${1:-}" == "--enable-v2-wemod-test" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
+  export GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS=1
+  export GAMEWELD_PC2_USE_WAND_V2=1
+  printf '%s\n' 'PC2 V2 development mode: Steam owns Launch Options; GameWeld invokes installed Wand v2 separately after exact-game evidence. No silent fallback or prefix overwrite.'
   set --
 fi
 if [[ "${1:-}" == "--enable-steam-wemod-test" && "$#" -eq 1 ]]; then
