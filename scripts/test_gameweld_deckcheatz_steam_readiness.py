@@ -108,10 +108,30 @@ class SavedSteamReadinessTests(unittest.TestCase):
                              "other_compatibility_tool_selected")
             Bridge.selection = "UNVERIFIED (no saved exact game mapping readable)"
             result = module.saved_compatibility_bridge_state(self.appid)
-            self.assertEqual(result["state"], "unverified")
+            self.assertEqual(result["state"], "no_exact_per_game_mapping")
+            self.assertFalse(result["exact_per_game_mapping"])
+            self.assertFalse(result["live_client_selection_verified"])
+            Bridge.selection = "UNVERIFIED (conflicting saved tool mappings)"
+            result = module.saved_compatibility_bridge_state(self.appid)
+            self.assertEqual(result["state"], "conflicting_saved_mappings")
             Bridge.selection = "GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
             result = module.saved_compatibility_bridge_state(self.appid)
             self.assertEqual(result["state"], "gameweld_bridge_selected")
+
+    def test_requested_steam_root_is_inspected_alongside_default_roots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            class Bridge:
+                @staticmethod
+                def steam_compat_selection(_appid, *, steam_roots):
+                    assert root in steam_roots
+                    assert Path.home() / ".steam/root" in steam_roots
+                    return "UNVERIFIED (no saved exact game mapping readable)"
+            with patch.object(module, "import_peer", return_value=Bridge):
+                report = module.saved_compatibility_bridge_state(
+                    self.appid, steam_root=root)
+            self.assertEqual(report["state"], "no_exact_per_game_mapping")
+            self.assertFalse(report["steam_compatibility_modified"])
 
     def test_live_and_saved_options_are_not_mistaken_for_each_other(self):
         with patch.object(module, "import_peer", side_effect=ValueError("read failed")):
