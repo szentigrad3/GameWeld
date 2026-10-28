@@ -691,7 +691,7 @@ static GtkWidget *button(const char *s, const char *cls) {
     GtkWidget *w = gtk_button_new_with_label(s); if (cls) style(w, cls);
     if (!cls || strcmp(cls, "windowctl")) {
         /* Opening upstream source is safe; other legacy buttons are blocked. */
-        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Play via Steam + WeMod (private test)") && strcmp(s, "Launch via Steam URL (fallback)") && strcmp(s, "Check / start WeMod in running Steam game") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
+        if (strcmp(s, "Preview Steam launch (no action)") && strcmp(s, "Launch Steam game only (opt-in)") && strcmp(s, "Play via Steam + WeMod (private test)") && strcmp(s, "Launch via Steam URL (fallback)") && strcmp(s, "Check / start WeMod in running Steam game") && strcmp(s, "Inspect game and WeMod processes (read-only)") && strcmp(s, "Preview native Rust wrapper (no launch)") && strcmp(s, "Launch native Rust wrapper + WeMod (experimental)") && strcmp(s, "Check Steam session (read-only)") && strcmp(s, "WeMod Enhancer: Detect") && strcmp(s, "WeMod Enhancer: Install Helper") && strcmp(s, "WeMod Enhancer: Patch WeMod") && strcmp(s, "WeMod Enhancer: Restore Original") && strcmp(s, "WeMod Enhancer: Choose Folder") && strcmp(s, "Check Wand Patch (no game launch)") && strcmp(s, "Verify Wand Patch + Game (no launch)") && strcmp(s, "Set up one-session DeckCheatz") && strcmp(s, "Copy DeckCheatz Steam launch option") && strcmp(s, "Restore original Steam launch option") && strcmp(s, "Set up DeckCheatz for Steam") && strcmp(s, "Play via Steam + DeckCheatz") && strcmp(s, "DeckCheatz 1.x — Detect (no Steam options)") && strcmp(s, "DeckCheatz 1.x — Preview selected game (read-only)") && strcmp(s, "Play with WeMod") && strcmp(s, "Install DeckCheatz 1.x (managed)") && strcmp(s, "Check DeckCheatz updates") && strcmp(s, "Update DeckCheatz (opt-in)") && strcmp(s, "Manage existing DeckCheatz checkout") && strcmp(s, "Reset window size") && strcmp(s, "Check WeMod readiness") && strcmp(s, "Plan safe .NET test (read-only)") && strcmp(s, "Step 2 — Stage downloaded .NET prefix (isolated)") && strcmp(s, "Step 1 — Download selected prepared setup (cache only)") && strcmp(s, "Cancel cache download") && strcmp(s, "Find prepared WeMod setup") && strcmp(s, "Step 3 — Review prepared .NET prefix (read-only)") && strcmp(s, "Check game WeMod connection") && strcmp(s, "Check WeMod setup") && strcmp(s, "Open WeMod & DeckCheatz setup") && strcmp(s, "Update Steam Bridge") && strcmp(s, "Steam Bridge: Update installed launcher") && strcmp(s, "Steam Bridge: Set up selected game") && strcmp(s, "Steam Bridge: Enable WeMod next launch") && strcmp(s, "Steam Bridge: Disable WeMod next launch") && strcmp(s, "WeMod display: Try GPU off for this game") && strcmp(s, "WeMod display: Restore normal for this game") && strcmp(s, "Check Windows .NET in this game (read-only)")) pc2_guard_button(w);
     }
     return w;
 }
@@ -2781,7 +2781,7 @@ static int pc2_steam_wemod_allowed(void){
     return pc2_discovery_only()&&flag&&!strcmp(flag,"1")&&pc2_steam_launch_allowed();
 }
 static void pc2_steam_wemod_attach_selected(int live);
-static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start);
+static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start,int lifecycle);
 /* A game-only Steam request must not be logged as successful until we can
  * inspect the Steam command's result and same-user process association.
  * This worker is opt-in and never starts any trainer or changes settings. */
@@ -2836,7 +2836,7 @@ static gboolean pc2_steam_launch_done(gpointer data){
          * WeMod check, but MUST NOT trigger automatic client startup. */
         if(strstr(j->output,"Steam applaunch command: STARTED") ||
            strstr(j->output,"Steam steam-uri command: STARTED"))
-            pc2_steam_wemod_attach_selected_ex(0,0);
+            pc2_steam_wemod_attach_selected_ex(0,0,0);
         GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
             GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
             "Steam launch not verified for %.140s.\n\n%.2100s\n\n"
@@ -3098,12 +3098,25 @@ static void on_pc2_steam_game_only(GtkButton*b,void*d){
  * separate user confirmation. Spawning WeMod is not trainer attachment. */
 typedef struct {
     char appid[32], game[256], install_dir[2048], output[4096];
-    int live, ok, allow_start;
+    int live, ok, allow_start, lifecycle;
 } PC2WemodAttachJob;
 static int pc2_steam_wemod_attach_busy=0;
 static gboolean pc2_steam_wemod_attach_done(gpointer data){
     PC2WemodAttachJob*j=(PC2WemodAttachJob*)data;
     pc2_steam_wemod_attach_busy=0;
+    if(j->lifecycle){
+        log_line("Read-only game/WeMod lifecycle for %s (AppID %s): %.2500s",
+            j->game,j->appid,j->output[0]?j->output:"No report.");
+        GtkWidget*notice=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_INFO,GTK_BUTTONS_OK,
+            "Game and WeMod process snapshot (read-only)\n\n%.3000s\n\n"
+            "Compare this snapshot before and after exiting the game. "
+            "GameWeld did not terminate any process.",
+            j->output[0]?j->output:"No process details available.");
+        gtk_dialog_run((GtkDialog*)notice);
+        gtk_widget_destroy(notice);
+        free(j);return FALSE;
+    }
     const int matching = G.selected>=0&&G.selected<G.game_count &&
         !strcmp(G.games[G.selected].appid,j->appid);
     const int ready = j->ok && strstr(j->output,
@@ -3174,7 +3187,14 @@ static void *pc2_steam_wemod_attach_worker(void *data){
         if(appdir&&appdir[0]=='/')
             snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-wemod-live-attach.py",appdir);
         else snprintf(helper,sizeof helper,"gameweld-wemod-live-attach.py");
-        if(j->live)
+        if(j->lifecycle){
+            if(appdir&&appdir[0]=='/')
+                snprintf(helper,sizeof helper,"%s/usr/libexec/gameweld-steam-handoff.py",appdir);
+            else snprintf(helper,sizeof helper,"gameweld-steam-handoff.py");
+            execlp("python3","python3",helper,"status",
+                "--appid",j->appid,"--details","--lifecycle",
+                "--install-dir",j->install_dir,(char*)NULL);
+        }else if(j->live)
             execlp("python3","python3",helper,
                 "--appid",j->appid,"--install-dir",j->install_dir,
                 "--format","json","--launch-client","--approve-prefix-may-change",
@@ -3194,7 +3214,7 @@ static void *pc2_steam_wemod_attach_worker(void *data){
     g_idle_add(pc2_steam_wemod_attach_done,j);
     return NULL;
 }
-static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start){
+static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start,int lifecycle){
     if(!pc2_steam_wemod_allowed())return;
     if(pc2_steam_wemod_attach_busy){
         log_line("Steam-managed WeMod inspection already in progress.");return;
@@ -3212,6 +3232,7 @@ static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start){
     snprintf(j->install_dir,sizeof j->install_dir,"%s",g->install_dir);
     j->live=live;
     j->allow_start=allow_start;
+    j->lifecycle=lifecycle;
     pc2_steam_wemod_attach_busy=1;
     pthread_t thread;
     if(pthread_create(&thread,NULL,pc2_steam_wemod_attach_worker,j)==0){
@@ -3225,10 +3246,13 @@ static void pc2_steam_wemod_attach_selected_ex(int live,int allow_start){
     }
 }
 static void pc2_steam_wemod_attach_selected(int live){
-    pc2_steam_wemod_attach_selected_ex(live,1);
+    pc2_steam_wemod_attach_selected_ex(live,1,0);
 }
 static void on_pc2_steam_wemod_check(GtkButton*b,void*d){
     (void)b;(void)d;pc2_steam_wemod_attach_selected(0);
+}
+static void on_pc2_steam_wemod_lifecycle(GtkButton*b,void*d){
+    (void)b;(void)d;pc2_steam_wemod_attach_selected_ex(0,0,1);
 }
 
 /* Isolated Rust wrapper preview and opt-in launch. Never edits Steam options,
@@ -3722,6 +3746,9 @@ static GtkWidget *build_library(void){
             GtkWidget*manual=button("Check / start WeMod in running Steam game","action");
             g_signal_connect_data(manual,"clicked",(GCallback)on_pc2_steam_wemod_check,NULL,NULL,0);
             pack(inspect,manual,0);
+            GtkWidget*lifecycle=button("Inspect game and WeMod processes (read-only)","action");
+            g_signal_connect_data(lifecycle,"clicked",(GCallback)on_pc2_steam_wemod_lifecycle,NULL,NULL,0);
+            pack(inspect,lifecycle,0);
         }
         if(pc2_native_wrapper_allowed()){
             GtkWidget*npreview=button("Preview native Rust wrapper (no launch)","action");
