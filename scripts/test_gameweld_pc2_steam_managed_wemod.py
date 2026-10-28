@@ -182,6 +182,18 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_steam_onebutton()', GUI)
         self.assertIn('else if(pc2_steam_no_options_allowed())pc2_steam_launch_selected(0)', GUI)
 
+    def test_v2_unreadable_risk_requires_initial_gameweld_user_approval(self):
+        self.assertIn("CachyOS may hide some same-user process environments.", GUI)
+        self.assertIn("you explicitly accept proceeding with at most 8 unreadable processes", GUI)
+        self.assertIn('if(pc2_wand_v2_allowed())pc2_steam_wemod_attach_selected_ex(1,2,0);', GUI)
+        self.assertIn('if(j->live && j->allow_start==2)', GUI)
+        self.assertIn('else if(j->allow_start==2)', GUI)
+        self.assertIn('"--accept-unreadable-process-risk"', GUI)
+        self.assertIn('else if(j->live)', GUI)
+        # An explicit manual preview does not pass the unknown-process risk flag.
+        self.assertIn('else\n                execlp("python3","python3",helper,"--appid",j->appid,', GUI)
+        self.assertIn("A prepared-prefix archive is NOT automatically installed.", GUI)
+
     def test_explicit_steam_url_fallback_is_not_automatic(self):
         self.assertIn('button("Launch via Steam URL (fallback)"', GUI)
         self.assertIn('on_pc2_steam_uri_fallback,NULL,NULL,0', GUI)
