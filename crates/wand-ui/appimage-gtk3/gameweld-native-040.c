@@ -3337,15 +3337,14 @@ static void pc2_deckcheatz_steam_onebutton(void){
     if(!strcmp(state,"incompatible_bridge_selected")){
         log_line("Steam DeckCheatz launch blocked: saved compatibility tool is the old GameWeld Bridge for AppID %s. No game requested.",g->appid);
         pc2_steam_launch_notice(
-            "Dying Light's saved Steam Compatibility setting selects the old "
-            "GameWeld Bridge. DeckCheatz must receive the game's real Proton "
-            "launch command; wrapping the legacy bridge caused a broken "
-            "Steam launch chain in the previous log.\n\n"
-            "Close the game. In Steam > Dying Light: The Beast > Properties > "
-            "Compatibility, select a verified working Proton tool rather "
-            "than GameWeld Bridge. Restart Steam to ensure the selection is "
-            "loaded, then try GameWeld again.\n\n"
-            "GameWeld has NOT changed Steam, the game's prefix, or its Launch Options.");
+            "This game's saved Steam Compatibility selection still uses the "
+            "legacy GameWeld Bridge. The one-shot DeckCheatz route needs the "
+            "real Steam-managed Proton command and cannot safely nest inside "
+            "the old Bridge.\n\n"
+            "Automatic compatibility migration is NOT implemented yet. "
+            "GameWeld blocked this launch instead of asking you to paste "
+            "or change a Steam setting manually.\n\n"
+            "No game launch or compatibility configuration change occurred.");
         return;
     }
     if(!strcmp(state,"needs_setup")){
