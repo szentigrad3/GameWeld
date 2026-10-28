@@ -122,6 +122,62 @@ class SteamHandoffTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertIn("process evidence changed during preflight", report)
 
+    def test_steam_log_probe_reports_only_new_exact_appid_events(self):
+        steam_root = self.root / "Steam"
+        log = steam_root / "logs" / "gameprocess_log.txt"
+        log.parent.mkdir(parents=True)
+        log.write_text(
+            "[2026] Game process removed: AppID 3008130 old secret /home/private\n")
+        probe = steam.SteamLogProbe(steam_root)
+        with log.open("a") as stream:
+            stream.write("[2026] Game process added: AppID 30081300 unrelated\n")
+            stream.write("[2026] GameAction [AppID 3008130, ActionID 4] launch\n")
+            stream.write("[2026] Game process added : AppID 3008130 /home/private/tokens\n")
+            stream.write("[2026] Game process removed: AppID 3008130 /home/private\n")
+        notes = "\n".join(probe.summary("3008130"))
+        self.assertIn("launch_action=1", notes)
+        self.assertIn("process_added=1", notes)
+        self.assertIn("process_removed=1", notes)
+        self.assertNotIn("30081300", notes)
+        self.assertNotIn("/home/private", notes)
+        self.assertNotIn("old secret", notes)
+
+    def test_steam_log_probe_handles_rotation_truncation_and_symlink(self):
+        root = self.root / "Steam"
+        log = root / "logs" / "gameprocess_log.txt"
+        log.parent.mkdir(parents=True)
+        log.write_text("a" * 500)
+        probe = steam.SteamLogProbe(root)
+        log.unlink()
+        log.write_text("[2026] Game process added: AppID 3008130\n")
+        notes = "\n".join(probe.summary("3008130"))
+        self.assertIn("changed/rotated", notes)
+        log.unlink()
+        log.symlink_to(self.root / "secret")
+        (self.root / "secret").write_text("AppID 3008130 secret\n")
+        self.assertEqual(steam._log_identity(log), None)
+        notes = "\n".join(steam.SteamLogProbe(root).summary(
+            "3008130", historical=True))
+        self.assertNotIn("secret", notes)
+
+    def test_unconfirmed_steam_launch_reports_sanitized_client_events(self):
+        steam_root = self.root / "Steam"
+        log = steam_root / "logs" / "gameprocess_log.txt"
+        log.parent.mkdir(parents=True)
+        log.write_text("old lines\n")
+        self.fake_steam(
+            'printf "[2026] Game process added : AppID 3008130 private-info\\n" '
+            '>> "' + str(log) + '"\nexit 0\n'
+        )
+        with patch.object(steam, "associated_process_count", return_value=0):
+            status, report = self.capture(
+                "3008130", steam=str(self.command), steam_root=steam_root,
+                duration=0.15)
+        self.assertEqual(status, 2, report)
+        self.assertIn("Launch result: UNCONFIRMED", report)
+        self.assertIn("Steam log gameprocess_log.txt AppID events: process_added=1", report)
+        self.assertNotIn("private-info", report)
+
     def test_read_only_details_identify_appid_helper_without_exposing_environment(self):
         proc = self.root / "proc"
         proc.mkdir()
