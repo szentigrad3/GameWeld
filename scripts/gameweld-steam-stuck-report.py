@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+from datetime import datetime, timezone
 import stat
 import shlex
 import time
@@ -93,9 +94,11 @@ def log_indicators(path: Path) -> dict:
     return {
         "found": True,
         "size_bytes": info.st_size,
+        "modified_utc": datetime.fromtimestamp(info.st_mtime, tz=timezone.utc).isoformat(),
+        "age_seconds_at_scan": max(0, int(time.time() - info.st_mtime)),
         "error_indicators": {word: sample.count(word) for word in ERRORS
                              if word in sample},
-        "note": "Only diagnostic keyword counts; log contents not exported",
+        "note": "Historical log keyword counts only; errors are not tied to this launch",
     }
 
 
