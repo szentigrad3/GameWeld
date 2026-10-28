@@ -5,6 +5,7 @@ NEVER writes to Steam localconfig.vdf, even if Steam is closed.
 from __future__ import annotations
 import argparse
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -245,6 +246,86 @@ def backup_file(appid: str, account: str, root: Path | None):
         raise Blocked("State root must be absolute")
     return state / "gameweld/steam-option-backups" / account / (appid + ".json")
 
+def verified_baseline_file(appid: str, account: str, root: Path | None = None) -> Path:
+    """Separate current-settings snapshot; never rebrands a legacy original."""
+    return backup_file(appid, account, root).with_name(appid + ".verified-current.json")
+
+
+def read_backup_record(appid: str, account: str, path: Path) -> tuple[dict, bytes]:
+    """Secure, bounded read of an existing protected record."""
+    if path.is_symlink() or not path.is_file():
+        raise Blocked("Original options backup missing or unsafe")
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) & 0o077
+                    or info.st_size > 100000):
+                raise Blocked("Original options backup has unsafe permissions or size")
+            raw = stream.read(100001)
+        if len(raw) > 100000:
+            raise Blocked("Original options backup is oversized")
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise Blocked("Existing original-command backup is invalid; no changes made") from exc
+    if not isinstance(value, dict):
+        raise Blocked("Existing original-command backup is not a JSON object")
+    if (value.get("appid") != appid or value.get("account") != account
+            or not isinstance(value.get("original"), str)):
+        raise Blocked("Backup metadata does not match selected account and game")
+    return value, raw
+
+
+def read_verified_baseline(appid: str, account: str,
+                           root: Path | None = None) -> str | None:
+    """Read only an explicitly checked CURRENT empty original, not legacy history."""
+    current = verified_baseline_file(appid, account, root)
+    if not current.exists() and not current.is_symlink():
+        return None
+    record, _ = read_backup_record(appid, account, current)
+    if (record.get("version") != 2
+            or record.get("snapshot_kind") != "verified_current_before_setup"
+            or record.get("original") != ""
+            or record.get("live_empty_confirmed") is not True):
+        raise Blocked("Verified current-settings snapshot has invalid metadata")
+    legacy, raw = read_backup_record(appid, account, backup_file(appid, account, root))
+    if (legacy.get("version") != 1 or legacy.get("original") != ""
+            or legacy.get("live_empty_confirmed") is True
+            or record.get("legacy_backup_sha256") != hashlib.sha256(raw).hexdigest()):
+        raise Blocked("Legacy original changed since current-settings snapshot; "
+                      "restore is blocked")
+    return ""
+
+
+def save_verified_current_baseline(appid: str, account: str, root: Path | None = None) -> Path:
+    """Safely attest *current* empty options, retaining unverified historical data."""
+    legacy, raw = read_backup_record(appid, account, backup_file(appid, account, root))
+    if (legacy.get("version") != 1 or legacy.get("original") != ""
+            or legacy.get("live_empty_confirmed") is True):
+        raise Blocked("Existing backup is not the recognized unverified-empty legacy record")
+    path = verified_baseline_file(appid, account, root)
+    payload = {
+        "version": 2, "appid": appid, "account": account,
+        "original": "", "live_empty_confirmed": True,
+        "snapshot_kind": "verified_current_before_setup",
+        "legacy_backup_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                     getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError:
+        if read_verified_baseline(appid, account, root) != "":
+            raise Blocked("Existing current-settings snapshot conflicts; no changes made")
+        return path
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    return path
+
+
 def save_backup(appid: str, account: str, old: str, root: Path | None = None,
                 *, verified_empty: bool = False, return_status: bool = False):
     """Create a private original once, or reuse a validated exact match.
@@ -281,6 +362,22 @@ def save_backup(appid: str, account: str, old: str, root: Path | None = None,
     except FileExistsError:
         # Must read and validate the actual existing record before reporting
         # a successful retry. Never truncate it or create a new backup.
+        legacy, _ = read_backup_record(appid, account, path)
+        if (legacy.get("version") == 1 and legacy.get("original") == ""
+                and legacy.get("live_empty_confirmed") is not True):
+            if old != "" or not verified_empty:
+                raise Blocked(
+                    "Legacy unverified-empty backup cannot be reconciled with "
+                    "nonempty or unverified CURRENT Steam Launch Options. "
+                    "Original remains protected; review Steam Properties.")
+            existing_current = read_verified_baseline(appid, account, root)
+            if existing_current == "":
+                current_path = verified_baseline_file(appid, account, root)
+                return (current_path, True) if return_status else current_path
+            # This does NOT certify what the original options historically
+            # were. It records a new, explicit current empty baseline only.
+            current_path = save_verified_current_baseline(appid, account, root)
+            return (current_path, False) if return_status else current_path
         saved_original = load_backup(appid, account, root)
         if saved_original != old:
             raise Blocked(
@@ -297,28 +394,12 @@ def save_backup(appid: str, account: str, old: str, root: Path | None = None,
     return (path, False) if return_status else path
 
 def load_backup(appid: str, account: str, root: Path | None = None) -> str:
-    path = backup_file(appid, account, root)
-    if path.is_symlink() or not path.is_file():
-        raise Blocked("Original options backup missing or unsafe")
-    try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        with os.fdopen(fd, "rb") as stream:
-            info = os.fstat(stream.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                    or stat.S_IMODE(info.st_mode) & 0o077
-                    or info.st_size > 100000):
-                raise Blocked("Original options backup has unsafe permissions or size")
-            raw = stream.read(100001)
-        if len(raw) > 100000:
-            raise Blocked("Original options backup is oversized")
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeError, json.JSONDecodeError) as exc:
-        raise Blocked("Existing original-command backup is invalid; no changes made") from exc
-    if not isinstance(value, dict):
-        raise Blocked("Existing original-command backup is not a JSON object")
-    if (value.get("version") != 1 or value.get("appid") != appid or
-            value.get("account") != account or not isinstance(value.get("original"), str)):
-        raise Blocked("Backup metadata does not match selected account and game")
+    current = read_verified_baseline(appid, account, root)
+    if current is not None:
+        return current
+    value, _ = read_backup_record(appid, account, backup_file(appid, account, root))
+    if value.get("version") != 1:
+        raise Blocked("Backup version does not match protected original")
     if value["original"] == "" and value.get("live_empty_confirmed") is not True:
         raise Blocked("A previous GameWeld version saved an unverified EMPTY original. "
                       "Refusing to copy this as a restore command; check Steam Properties manually.")
@@ -382,8 +463,13 @@ def main(argv=None):
                     return_status=True)
                 result["backup_file"] = str(path)
                 result["backup_reused"] = reused
-                result["result"] = ("ORIGINAL_BACKUP_REUSED" if reused
-                                    else "ORIGINAL_BACKUP_SAVED")
+                if path == verified_baseline_file(args.appid, account):
+                    result["result"] = ("VERIFIED_CURRENT_BASELINE_REUSED" if reused
+                                        else "VERIFIED_CURRENT_BASELINE_SAVED")
+                    result["legacy_historical_original_unverified"] = True
+                else:
+                    result["result"] = ("ORIGINAL_BACKUP_REUSED" if reused
+                                        else "ORIGINAL_BACKUP_SAVED")
         if args.format == "text":
             print(result.get("proposed_launch_option") or result.get("original_launch_option") or "")
         else:
