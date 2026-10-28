@@ -44,6 +44,16 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("Start the existing WeMod client in THIS game's Proton prefix?", GUI)
         self.assertIn('"trainer_attachment_verified": False', ATTACH)
 
+    def test_explicit_steam_url_fallback_is_not_automatic(self):
+        self.assertIn('button("Launch via Steam URL (fallback)"', GUI)
+        self.assertIn('on_pc2_steam_uri_fallback,NULL,NULL,0', GUI)
+        self.assertIn('if(j->steam_uri)', GUI)
+        self.assertIn('"--transport","steam-uri"', GUI)
+        self.assertIn('pc2_steam_launch_selected_transport(0,1)', GUI)
+        self.assertIn('if(use_uri && !pc2_steam_wemod_allowed())', GUI)
+        self.assertIn('Retry launch via the registered Steam URL handler?', GUI)
+        self.assertIn('"--require-idle-before-launch"', GUI)
+
     def test_visible_feedback_instead_of_dead_button(self):
         self.assertIn('strcmp(s, "Check / start WeMod in running Steam game")', GUI)
         self.assertIn("on_pc2_steam_wemod_check,NULL,NULL,0", GUI)
