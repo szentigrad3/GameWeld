@@ -221,8 +221,24 @@ def diagnose(appid: str, root: Path, install_dir: Path | None = None) -> dict:
     life = handoff.game_session_lifecycle(appid, install_dir)
     result["game_install_manifest_resolved"] = install_dir is not None
     result["lifecycle"] = life
-    result["recognized_launcher_processes"] = recognized_launchers()
+    launchers = recognized_launchers()
+    result["recognized_launcher_processes"] = launchers
     result["recognized_launcher_scope"] = "Same-user processes, not confirmed AppID-specific"
+    # An overlapping same-UID /proc environ match is stronger evidence that
+    # the observed launcher belonged to THIS AppID. Neither a PID match nor an
+    # argv hint verifies game-window visibility or trainer attachment.
+    try:
+        associated_pids = {int(p.name) for p in handoff.associated_processes(appid)}
+    except (OSError, ValueError, AttributeError):
+        associated_pids = set()
+    result["selected_appid_launcher_processes"] = [
+        {**proc, "exact_appid_environment_observed": True}
+        for proc in launchers if proc["pid"] in associated_pids
+    ]
+    result["selected_appid_launcher_scope"] = (
+        "Same-user exact-AppID process-environment matches at report time; "
+        "not a trainer-attachment or complete-process-lifetime proof"
+    )
     result["saved_steam_launch_options"] = saved_steam_option_state(appid)
     result["saved_steam_compatibility"] = saved_compatibility_tool_state(appid, root)
     result["last_prefix_runtime"] = last_prefix_runtime_hint(appid, root)
