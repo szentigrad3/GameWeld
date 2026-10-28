@@ -42,6 +42,37 @@ SAFE_EXCEPTIONS = (
 )
 
 
+# Fixed, non-user-controlled signatures from pinned DeckCheatz 1.x.
+# These represent observed log text only, not confirmed outcomes.
+UPSTREAM_FAILURE_SIGNATURES = {
+    "wine_server_wait_error": re.compile(r"error while loading the wine server waiter", re.I),
+    "prefix_download_or_extraction_error": re.compile(
+        r"failed to (?:unpack|extract|download).{0,35}prefix|prefix extraction failed|no downloads available", re.I),
+    "prefix_not_ready": re.compile(
+        r"init file (?:not found|missing)|first launch detected|missing proton version", re.I),
+    "game_executable_missing": re.compile(
+        r"game executable.{0,100}(?:is missing|not found)|game missing", re.I),
+    "proton_tool_detection_error": re.compile(
+        r"proton path not set|could not determine the proton path|version is not set for", re.I),
+    "upstream_rerun_error": re.compile(r"unknown rerun command error|unknown command error", re.I),
+    "unhandled_upstream_exception": re.compile(r"^ERR:\s*$|^error occurred\b", re.I),
+    "dotnet_or_dependencies_failed": re.compile(
+        r"failed dependencies installation|dotnet48 installation exited|error grabbing the external wine version", re.I),
+    "shell_or_process_execution_error": re.compile(
+        r"failed to (?:start|execute|spawn)|process returned.{0,30}(?:error|nonzero)|return code.{0,15}error", re.I),
+}
+UPSTREAM_STAGE_SIGNALS = {
+    "prefix_initialization_started": re.compile(r"init file not found! attempting to prepare", re.I),
+    "prefix_initialized": re.compile(r"found init file\. continuing launch", re.I),
+    "game_command_constructed": re.compile(r"^Executing:\s*$", re.I),
+    "game_command_started": re.compile(r"^Running in regular mode\s*$", re.I),
+    "game_process_wait_started": re.compile(r"^Communicating with the process\s*$", re.I),
+    "game_process_wait_finished": re.compile(r"^Process finished\s*$", re.I),
+    "upstream_troubleshooter_returned": re.compile(r"^Exit command with \d+\s*$", re.I),
+    "game_tracking_thread_joined": re.compile(r"^Waiting for early game tracking thread to finish\s*$", re.I),
+}
+
+
 class CompareBlocked(ValueError):
     pass
 
@@ -162,6 +193,10 @@ def analyze_deckcheatz_interval(live: dict, after: dict, path: Path) -> dict:
     exceptions = {name: sum(bool(re.search(r"\b" + name + r"\b", line))
                             for line in error_lines)
                   for name in SAFE_EXCEPTIONS}
+    signatures = {label: sum(bool(rx.search(line)) for line in error_lines)
+                  for label, rx in UPSTREAM_FAILURE_SIGNATURES.items()}
+    stages = {label: sum(bool(rx.search(line[:4096])) for line in lines)
+              for label, rx in UPSTREAM_STAGE_SIGNALS.items()}
     return {
         "state": "candidate_saved_byte_interval_redacted",
         "bytes_examined": len(chunk),
@@ -169,6 +204,9 @@ def analyze_deckcheatz_interval(live: dict, after: dict, path: Path) -> dict:
         "lines_with_failure_keywords": len(error_lines),
         "error_line_category_counts": categories,
         "allowlisted_exception_type_counts": {k: v for k, v in exceptions.items() if v},
+        "known_upstream_failure_signature_counts": {k: v for k, v in signatures.items() if v},
+        "observed_upstream_stage_markers_in_interval": {k: v for k, v in stages.items() if v},
+        "absent_stage_markers_mean_stage_never_ran": False,
         "source_bytes_were_unchanged_since_snapshots_verified": False,
         "steam_game_causality_verified": False,
         "trainer_attachment_verified": False,
