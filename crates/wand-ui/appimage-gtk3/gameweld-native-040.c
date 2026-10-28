@@ -3110,7 +3110,7 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         "GameWeld verified its one-shot session shim in the saved Steam "
         "Launch Options. It will arm DeckCheatz for the NEXT launch only, "
         "then automatically revert to normal game execution on future launches. "
-        "The shim stays in Steam until you manually restore the original text. "
+        "Use GameWeld Restore Original to unregister it without manual editing. "
         "The game must be closed. Continue?":
         expect_deckcheatz?
         "Launch using your EXISTING Steam DeckCheatz option?\n\n"
@@ -3185,7 +3185,7 @@ static void pc2_steam_launch_selected(int expect_deckcheatz){
  */
 typedef struct {
     char appid[32],launcher[4096],output[8192];
-    int selected_index,ok;
+    int selected_index,ok,restore;
 } PC2AutoSteamSetupJob;
 static int pc2_auto_steam_setup_busy=0;
 static gboolean pc2_auto_steam_setup_done(gpointer data){
@@ -3198,6 +3198,27 @@ static gboolean pc2_auto_steam_setup_done(gpointer data){
                                   "\"result\": \"steam_launch_requested\"")!=NULL;
     int registered=j->ok && strstr(j->output,
                                   "\"steam_launch_options_registered\": true")!=NULL;
+    if(j->restore){
+        int restored=j->ok && strstr(j->output,
+                   "\"result\": \"automatic_original_steam_option_restored\"")!=NULL;
+        if(restored){
+            log_line("GameWeld restored the exact original Steam option for AppID %s; no manual paste needed.",j->appid);
+            if(matching&&G.library_detail_status)set_label(G.library_detail_status,
+               "Original Steam launch setting restored automatically; no trainer session is armed.");
+            pc2_steam_launch_notice(
+                "GameWeld restored this game's saved original Steam option "
+                "without changing other games. Steam restart was requested. "
+                "No Steam Properties edit or paste was needed.");
+        }else{
+            log_line("Safe Steam option restore BLOCKED for AppID %s: %.4000s",
+                     j->appid,j->output[0]?j->output:"No result.");
+            pc2_steam_launch_notice(
+                "GameWeld could not safely restore this game's original Steam "
+                "option. It will not overwrite a changed setting or ask you "
+                "to paste command text. See Activity for the blocker.");
+        }
+        free(j);return FALSE;
+    }
     if(registered && requested){
         log_line("GameWeld automatically registered Steam one-shot DeckCheatz "
                  "for AppID %s and requested launch through Steam. "
@@ -3243,9 +3264,13 @@ static void *pc2_auto_steam_setup_worker(void *data){
                      "%s/usr/libexec/gameweld-deckcheatz-auto-steam-setup.py",appdir);
         else snprintf(helper,sizeof helper,
                       "gameweld-deckcheatz-auto-steam-setup.py");
-        execlp("python3","python3",helper,"--appid",j->appid,
-               "--launcher",j->launcher,"--confirm","--shutdown-and-launch",
-               (char*)NULL);
+        if(j->restore)
+            execlp("python3","python3",helper,"--appid",j->appid,
+                   "--confirm","--shutdown-and-restore",(char*)NULL);
+        else
+            execlp("python3","python3",helper,"--appid",j->appid,
+                   "--launcher",j->launcher,"--confirm","--shutdown-and-launch",
+                   (char*)NULL);
         _exit(127);
     }
     close(fd[1]);
@@ -3290,6 +3315,40 @@ static void pc2_deckcheatz_auto_steam_setup(const char*appid,const char*launcher
     }else{
         pc2_auto_steam_setup_busy=0;free(j);
         pc2_steam_launch_notice("Cannot start automatic Steam setup worker.");
+    }
+}
+static void pc2_deckcheatz_auto_steam_restore(const char*appid){
+    if(pc2_auto_steam_setup_busy||pc2_steam_launch_busy){
+        pc2_steam_launch_notice("Another Steam launch or configuration operation is in progress.");
+        return;
+    }
+    if(!appid||!*appid)return;
+    GtkWidget*dialog=gtk_message_dialog_new((GtkWindow*)G.window,
+        GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        "Automatically restore this game's original Steam launch setting?\n\n"
+        "GameWeld will request a graceful Steam shutdown and verify that "
+        "Steam has exited. It will check the protected original backup and "
+        "restore ONLY this game's exact GameWeld-installed option.\n\n"
+        "Changes made to the game's Launch Options since setup will block "
+        "restoration rather than being overwritten. Other games are untouched. "
+        "GameWeld will request Steam to restart afterwards.\n\n"
+        "Close other Steam games first. No text needs copying or pasting. Continue?");
+    int accepted=gtk_dialog_run((GtkDialog*)dialog)==GTK_RESPONSE_YES;
+    gtk_widget_destroy(dialog);
+    if(!accepted)return;
+    PC2AutoSteamSetupJob*j=calloc(1,sizeof *j);
+    if(!j)return;
+    snprintf(j->appid,sizeof j->appid,"%s",appid);
+    j->selected_index=G.selected;
+    j->restore=1;
+    pthread_t thread;pc2_auto_steam_setup_busy=1;
+    if(pthread_create(&thread,NULL,pc2_auto_steam_setup_worker,j)==0){
+        pthread_detach(thread);
+        if(G.library_detail_status)set_label(G.library_detail_status,
+          "Checking protected Steam backup and restoring original setting…");
+    }else{
+        pc2_auto_steam_setup_busy=0;free(j);
+        pc2_steam_launch_notice("Could not start automatic Steam restoration.");
     }
 }
 /* A real Steam-managed DeckCheatz session must receive Steam's %command%.
@@ -6634,52 +6693,10 @@ static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     if(G.selected<0||G.selected>=G.game_count ||
        !game_is_steam(&G.games[G.selected]) ||
        game_is_steam_shortcut(&G.games[G.selected])){
-        pc2_steam_option_message("Select a Steam game",
-            "Choose the same Steam game you backed up to restore its original launch option.",NULL);
+        pc2_steam_launch_notice("Select a standard installed Steam game to restore its original setting.");
         return;
     }
-    char *result=calloc(1,65536),*original=calloc(1,18000);
-    if(!result||!original)goto done;
-    if(!pc2_steam_option_helper_run("--restore-original",
-            G.games[G.selected].appid,NULL,result,65536,0,0)){
-        pc2_steam_option_message("Original launch options backup unavailable",
-            "No matching GameWeld backup exists for the selected game and Steam account. "
-            "Nothing was copied or changed.",result);
-        goto done;
-    }
-    json_string(result,"original_launch_option",original,18000);
-    if(!strstr(result,"\"COPY_ORIGINAL_TO_STEAM_MANUALLY\""))goto done;
-    int current_baseline=strstr(result,"\"verified_current_before_setup\"")!=NULL;
-    GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
-        GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
-        current_baseline?
-        "Copy the VERIFIED CURRENT Steam launch setting for %.140s?\n\n"
-        "You confirmed the setting was empty before this new GameWeld setup. "
-        "The older historical backup was UNVERIFIED; this is NOT evidence "
-        "that your original custom launch commands were empty.\n\n"
-        "This only copies the empty setting to your clipboard; Steam won't "
-        "be modified automatically. Paste only if this is what you want. Continue?":
-        "Copy the saved ORIGINAL Steam launch option for %.140s?\n\n"
-        "This replaces only clipboard text. You must paste it into Steam "
-        "Properties > General > Launch Options. A blank original is valid "
-        "and means clearing that field. Continue?",G.games[G.selected].name);
-    int accepted=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES;
-    gtk_widget_destroy(dlg);
-    if(accepted){
-        GtkClipboard*clip=gtk_clipboard_get(gdk_atom_intern_static_string("CLIPBOARD"));
-        if(clip)gtk_clipboard_set_text(clip,original,-1);
-        pc2_steam_option_message(current_baseline?
-            "Verified current Steam launch setting copied":
-            "Original Steam launch option copied",
-            current_baseline?
-            "This was the explicitly verified EMPTY setting before GameWeld setup, "
-            "not a proven historical original. Review Steam Properties before pasting. "
-            "GameWeld has not modified Steam.":
-            "Paste the saved original text into Steam's Launch Options field. "
-            "GameWeld has not modified Steam.",original[0]?original:"(saved field was empty)");
-    }
-done:
-    free(result);free(original);
+    pc2_deckcheatz_auto_steam_restore(G.games[G.selected].appid);
 }
 
 static gboolean pc2_deckcheatz_install_done(void *data){
