@@ -3144,8 +3144,13 @@ static void pc2_deckcheatz_steam_onebutton(void){
         close(fd[0]);setsid();
         dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);
         close(fd[1]);clear_desktop_activation_env();
-        execlp("python3","python3",helper,"--appid",g->appid,
-               "--launcher",launcher,(char*)NULL);
+        if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
+            execlp("python3","python3",helper,"--appid",g->appid,
+                   "--launcher",launcher,"--compat-steam-root",
+                   g->steam_root,(char*)NULL);
+        else
+            execlp("python3","python3",helper,"--appid",g->appid,
+                   "--launcher",launcher,(char*)NULL);
         _exit(127);
     }
     close(fd[1]);
