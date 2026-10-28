@@ -21,7 +21,7 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn('"--steam-launch-options",current_steam_options', GUI)
         self.assertIn('"--steam-options-verified"', GUI)
         self.assertIn("if(pc2_deckcheatz_onebutton_allowed())", GUI)
-        self.assertIn('"Use these options",GTK_RESPONSE_OK', GUI)
+        self.assertIn('"Use these options",GTK_RESPONSE_YES', GUI)
         self.assertIn('gtk_entry_set_text((GtkEntry*)entry,saved)', GUI)
         self.assertIn('if(!pc2_deckcheatz_onebutton_allowed())pack(inspect,advanced,0)', GUI)
         self.assertIn('if(pc2_deckcheatz_onebutton_allowed()){', GUI)
