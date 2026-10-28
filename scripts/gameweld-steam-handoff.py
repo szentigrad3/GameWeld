@@ -92,8 +92,15 @@ def run_launch(appid: str, *, steam: str | None = None,
             argv = ([executable, "steam://rungameid/" + appid]
                     if transport == "steam-uri" else
                     [executable, "-applaunch", appid])
+            # Do not pass GameWeld's temporary source-AppDir and test flags
+            # into Steam. Keep DISPLAY, WAYLAND_DISPLAY, DBUS and normal
+            # desktop environment so Steam IPC/URL handlers still work.
+            child_env = {key: value for key, value in os.environ.items()
+                         if key not in ("APPDIR", "WAND_NATIVE_BACKEND")
+                         and not key.startswith("GAMEWELD_PC2_")
+                         and not key.startswith("GAMEWELD_NATIVE_")}
             child = subprocess.Popen(
-                argv,
+                argv, env=child_env,
                 stdin=subprocess.DEVNULL, stdout=output,
                 stderr=subprocess.STDOUT, start_new_session=True,
             )
