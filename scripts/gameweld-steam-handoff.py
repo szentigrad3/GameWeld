@@ -23,6 +23,9 @@ KEYS = ("SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID")
 MAX_PROC = 8192
 MAX_ENV = 128 * 1024
 OBSERVE_SECONDS = 12
+MAX_OBSERVE_SECONDS = 90
+# Long game starts are common with Proton. Extended observation is an
+# explicit, opt-in GameWeld v2 mode: never send a second Steam launch.
 
 
 
@@ -661,6 +664,8 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "launch"))
     parser.add_argument("--appid", required=True)
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--observe-seconds", type=int, default=OBSERVE_SECONDS,
+                        help="bounded monitoring of original Steam launch, never relaunch")
     parser.add_argument("--install-dir", type=pathlib.Path,
                         help="Manifest-backed Steam install directory for read-only game EXE detection")
     parser.add_argument("--steam-root", type=pathlib.Path,
@@ -678,6 +683,8 @@ def main() -> int:
     args = parser.parse_args()
     if not valid_appid(args.appid):
         parser.error("Invalid decimal Steam App ID")
+    if not 0 <= args.observe_seconds <= MAX_OBSERVE_SECONDS:
+        parser.error("--observe-seconds must be between 0 and 90")
     print("PC2 game-only Steam handoff: App ID " + args.appid, flush=True)
     if args.action == "status":
         print("Steam executable: " + (
@@ -704,7 +711,7 @@ def main() -> int:
         return 0
     if not args.confirm:
         parser.error("Steam launch requires an explicit --confirm from GameWeld's user dialog")
-    return run_launch(args.appid,
+    return run_launch(args.appid, duration=args.observe_seconds,
                       require_idle_before_launch=args.require_idle_before_launch,
                       transport=args.transport,
                       steam_root=args.steam_root,

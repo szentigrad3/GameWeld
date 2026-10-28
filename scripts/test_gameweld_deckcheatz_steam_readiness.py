@@ -63,6 +63,43 @@ class SavedSteamReadinessTests(unittest.TestCase):
         self.launcher.unlink()
         self.assertEqual(self.check(f"{self.launcher} %command%")["state"], "needs_setup")
 
+    def test_no_options_preserves_users_steam_commands_without_a_wrapper(self):
+        custom = (
+            "MANGOHUD=1 %command%",
+            "gamemoderun %command%",
+            "gamescope -f -- %command%",
+            'DXVK_HUD="fps,frametimes" gamescope -w 3840 -h 2160 -- %command% -nologos',
+            "RADV_PERFTEST=gpl %command% -vulkan",
+            "%command% -dx12",
+            "custom_startup_helper -- %command%",
+        )
+        for saved in custom:
+            with self.subTest(saved=saved):
+                before = saved
+                report = module.classify_preserved_options(saved, self.shim, self.appid)
+                self.assertEqual(report["state"], "preserved_custom_launch_options")
+                self.assertTrue(report["custom_launch_options_preserved_by_gameweld"])
+                self.assertFalse(report["steam_options_modified"])
+                self.assertFalse(report["live_client_options_verified"])
+                self.assertFalse(report["raw_launch_options_included"])
+                self.assertEqual(saved, before)
+                self.assertNotIn(saved, str(report))
+
+    def test_no_options_detects_own_shim_and_already_configured_wemod(self):
+        oldshim = f"/usr/bin/python3 {self.shim} run --appid {self.appid} -- %command%"
+        self.assertEqual(module.classify_preserved_options(
+            oldshim, self.shim, self.appid)["state"], "one_shot_shim_configured")
+        self.assertEqual(module.classify_preserved_options(
+            f"MANGOHUD=1 {self.launcher} %command%", self.shim,
+            self.appid)["state"], "trainer_wrapper_present")
+        self.assertEqual(module.classify_preserved_options(
+            "", self.shim, self.appid)["state"], "preserved_empty_launch_options")
+        self.assertEqual(module.classify_preserved_options(
+            'gamescope -- "%command%', self.shim, self.appid)["state"], "unverified")
+        self.assertEqual(module.classify_preserved_options(
+            'gamescope -- %command% %command%', self.shim,
+            self.appid)["state"], "unverified")
+
     def test_old_gameweld_bridge_selection_is_incompatible_with_deckcheatz(self):
         """Do not allow nested legacy bridge -> DeckCheatz -> Proton launch."""
         from types import SimpleNamespace
@@ -84,6 +121,12 @@ class SavedSteamReadinessTests(unittest.TestCase):
         peers = {
             "gameweld-steam-launch-options-preserve.py": Options,
             "gameweld-deckcheatz-session.py": Shim,
+            "gameweld-deckcheatz-auto-steam-setup.py": type(
+                "FirstRun", (), {
+                    "read_config_bytes": staticmethod(lambda cfg: b""),
+                    "saved_option_value": staticmethod(
+                        lambda raw, appid, options: None),
+                }),
             "gameweld-steam-compat-bridge.py": Bridge,
         }
         with patch.object(module, "import_peer",
@@ -93,7 +136,8 @@ class SavedSteamReadinessTests(unittest.TestCase):
         self.assertEqual(report["state"], "incompatible_bridge_selected")
         self.assertEqual(report["saved_compatibility"]["state"],
                          "gameweld_bridge_selected")
-        self.assertIn("actual Proton command", report["reason"])
+        self.assertIn("Automatic compatibility migration is not implemented", report["reason"])
+        self.assertFalse(report["managed_compatibility_migration_available"])
         self.assertFalse(report["steam_options_modified"])
 
     def test_compatibility_tool_is_only_classified_when_explicitly_selected(self):
@@ -155,6 +199,12 @@ class SavedSteamReadinessTests(unittest.TestCase):
         peers = {
             "gameweld-steam-launch-options-preserve.py": Options,
             "gameweld-deckcheatz-session.py": Shim,
+            "gameweld-deckcheatz-auto-steam-setup.py": type(
+                "FirstRun", (), {
+                    "read_config_bytes": staticmethod(lambda cfg: b""),
+                    "saved_option_value": staticmethod(
+                        lambda raw, appid, options: None),
+                }),
             "gameweld-steam-compat-bridge.py": Bridge,
         }
         root = self.launcher.parent

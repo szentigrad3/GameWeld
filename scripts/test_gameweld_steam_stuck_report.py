@@ -48,15 +48,28 @@ class StalledSteamReportTests(unittest.TestCase):
             @staticmethod
             def find_config(*_):
                 return Path("/tmp/example_config"), "123"
+        class Setup:
+            saved = "PROTON_LOG=1 /home/example/steam-session.py run --appid 3008130 -- %command%"
             @staticmethod
-            def launch_option(*_):
-                return "PROTON_LOG=1 /home/example/steam-session.py run --appid 3008130 -- %command%"
-        with patch.object(report, "peer", return_value=Options):
+            def read_config_bytes(_cfg):
+                return b"sample"
+            @classmethod
+            def saved_option_value(cls, _raw, _appid, _options):
+                return cls.saved
+        def peer(name, label):
+            return Options if name.endswith("preserve.py") else Setup
+        with patch.object(report, "peer", side_effect=peer):
             result = report.saved_steam_option_state("3008130")
-        self.assertEqual(result["state"], "gameweld_one_shot_shim_saved")
-        self.assertEqual(result["placeholder_count"], 1)
-        self.assertFalse(result["raw_option_text_included"])
-        self.assertNotIn("PROTON_LOG", str(result))
+            self.assertEqual(result["state"], "gameweld_one_shot_shim_saved")
+            self.assertEqual(result["placeholder_count"], 1)
+            self.assertFalse(result["raw_option_text_included"])
+            self.assertNotIn("PROTON_LOG", str(result))
+            Setup.saved = None
+            absent = report.saved_steam_option_state("3008130")
+        self.assertEqual(absent["state"], "missing_saved_launch_options_field")
+        self.assertIn("managed setup", absent["next_step"])
+        self.assertFalse(absent["live_steam_cache_verified"])
+        self.assertNotIn("/home/example", str(absent))
 
     def test_stuck_report_passes_the_requested_steam_root_to_compat_lookup(self):
         from unittest.mock import patch

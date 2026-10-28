@@ -12,6 +12,8 @@ echo "Crash-diagnostic helper syntax: PASS"
 python3 -m py_compile \
   scripts/gameweld-wemod-native-route.py \
   scripts/gameweld-wemod-live-attach.py \
+  scripts/gameweld-wemod-startup-report.py \
+  scripts/gameweld-wand-v2-proxy.py \
   scripts/gameweld-deckcheatz-session-options.py \
   scripts/gameweld-deckcheatz-steam-readiness.py \
   scripts/gameweld-deckcheatz-auto-steam-setup.py \
@@ -25,6 +27,7 @@ python3 -m py_compile \
   scripts/gameweld-deckcheatz-session.py \
   scripts/gameweld-steam-handoff.py \
   scripts/gameweld-steam-stuck-report.py \
+  scripts/gameweld-steam-session-compare.py \
   scripts/gameweld-prepared-prefix-audit.py \
   scripts/gameweld-prepared-prefix-cache.py \
   scripts/gameweld-rejected-zip-integrity.py \
@@ -52,6 +55,7 @@ suites=(
   test_gameweld_deckcheatz_session.py
   test_gameweld_steam_handoff.py
   test_gameweld_steam_stuck_report.py
+  test_gameweld_steam_session_compare.py
   test_gameweld_prepared_prefix_audit.py
   test_gameweld_prepared_prefix_cache.py
   test_gameweld_rejected_zip_integrity.py
@@ -66,6 +70,8 @@ suites=(
   test_gameweld_prefix_runtime_preflight.py
   test_gameweld_wemod_native_route.py
   test_gameweld_wemod_live_attach.py
+  test_gameweld_wemod_startup_report.py
+  test_gameweld_wand_v2_proxy.py
   test_gameweld_deckcheatz_direct.py
   test_gameweld_deckcheatz_session_options.py
   test_gameweld_deckcheatz_steam_readiness.py
