@@ -88,9 +88,9 @@ class WeModStartupReportTests(unittest.TestCase):
 
     def test_repeated_gpu_errors_reported_only_as_fixed_categories(self):
         log = self.log("1793192433761672762",
-                       (b"[ERROR:gpu_process_host.cc] GPU process launch failed: error_code=99 SECRET=one\\n"
-                        b"[ERROR:gpu_process_host.cc] GPU process launch failed: error_code=99 SECRET=two\\n"
-                        b"[FATAL:gpu_data_manager_impl_private.cc] GPU process isn't usable. Goodbye.\\n"))
+                       (b"[ERROR:gpu_process_host.cc] GPU process launch failed: error_code=99 SECRET=one\n"
+                        b"[ERROR:gpu_process_host.cc] GPU process launch failed: error_code=99 SECRET=two\n"
+                        b"[FATAL:gpu_data_manager_impl_private.cc] GPU process isn't usable. Goodbye.\n"))
         out = mod.summarize("3008130", log)
         self.assertEqual(out["gpu_failure_signature_counts"]["gpu_process_launch_failed"], 2)
         self.assertEqual(out["gpu_failure_signature_counts"]["gpu_process_not_usable"], 1)
