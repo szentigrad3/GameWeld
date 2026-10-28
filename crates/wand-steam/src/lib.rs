@@ -456,6 +456,46 @@ pub fn compat_tool_mapping(root: &Path) -> HashMap<String, String> {
     mapping
 }
 
+/// The per-game compatdata/version file records the Proton tool used when
+/// that prefix was last updated. This is read-only evidence, NOT permission to
+/// guess a runtime or an indication that a game can be launched outside Steam.
+fn recorded_prefix_proton(game: &GameInstall) -> Result<Option<String>> {
+    let file = game.compatdata_dir.join("version");
+    let meta = match fs::symlink_metadata(&file) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).with_context(|| format!("checking {}", file.display())),
+    };
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 4096 {
+        return Err(anyhow!("unsafe Proton version record: {}", file.display()));
+    }
+    let raw = fs::read_to_string(&file)
+        .with_context(|| format!("reading Proton version record {}", file.display()))?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > 256 || trimmed.contains('\n')
+        || trimmed.contains('\r') || trimmed.chars().any(|ch| ch.is_control()) {
+        return Err(anyhow!("invalid Proton version record for AppID {}", game.app_id));
+    }
+    Ok(Some(trimmed.to_owned()))
+}
+
+/// Match the exact Steam tool name, display name, or installed folder name.
+/// Multiple identities for the SAME script are harmless; separate matching
+/// installations are ambiguous and must remain blocked.
+fn unique_tool_matching(tools: &[ProtonTool], wanted: &str) -> Option<ProtonTool> {
+    let matches = tools.iter().filter(|tool| {
+        tool.tool_id.eq_ignore_ascii_case(wanted)
+            || tool.display_name.eq_ignore_ascii_case(wanted)
+            || tool.root.file_name().and_then(|name| name.to_str())
+                .map(|name| name.eq_ignore_ascii_case(wanted)).unwrap_or(false)
+    }).collect::<Vec<_>>();
+    let first = *matches.first()?;
+    let first_path = fs::canonicalize(&first.proton_script).ok()?;
+    let same_script = matches.iter().all(|tool|
+        fs::canonicalize(&tool.proton_script).ok().as_ref() == Some(&first_path));
+    if same_script { Some(first.clone()) } else { None }
+}
+
 pub fn choose_proton(
     game: &GameInstall,
     root: &Path,
@@ -508,36 +548,106 @@ pub fn choose_proton(
         .or_else(|| mapping.get("0"));
 
     if let Some(selected) = selected {
-        if let Some(tool) = tools.iter().find(|tool| {
-            tool.tool_id == *selected
-                || tool.display_name == *selected
-                || tool
-                    .root
-                    .file_name()
-                    .and_then(|v| v.to_str())
-                    .map(|v| v == selected)
-                    .unwrap_or(false)
-        }) {
+        if let Some(tool) = unique_tool_matching(tools, selected) {
             return Ok((
-                Some(tool.clone()),
+                Some(tool),
                 format!("Steam CompatToolMapping ({selected})"),
             ));
         }
-
         return Ok((
             None,
-            format!(
-                "Steam selected {selected:?}, but its compatibility-tool directory was not found"
-            ),
+            format!("Steam selected {selected:?}, but no uniquely matching installed Proton script was found"),
         ));
     }
 
-    Ok((None, "no explicit Steam CompatToolMapping found".into()))
+    // Steam often stores the active per-game tool under compatdata/<appid>/
+    // version without creating an explicit CompatToolMapping. Only use an
+    // exact, unique tool match; never choose the newest or the only Proton.
+    if let Some(recorded) = recorded_prefix_proton(game)? {
+        if let Some(tool) = unique_tool_matching(tools, &recorded) {
+            return Ok((Some(tool), format!("Steam compatdata version ({recorded})")));
+        }
+        return Ok((None, format!(
+            "Steam prefix records Proton {recorded:?}, but no uniquely matching installed tool was found"
+        )));
+    }
+
+    Ok((None, "neither an explicit Steam CompatToolMapping nor a per-game compatdata/version record was found".into()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn proton_fixture() -> (PathBuf, GameInstall, Vec<ProtonTool>) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "gameweld-proton-selection-{}-{}", std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)));
+        let compat = root.join("library/steamapps/compatdata/3008130");
+        let proton = root.join("compatibilitytools.d/Proton-CachyOS/proton");
+        fs::create_dir_all(&compat).unwrap();
+        fs::create_dir_all(proton.parent().unwrap()).unwrap();
+        fs::write(&proton, b"#!/bin/sh\nexit 0\n").unwrap();
+        let game = GameInstall {
+            app_id: 3008130, name: "Test Game".into(),
+            install_dir: root.join("library/steamapps/common/Test Game"),
+            library_root: root.join("library"),
+            manifest: root.join("library/steamapps/appmanifest_3008130.acf"),
+            compatdata_dir: compat.clone(),
+            prefix_dir: compat.join("pfx"),
+        };
+        let tool = ProtonTool {
+            tool_id: "Proton-CachyOS".into(), display_name: "Proton-CachyOS".into(),
+            root: proton.parent().unwrap().to_path_buf(),
+            proton_script: proton, source: "test".into(),
+        };
+        (root, game, vec![tool])
+    }
+
+    #[test]
+    fn chooses_exact_recorded_per_game_proton_when_mapping_absent() {
+        let (root, game, tools) = proton_fixture();
+        fs::write(game.compatdata_dir.join("version"), "proton-cachyos\n").unwrap();
+        let (selected, source) = choose_proton(&game, &root, &tools, None).unwrap();
+        assert_eq!(selected.unwrap().tool_id, "Proton-CachyOS");
+        assert!(source.contains("compatdata version"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_missing_or_ambiguous_prefix_version() {
+        let (root, game, mut tools) = proton_fixture();
+        assert!(choose_proton(&game, &root, &tools, None).unwrap().0.is_none());
+        fs::write(game.compatdata_dir.join("version"), "Uninstalled-Proton\n").unwrap();
+        assert!(choose_proton(&game, &root, &tools, None).unwrap().0.is_none());
+        fs::write(game.compatdata_dir.join("version"), "Proton-CachyOS\n").unwrap();
+        let mut duplicate = tools[0].clone();
+        let other = root.join("other/Proton-CachyOS/proton");
+        fs::create_dir_all(other.parent().unwrap()).unwrap();
+        fs::write(&other, "not the same executable").unwrap();
+        duplicate.root = other.parent().unwrap().to_path_buf();
+        duplicate.proton_script = other;
+        tools.push(duplicate);
+        assert!(choose_proton(&game, &root, &tools, None).unwrap().0.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unsafe_version_records_are_rejected() {
+        let (root, game, tools) = proton_fixture();
+        let version = game.compatdata_dir.join("version");
+        fs::write(&version, "Proton-CachyOS\nInjected\n").unwrap();
+        assert!(choose_proton(&game, &root, &tools, None).is_err());
+        fs::remove_file(&version).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/etc/hosts", &version).unwrap();
+            assert!(choose_proton(&game, &root, &tools, None).is_err());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn parses_libraryfolders() {

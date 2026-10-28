@@ -1,0 +1,29 @@
+name: PC2 Rust Native Wrapper Tests
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'crates/wand-runtime/**'
+      - 'crates/wand-core/**'
+      - 'Cargo.toml'
+      - '.github/workflows/pc2-rust-native-wrapper.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pc2-native-rust-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime-test:
+    name: Rust runtime unit tests (offline game fixture)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile and run isolated wand-runtime unit tests
+        run: cargo test -p wand-runtime --all-targets
+      - name: Scope note
+        run: |
+          echo 'Compilation and fake game prefix tests do NOT verify actual Steam Runtime, DRM, Proton, or WeMod trainer attachment.'
+          echo 'Live launch remains separately opt-in and private.'

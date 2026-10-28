@@ -30,6 +30,30 @@ export APPDIR="$APPDIR_DEV"
 # Steam game-only launch is opt-in for this ONE invocation, never inherited
 # accidentally from the shell. The normal source runner stays discovery-only.
 unset GAMEWELD_PC2_ENABLE_STEAM_LAUNCH
+unset GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER
+unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD
+unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON
+if [[ "${1:-}" == "--enable-deckcheatz-onebutton-test" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  printf '%s\n' 'PC2 Steam-managed DeckCheatz experiment: automatic consented Steam shutdown/restart registers one-shot wrapper with protected backup; no manual Launch Options paste.'
+  set --
+fi
+if [[ "${1:-}" == "--enable-steam-wemod-test" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
+  printf '%s\n' 'PC2 STEAM-MANAGED WeMod test: Steam launches game, then optional client-only live attach; no Steam Launch Options or Bridge edits.'
+  set --
+fi
+unset GAMEWELD_NATIVE_WRAPPER_CLI
+if [[ "${1:-}" == "--enable-native-wrapper-test" && "$#" -eq 1 ]]; then
+  command -v cargo >/dev/null || { echo "Rust cargo is required for native wrapper test mode." >&2; exit 1; }
+  ( cd "$ROOT" && cargo build -p wand-runtime --bin gameweld-native-wrapper )
+  export GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER=1
+  export GAMEWELD_NATIVE_WRAPPER_CLI="$ROOT/target/debug/gameweld-native-wrapper"
+  printf '%s\n' 'PC2 experimental direct Rust wrapper enabled. Steam options unchanged; consent required for launch.'
+  set --
+fi
 if [[ "${1:-}" == "--enable-steam-game-launch" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
   printf '%s\n' 'PC2 explicit Steam GAME-ONLY launch gate enabled (still requires per-game confirmation).'

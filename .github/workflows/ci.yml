@@ -5,11 +5,18 @@ on:
       - main
       - release/0.7.0-pc1
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: full-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   offline-tests:
+    # Draft PRs run the matching Fast Feedback safety suites instead.
+    # Full GTK/packaging regression runs when review-ready, on main or by dispatch.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

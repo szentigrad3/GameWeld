@@ -99,7 +99,7 @@ class DeckCheatzDirectTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 with patch.object(backend.subprocess, "run") as process:
                     with self.assertRaisesRegex(backend.Blocked, "requires BOTH"):
-                        backend.main(["--launch", *self.flags, *extra])
+                        backend.main(["--launch", *self.flags, "--steam-options-verified", *extra])
                     process.assert_not_called()
 
     def test_full_consent_spawns_only_external_launcher_not_steam(self):
@@ -110,6 +110,7 @@ class DeckCheatzDirectTests(unittest.TestCase):
                     self.assertEqual(backend.main([
                         "--launch", *self.flags,
                         "--game-arg=--windowed",
+                        "--steam-options-verified",
                         "--confirm-prefix-changes", "--experimental-direct-launch",
                     ]), 0)
         args, kwargs = process.call_args
@@ -123,14 +124,105 @@ class DeckCheatzDirectTests(unittest.TestCase):
         self.assertNotIn("steam", [Path(x).name for x in args[0]])
         self.assertNotIn("shell", kwargs)
 
+    def test_direct_launch_requires_verified_current_steam_options(self):
+        with patch.object(backend.subprocess, "run") as proc:
+            with self.assertRaisesRegex(backend.Blocked, "CURRENT Steam Launch Options"):
+                backend.main(["--launch", *self.flags,
+                              "--confirm-prefix-changes", "--experimental-direct-launch"])
+            proc.assert_not_called()
+
+    def test_custom_steam_options_are_composed_without_steam_edits(self):
+        with patch.object(backend.subprocess, "run",
+                          return_value=SimpleNamespace(returncode=0)) as process:
+            with patch.object(backend, "active_game_process", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(backend.main([
+                        "--launch", *self.flags,
+                        "--steam-launch-options", "PROTON_LOG=1 mangohud %command% -windowed",
+                        "--steam-options-verified",
+                        "--confirm-prefix-changes", "--experimental-direct-launch",
+                    ]), 0)
+        argv = process.call_args.args[0]
+        self.assertEqual(argv[0], "mangohud")
+        self.assertEqual(argv[-1], "-windowed")
+        self.assertEqual(process.call_args.kwargs["env"]["PROTON_LOG"], "1")
+        self.assertFalse((self.steam / "userdata").exists())
+        self.assertEqual((self.compat / "pfx").is_dir(), True)
+
     def test_active_game_refuses_duplicate_launch(self):
         with patch.object(backend, "active_game_process", return_value=True):
             with patch.object(backend.subprocess, "run") as process:
                 with self.assertRaisesRegex(backend.Blocked, "already has an active process"):
                     backend.main(["--launch", *self.flags,
+                                  "--steam-options-verified",
                                   "--confirm-prefix-changes",
                                   "--experimental-direct-launch"])
                 process.assert_not_called()
+
+
+    def test_process_scan_refuses_unreadable_same_user_environment(self):
+        pid = self.root / "proc" / "12345"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(b"SteamAppId=2353250\\0")
+        with patch.object(backend.os, "getuid", return_value=os.getuid()):
+            with patch.object(Path, "open", autospec=True, side_effect=PermissionError("denied")):
+                with self.assertRaisesRegex(backend.Blocked, "Cannot verify"):
+                    backend.active_game_process("2353250", pid.parent)
+
+    def test_process_scan_ignores_recognized_kde_and_overlay_tasks(self):
+        root = self.root / "proc"
+        for i, name in enumerate(("systemd", "(sd-pam)", "kwin_wayland",
+                                  "gameoverlayui", "gameoverlayui")):
+            pid = root / str(2001 + i)
+            pid.mkdir(parents=True)
+            (pid / "environ").write_bytes(b"protected")
+            (pid / "comm").write_text(name + "\n")
+            (pid / "cmdline").write_bytes(name.encode() + b"\x00")
+        original = Path.open
+
+        def protected(path, *args, **kwargs):
+            if path.name == "environ" and path.parent.parent == root:
+                raise PermissionError("protected host environment")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "open", autospec=True, side_effect=protected):
+            self.assertFalse(backend.active_game_process("2353250", root))
+
+    def test_process_scan_unknown_wine_and_spoofed_overlay_still_block(self):
+        root = self.root / "proc"
+        cases = (("wineserver", "wineserver"),
+                 ("gameoverlayui", "/other/WeMod.exe"),
+                 ("unknown", "other"))
+        original = Path.open
+        for name, argv in cases:
+            with self.subTest(name=name, argv=argv):
+                pid = root / "2001"
+                pid.mkdir(parents=True, exist_ok=True)
+                (pid / "environ").write_bytes(b"protected")
+                (pid / "comm").write_text(name + "\n")
+                (pid / "cmdline").write_bytes(argv.encode() + b"\x00")
+
+                def protected(path, *args, **kwargs):
+                    if path.name == "environ" and path.parent == pid:
+                        raise PermissionError("cannot inspect")
+                    return original(path, *args, **kwargs)
+
+                with patch.object(Path, "open", autospec=True, side_effect=protected):
+                    with self.assertRaisesRegex(backend.Blocked, "Cannot verify"):
+                        backend.active_game_process("2353250", root)
+
+    def test_process_scan_refuses_oversized_environment(self):
+        pid = self.root / "proc" / "12345"
+        pid.mkdir(parents=True)
+        (pid / "environ").write_bytes(b"FILL=" + b"x" * (128 * 1024))
+        with self.assertRaisesRegex(backend.Blocked, "exceeds safe inspection limit"):
+            backend.active_game_process("2353250", pid.parent)
+
+    def test_process_scan_ignores_vanished_pid(self):
+        pid = self.root / "proc" / "12345"
+        pid.mkdir(parents=True)
+        with patch.object(Path, "stat", autospec=True, side_effect=FileNotFoundError()):
+            self.assertFalse(backend.active_game_process("2353250", pid.parent))
 
     def test_no_arbitrary_executable_or_prefix(self):
         outside = self.root / "outside.exe"

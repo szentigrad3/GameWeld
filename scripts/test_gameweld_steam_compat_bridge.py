@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -304,6 +305,638 @@ class GameWeldSteamCompatibilityTests(unittest.TestCase):
                 self.assertEqual(state, "play")
                 self.assertIn("requires confirmation", message)
                 self.assertTrue(bridge.load_config()["2353250"]["trainer_enabled"])
+
+    def test_stale_installed_launcher_blocks_ui_play_and_steam_handoff(self):
+        from unittest.mock import Mock
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("2353250", self.proton, self.client, enabled=True)
+            (self.client / "version.dll").write_bytes(b"fixture")
+            (self.client / "resources/app.asar.backup").write_bytes(b"fixture")
+            launcher = bridge.private_tool_dir() / "launcher.py"
+            # Simulate Steam still using the previous copy after a Git update.
+            launcher.write_bytes(launcher.read_bytes() + b"\\n# older installed launcher\\n")
+            before = bridge.config_path().read_bytes()
+            steam = self.steam / "config/config.vdf"
+            play = Mock(return_value=0)
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ):
+                state, message = bridge.primary_ui_state("2353250")
+                self.assertEqual(state, "repair")
+                self.assertIn("outdated", message)
+                self.assertIn("Advanced Providers", message)
+                with self.assertRaisesRegex(ValueError, "outdated"):
+                    bridge.play_configured_game(
+                        "2353250", launch=play,
+                        associated_processes=lambda _: 0
+                    )
+            play.assert_not_called()
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+            self.assertFalse(steam.exists())
+            # After an explicit launcher-only update, normal readiness returns.
+            bridge.upgrade_bridge(source=SCRIPT)
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ):
+                self.assertEqual(bridge.primary_ui_state("2353250")[0], "play")
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+
+    def test_preflight_is_game_scoped_read_only_and_never_claims_runtime(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            bridge.set_trainer_gpu_fallback("3008130", True)
+            (self.client / "version.dll").write_bytes(b"enhancer")
+            (self.client / "resources/app.asar.backup").write_bytes(b"original")
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir(parents=True)
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text(
+                '"appid" "3008130"'
+            )
+            prefix = self.steam / "steamapps/compatdata/3008130/pfx"
+            prefix.mkdir(parents=True)
+            registry = prefix / "system.reg"
+            registry.write_text(
+                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\n'
+                '"Install"=dword:00000001\n'
+            )
+            state_dir = self.home / ".local/state/gameweld"
+            state_dir.mkdir(parents=True)
+            (state_dir / "steam-bridge-3008130-111-222.log").write_text(
+                "GameWeld Steam bridge: unverified WeMod runtime\n"
+                "WeMod GPU fallback: enabled\n"
+            )
+            # A different title's GPU failures must never appear in the
+            # selected-game report.
+            (state_dir / "steam-bridge-2353250-333-444.log").write_text(
+                "WeMod GPU fallback: disabled\n"
+                "GPU process has crashed 1603 time(s)\n"
+            )
+            before_registry = registry.read_bytes()
+            before_config = bridge.config_path().read_bytes()
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)",
+            ):
+                report = bridge.preflight_report("3008130", game_dir=game)
+            self.assertIn("Next action: PLAY", report)
+            self.assertIn("GPU fallback: ENABLED", report)
+            self.assertIn("Previous Bridge handoff log: found; GPU fallback: ENABLED", report)
+            self.assertIn("registration entries found", report)
+            self.assertIn("runtime functionality NOT verified", report)
+            self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
+            self.assertNotIn("GPU process has crashed 1603", report)
+            self.assertEqual(registry.read_bytes(), before_registry)
+            self.assertEqual(bridge.config_path().read_bytes(), before_config)
+            self.assertFalse((self.steam / "config/config.vdf").exists())
+
+    def test_missing_clr_both_architectures_warns_even_with_registry_claim(self):
+        with patch.dict(os.environ, self.env):
+            bridge.register(self.steam, source=SCRIPT)
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            (self.client / "version.dll").write_bytes(b"fixture")
+            (self.client / "resources/app.asar.backup").write_bytes(b"fixture")
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir(parents=True)
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text(
+                '"appid" "3008130"'
+            )
+            prefix = self.steam / "steamapps/compatdata/3008130/pfx"
+            prefix.mkdir(parents=True)
+            registry = prefix / "system.reg"
+            registry.write_text(
+                '[Software\\\\Microsoft\\\\NET Framework Setup\\\\NDP\\\\v4\\\\Full]\n'
+                '"Release"=dword:00082348\n'
+            )
+            folder = prefix / "drive_c/windows/Microsoft.NET"
+            for arch in ("Framework", "Framework64"):
+                runtime = folder / arch / "v4.0.30319"
+                runtime.mkdir(parents=True)
+                (runtime / "mscorlib.dll").write_bytes(b"short-placeholder")
+            before = registry.read_bytes()
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ), patch.object(
+                bridge.subprocess, "Popen",
+                side_effect=AssertionError("read-only inspection started a process")
+            ):
+                report = bridge.preflight_report("3008130", game_dir=game)
+            with patch.object(
+                bridge, "steam_compat_selection",
+                return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"
+            ):
+                self.assertEqual(
+                    bridge.primary_ui_state("3008130", game_dir=game)[0],
+                    "runtime"
+                )
+            self.assertIn("Next action: INVESTIGATE WINDOWS .NET RUNTIME", report)
+            self.assertIn("no game prefix or Steam setting was changed", report)
+            self.assertIn("registration entries found", report)
+            self.assertIn(".NET CLR Framework/clr.dll: MISSING", report)
+            self.assertIn(".NET CLR Framework64/clr.dll: MISSING", report)
+            self.assertIn("both Windows .NET Framework v4 clr.dll files are missing", report)
+            self.assertIn("registration alone cannot establish a working CLR", report)
+            self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
+            self.assertEqual(registry.read_bytes(), before)
+
+    def test_clr_evidence_present_is_not_proof_of_runtime(self):
+        with patch.dict(os.environ, self.env):
+            prefix = self.root / "independent-game/pfx"
+            for arch in ("Framework", "Framework64"):
+                runtime = prefix / "drive_c/windows/Microsoft.NET" / arch / "v4.0.30319"
+                runtime.mkdir(parents=True)
+                (runtime / "clr.dll").write_bytes(b"test-mock-dll")
+                (runtime / "mscorlib.dll").write_bytes(b"test-mock-mscorlib")
+            report = "\n".join(bridge.netfx_clr_evidence(prefix))
+            self.assertIn("Framework/clr.dll: present", report)
+            self.assertIn("Framework64/clr.dll: present", report)
+            self.assertIn("loading and WeMod compatibility NOT verified", report)
+            self.assertNotIn("WARNING:", report)
+
+    def test_clr_evidence_missing_or_symlinked_prefix_is_inconclusive(self):
+        with patch.dict(os.environ, self.env):
+            absent = self.root / "missing/pfx"
+            self.assertIn("INCONCLUSIVE", "\n".join(bridge.netfx_clr_evidence(absent)))
+            prefix = self.root / "working/pfx"
+            (prefix / "drive_c/windows/Microsoft.NET").mkdir(parents=True)
+            link = self.root / "prefix-link"
+            link.symlink_to(prefix, target_is_directory=True)
+            self.assertIn("INCONCLUSIVE", "\n".join(bridge.netfx_clr_evidence(link)))
+            self.assertNotIn("WARNING:", "\n".join(bridge.netfx_clr_evidence(link)))
+
+    def test_preflight_unconfigured_does_not_run_installers(self):
+        with patch.dict(os.environ, self.env):
+            with patch.object(
+                bridge.subprocess, "Popen",
+                side_effect=AssertionError("preflight must not launch processes"),
+            ):
+                report = bridge.preflight_report("3008130")
+            self.assertIn("Next action: SETUP", report)
+            self.assertIn("not configured", report)
+            self.assertIn("Live game/WeMod connection: NOT VERIFIED", report)
+            self.assertFalse(bridge.config_path().exists())
+
+    def test_isolated_netfx_plan_never_creates_a_prefix_or_runs_proton(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text(
+                '"appid" "3008130"'
+            )
+            live = self.steam / "steamapps/compatdata/3008130/pfx"
+            live.mkdir(parents=True)
+            existing = live / "user.reg"
+            existing.write_text("KEEP-ME")
+            cache = self.home / ".cache/gameweld/netfx-isolation/appid-3008130"
+            before = bridge.config_path().read_bytes()
+            with patch.object(bridge.subprocess, "Popen",
+                              side_effect=AssertionError("Proton must not execute")), \
+                 patch.object(bridge.subprocess, "call",
+                              side_effect=AssertionError("Winetricks must not execute")), \
+                 patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)), \
+                 patch.object(bridge, "steam_compat_selection",
+                              return_value="GAMEWELD BRIDGE SELECTED (saved Steam mapping)"):
+                plan = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("PLAN ONLY (READ-ONLY", plan)
+            self.assertIn("Saved Proton executable:", plan)
+            self.assertIn("Scratch filesystem free space: 16.0 GiB available", plan)
+            self.assertIn("Steam saved compatibility selection: GAMEWELD BRIDGE SELECTED", plan)
+            self.assertIn("Actual live Proton executable/version: NOT VERIFIED", plan)
+            self.assertIn("Workspace check: AVAILABLE FOR A FUTURE APPROVED TEST", plan)
+            self.assertIn("NOT SELECTED OR VERIFIED", plan)
+            self.assertIn("Experiment gate: NOT READY — no GE-Proton10 candidate detected", plan)
+            self.assertIn("proton-ge-custom/releases/tag/GE-Proton10-34", plan)
+            self.assertIn("dotnet.microsoft.com/en-us/download/dotnet-framework/net48", plan)
+            self.assertIn("No automatic promotion/copying", plan)
+            self.assertFalse(cache.exists())
+            self.assertEqual(existing.read_text(), "KEEP-ME")
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+            self.assertFalse((self.steam / "config/config.vdf").exists())
+
+    def test_isolated_netfx_plan_blocks_occupied_and_symlinked_scratch(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            target = self.home / ".cache/gameweld/netfx-isolation/appid-3008130"
+            target.mkdir(parents=True)
+            self.assertIn("Workspace check: BLOCKED",
+                          bridge.netfx_isolation_plan("3008130", game))
+            target.rmdir()
+            target.symlink_to(self.steam / "steamapps", target_is_directory=True)
+            self.assertIn("Workspace check: BLOCKED",
+                          bridge.netfx_isolation_plan("3008130", game))
+            self.assertTrue(target.is_symlink())
+
+    def test_isolated_netfx_plan_blocks_symlinked_cache_ancestor(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            cache_alias = self.home / "cache-link"
+            cache_alias.symlink_to(self.steam / "steamapps", target_is_directory=True)
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": str(cache_alias)}):
+                report = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("Workspace check: BLOCKED", report)
+            self.assertTrue(cache_alias.is_symlink())
+            self.assertFalse((self.steam / "steamapps/gameweld").exists())
+
+    def test_isolated_netfx_plan_refuses_workspace_inside_steam_library(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            unsafe_cache = self.steam / "steamapps/other-diagnostics"
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": str(unsafe_cache)}), \
+                 patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)):
+                report = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("Workspace check: BLOCKED", report)
+            self.assertFalse(unsafe_cache.exists())
+
+    def test_ge_proton10_candidate_found_without_selection_or_execution(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            candidate = self.home / ".steam/root/compatibilitytools.d/GE-Proton10-34"
+            candidate.mkdir(parents=True)
+            executable = candidate / "proton"
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            (candidate / "toolmanifest.vdf").write_text('"manifest" {}\n')
+            before = bridge.config_path().read_bytes()
+            with patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)), \
+                 patch.object(bridge.subprocess, "Popen",
+                              side_effect=AssertionError("no candidate may launch")):
+                plan = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("GE-Proton10 possible runners found: 1", plan)
+            self.assertIn("Experiment gate: NOT READY — no offline .NET installer selected", plan)
+            self.assertIn(str(executable), plan)
+            self.assertIn("Wine engine version and .NET installation compatibility: UNVERIFIED", plan)
+            self.assertIn("preserve the saved game Proton", plan)
+            self.assertIn(str(self.proton.resolve()), plan)
+            self.assertEqual(bridge.config_path().read_bytes(), before)
+            self.assertFalse((self.home / ".cache").exists())
+
+    def test_ge_proton10_managed_runtime_is_discovered_without_running_it(self):
+        with patch.dict(os.environ, self.env):
+            managed = self.data / "gameweld/repair-runtimes/GE-Proton10-34"
+            managed.mkdir(parents=True)
+            exe = managed / "proton"
+            exe.write_text("#!/bin/sh\nexit 77\n")
+            exe.chmod(0o755)
+            (managed / "toolmanifest.vdf").write_text('"manifest" {}\n')
+            with patch.object(
+                bridge.subprocess, "Popen",
+                side_effect=AssertionError("candidate must never run"),
+            ), patch.object(
+                bridge.subprocess, "run",
+                side_effect=AssertionError("candidate must never run"),
+            ):
+                matches = bridge.discover_ge_proton10_candidates(
+                    self.steam / "steamapps"
+                )
+            self.assertEqual(matches, [exe.resolve()])
+
+    def test_ge_proton10_heroic_runtime_is_discovered_without_settings_change(self):
+        with patch.dict(os.environ, self.env):
+            heroic = self.home / ".config/heroic/tools/proton/GE-Proton10-34"
+            heroic.mkdir(parents=True)
+            exe = heroic / "proton"
+            exe.write_text("#!/bin/sh\nexit 77\n")
+            exe.chmod(0o755)
+            (heroic / "toolmanifest.vdf").write_text('"manifest" {}\n')
+            matches = bridge.discover_ge_proton10_candidates(self.steam / "steamapps")
+            self.assertEqual(matches, [exe.resolve()])
+            self.assertFalse(bridge.config_path().exists())
+
+    def test_ge_proton10_managed_runtime_rejects_missing_manifest(self):
+        with patch.dict(os.environ, self.env):
+            managed = self.data / "gameweld/repair-runtimes/GE-Proton10-34"
+            managed.mkdir(parents=True)
+            exe = managed / "proton"
+            exe.write_text("#!/bin/sh\nexit 77\n")
+            exe.chmod(0o755)
+            matches = bridge.discover_ge_proton10_candidates(self.steam / "steamapps")
+            self.assertEqual(matches, [])
+            self.assertTrue(exe.exists())
+
+    def test_ge_proton10_candidate_skips_symlink_and_invalid_lookalikes(self):
+        with patch.dict(os.environ, self.env):
+            root = self.steam / "compatibilitytools.d"
+            root.mkdir()
+            good = root / "GE-Proton10-34"
+            good.mkdir()
+            exe = good / "proton"
+            exe.write_bytes(b"#!/bin/sh\n")
+            exe.chmod(0o755)
+            (good / "toolmanifest.vdf").write_text("manifest")
+            bad11 = root / "GE-Proton11-1"
+            bad11.mkdir()
+            (bad11 / "proton").write_bytes(b"not-validated")
+            bad10 = root / "GE-Proton10-35"
+            bad10.mkdir()
+            (bad10 / "proton").write_bytes(b"not-validated")
+            alias = self.home / ".steam/root/compatibilitytools.d/GE-Proton10-36"
+            alias.parent.mkdir(parents=True)
+            alias.symlink_to(good, target_is_directory=True)
+            items = bridge.discover_ge_proton10_candidates(self.steam / "steamapps")
+            self.assertEqual(items, [exe.resolve()])
+            self.assertTrue(alias.is_symlink())
+
+    def test_isolated_netfx_plan_low_disk_space_blocks_future_test(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            with patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=3 * 1024 ** 3)):
+                plan = bridge.netfx_isolation_plan("3008130", game)
+            self.assertIn("Workspace check: BLOCKED", plan)
+            self.assertIn("3.0 GiB available", plan)
+            self.assertIn("(LOW SPACE)", plan)
+            self.assertIn("Experiment gate: BLOCKED", plan)
+            self.assertFalse((self.home / ".cache").exists())
+
+    def test_isolated_netfx_plan_optional_installer_hash_is_evidence_only(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            candidate = self.root / "offline-net-installer.exe"
+            candidate.write_bytes(b"MZ-MOCK-NOT-AN-INSTALLER")
+            expected = bridge.hashlib.sha256(candidate.read_bytes()).hexdigest()
+            with patch.object(bridge.shutil, "disk_usage",
+                              return_value=SimpleNamespace(free=16 * 1024 ** 3)), \
+                 patch.object(bridge.subprocess, "Popen",
+                              side_effect=AssertionError("installer must not run")):
+                plan = bridge.netfx_isolation_plan("3008130", game, installer_path=candidate)
+                self.assertIn("NOT VERIFIED against a trusted publisher", plan)
+                checked = bridge.netfx_isolation_plan(
+                    "3008130", game, installer_path=candidate, expected_sha256=expected
+                )
+                mismatch = bridge.netfx_isolation_plan(
+                    "3008130", game, installer_path=candidate, expected_sha256="0" * 64
+                )
+            self.assertIn("MATCHES supplied digest", checked)
+            self.assertIn("publisher provenance must still be independently verified", checked)
+            self.assertIn("MISMATCH — DO NOT EXECUTE", mismatch)
+            self.assertIn("prefix creation, registry changes and DLL copies: NOT PERFORMED", checked)
+            self.assertEqual(candidate.read_bytes(), b"MZ-MOCK-NOT-AN-INSTALLER")
+
+    def test_isolated_netfx_plan_rejects_symlinked_installer(self):
+        with patch.dict(os.environ, self.env):
+            bridge.configure("3008130", self.proton, self.client, enabled=True)
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            file = self.root / "candidate.exe"
+            file.write_bytes(b"MZ-TEST")
+            symlink = self.root / "installer-link.exe"
+            symlink.symlink_to(file)
+            with self.assertRaisesRegex(ValueError, "non-symlinked"):
+                bridge.netfx_isolation_plan("3008130", game, installer_path=symlink)
+            with self.assertRaisesRegex(ValueError, "requires --installer-path"):
+                bridge.netfx_isolation_plan("3008130", game, expected_sha256="0" * 64)
+
+    def test_isolated_netfx_plan_rejects_wrong_game_and_unconfigured(self):
+        with patch.dict(os.environ, self.env):
+            game = self.steam / "steamapps/common/Dying Light The Beast"
+            game.mkdir()
+            (self.steam / "steamapps/appmanifest_3008130.acf").write_text("manifest")
+            with self.assertRaisesRegex(ValueError, "Configure this game"):
+                bridge.netfx_isolation_plan("3008130", game)
+            bridge.configure("3008130", self.proton, self.client, enabled=False)
+            with self.assertRaisesRegex(ValueError, "matching AppID"):
+                bridge.netfx_isolation_plan("2353250", game)
+            self.assertFalse((self.home / ".cache").exists())
+
+    def test_preflight_gui_wiring_stays_read_only(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        # Discovery mode's button factory explicitly disables all actions
+        # except its exact allowlist. A label rename must update that list
+        # or the GTK button stays greyed out before the click handler runs.
+        guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
+        guard = guard.split('static GtkWidget *box(', 1)[0]
+        self.assertIn('strcmp(s, "Check WeMod readiness")', guard)
+        self.assertIn('strcmp(s, "Open WeMod & DeckCheatz setup")', guard)
+        self.assertIn('gtk_notebook_set_current_page((GtkNotebook*)notebook,1);', ui)
+        self.assertNotIn('strcmp(s, "Steam Bridge: Check selected game")', guard)
+        self.assertIn('pc2_guard_button(w)', guard)
+        self.assertIn('button("Check WeMod readiness","action")', ui)
+        self.assertIn('strcmp(s, "Plan safe .NET test (read-only)")', guard)
+        self.assertIn('button("Plan safe .NET test (read-only)","action")', ui)
+        self.assertIn('pack(bridge_maintenance_box,netfx_plan,0);', ui)
+        self.assertNotIn('pack(bridge_card,netfx_plan,0);', ui)
+        self.assertIn('pc2_steam_bridge_action("netfx-plan");', ui)
+        self.assertIn('!strcmp(job->result,"runtime")', ui)
+        self.assertIn('"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui)
+        self.assertIn('pc2_steam_bridge_action("native-route");', ui)
+        self.assertIn('strcmp(action,"netfx-plan")', ui)
+        self.assertIn('strcmp(j->action,"netfx-plan")', ui)
+        self.assertIn('strcmp(s, "Find prepared WeMod setup")', guard)
+        self.assertIn('button("Find prepared WeMod setup","action")', ui)
+        self.assertIn('pack(deckpage,shared_card,0);', ui)
+        self.assertIn('pc2_shared_wemod_status', ui)
+        self.assertIn('int global_catalog=!strcmp(action,"prefix-catalog");', ui)
+        self.assertIn('int native_route=!strcmp(action,"native-route");', ui)
+        self.assertIn('button("Check game WeMod connection","action")', ui)
+        self.assertIn('button("Preview no-options WeMod handoff (read-only)","action")', ui)
+        self.assertIn('button("Step 3 — Review prepared .NET prefix (read-only)","action")', ui)
+        self.assertIn('button("Step 2 — Stage downloaded .NET prefix (isolated)","action")', ui)
+        self.assertIn('pc2_steam_bridge_action("prefix-stage");', ui)
+        self.assertIn("Transfer reached 100%%. Validating ZIP and CRC; NOT SAVED", ui)
+        self.assertIn("ZIP verified and written to GameWeld cache", ui)
+        self.assertIn("Staging unavailable until validation completes.", ui)
+        self.assertIn("Step 1 complete — verified ZIP saved. Cache location:", ui)
+        self.assertIn('const char *base=getenv("XDG_CACHE_HOME");', ui)
+        self.assertIn('gameweld/prepared-wemod/downloads.', ui)
+        self.assertIn(
+            'if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage){'
+            '\n        snprintf(j->appid,sizeof j->appid', ui)
+        self.assertIn('argv[n++]=pc2_prepared_prefix_stage_helper();', ui)
+        self.assertIn('argv[n++]="--release-asset-url";argv[n++]=j->source_url;', ui)
+        self.assertIn('if(global_cache || global_stage){', ui)
+        self.assertIn('if(selected<0 || selected>=pc2_prepared_choice_count){', ui)
+        self.assertIn('pc2_steam_bridge_action("prefix-stage");', ui)
+        self.assertIn('argv[n++]="--approve-stage";', ui)
+        self.assertIn('"Step 1 — Download selected prepared setup (cache only)","action");', ui)
+        self.assertIn('pc2_steam_bridge_action("prepared-import-preview");', ui)
+        self.assertIn('argv[n++]=pc2_prepared_import_helper();', ui)
+        self.assertIn('argv[n++]="--release-asset-url";argv[n++]=j->source_url;', ui)
+        self.assertIn('if(import_preview){', ui)
+        self.assertIn('strcmp(j->action,"prepared-import-preview")', ui)
+        self.assertIn('pc2_steam_bridge_action("live-attach-preview");', ui)
+        self.assertIn('argv[n++]=pc2_live_attach_helper();', ui)
+        self.assertIn('argv[n++]="--install-dir";argv[n++]=j->game_dir;', ui)
+        self.assertIn('strcmp(j->action,"live-attach-preview")', ui)
+        self.assertNotIn('pc2_steam_bridge_action("live-attach-launch");', ui)
+        self.assertIn('pack(deckpage,native_card,0);', ui)
+        self.assertIn('strcmp(s, "Check game WeMod connection")', guard)
+        self.assertIn('strcmp(s, "Check WeMod setup")', guard)
+        self.assertNotIn('strcmp(s, "Legacy: Play using existing Steam Bridge")', guard)
+        self.assertIn('argv[n++]=pc2_native_route_helper();', ui)
+        self.assertIn('argv[n++]="--format";argv[n++]="summary";', ui)
+        self.assertIn('style(pc2_native_route_status,"game-connection-summary");', ui)
+        self.assertIn('.game-connection-summary{', ui)
+        self.assertIn('strcmp(j->action,"native-route")', ui)
+        self.assertIn('if(native_route)', ui)
+        self.assertIn('if(!global_upgrade&&!global_catalog&&!global_cache&&!global_stage)', ui)
+        self.assertIn('pc2_prepared_prefix_catalog_helper()', ui)
+        self.assertIn('argv[n++]=pc2_prepared_prefix_catalog_helper();', ui)
+        self.assertIn('pc2_steam_bridge_action("prefix-catalog");', ui)
+        self.assertIn('pc2_prepared_catalog_display(msg)', ui)
+        self.assertIn('gtk_combo_box_set_active((GtkComboBox*)pc2_shared_wemod_choices,-1);', ui)
+        self.assertIn('pc2_cache_collect_output(pid,pipefd[0]', ui)
+        self.assertIn('argv[n++]="--progress";', ui)
+        self.assertIn('pc2_cache_progress_update', ui)
+        self.assertIn('button("Cancel cache download","action")', ui)
+        self.assertIn('if(child>0)kill(child,SIGINT);', ui)
+        self.assertIn('pc2_cache_cancel_requested=1;', ui)
+        self.assertIn('strcmp(s, "Cancel cache download")', guard)
+        self.assertIn('argv[n++]="--machine-lines";', ui)
+        self.assertIn('pc2_prepared_prefix_cache_helper()', ui)
+        self.assertIn('argv[n++]="--approve-cache-download";', ui)
+        self.assertIn('button(\n            "Step 1 — Download selected prepared setup (cache only)","action");', ui)
+        self.assertIn('(GCallback)on_pc2_prepared_prefix_cache,NULL,NULL,0);', ui)
+        self.assertIn('if(response==GTK_RESPONSE_YES)pc2_steam_bridge_action("prefix-cache");', ui)
+        self.assertIn('gtk_widget_set_sensitive(pc2_shared_wemod_download,FALSE);', ui)
+        self.assertIn('pc2_provider_controls_allowed() &&', ui)
+        self.assertIn('strcmp(j->action,"prefix-cache")', ui)
+        self.assertIn('strcmp(s, "Step 1 — Download selected prepared setup (cache only)")', guard)
+        self.assertIn('strcmp(action,"prefix-catalog")', ui)
+        self.assertIn('strcmp(j->action,"prefix-catalog")', ui)
+        self.assertIn('pc2_steam_bridge_action("preflight");', ui)
+        self.assertIn('strcmp(action,"preflight")', ui)
+        self.assertIn('strcmp(j->action,"preflight")', ui)
+        self.assertIn('!strcmp(j->action,"preflight")', ui)
+        self.assertIn('strcmp(s, "Update Steam Bridge")', guard)
+        self.assertIn('button("Update Steam Bridge","action")', ui)
+        self.assertIn('pc2_steam_bridge_quick_upgrade,FALSE', ui)
+        self.assertIn('selected_matches &&', ui)
+        self.assertIn('strstr(j->output,"Next action: REPAIR")', ui)
+        self.assertIn(
+            'strstr(j->output,"Installed Steam Bridge: UPDATE AVAILABLE (")', ui
+        )
+        self.assertIn('pc2_quick_upgrade_state(update_available,is_current)', ui)
+        self.assertIn('is_current?"Steam Bridge is up to date":"Update Steam Bridge"', ui)
+        self.assertIn('gtk_style_context_remove_class(style,"primary-action")', ui)
+        self.assertIn('if(update_available)gtk_style_context_add_class(style,"primary-action")', ui)
+        self.assertIn('gtk_widget_set_sensitive(button,update_available)', ui)
+        self.assertIn('(GCallback)on_pc2_bridge_upgrade,NULL,NULL,0);', ui)
+
+    def test_legacy_bridge_is_optional_not_primary_and_never_claims_success(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn(
+            "Legacy Steam Bridge — optional compatibility fallback", ui
+        )
+        self.assertIn('gtk_expander_set_expanded(legacy_bridge,FALSE);', ui)
+        self.assertIn('legacy_bridge_play=button(', ui)
+        self.assertIn('"Legacy: Play using existing Steam Bridge","action");', ui)
+        self.assertIn('(GCallback)on_pc2_bridge_play,NULL,NULL,0);', ui)
+        self.assertIn('pc2_steam_bridge_action("native-route");', ui)
+        self.assertIn(
+            '"Play via Steam + DeckCheatz":"Set up one-session DeckCheatz"', ui
+        )
+        self.assertNotIn('pack(deckpage,bridge_card,0);', ui)
+        self.assertIn('GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO', ui)
+        self.assertIn(
+            "Steam Play request accepted. Game and WeMod startup are NOT YET VERIFIED",
+            ui
+        )
+        self.assertNotIn("Steam launch ASSOCIATION OBSERVED", ui)
+
+    def test_deckcheatz_primary_routes_through_confirmed_steam_not_direct_wemod(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('pc2_steam_launch_selected(1);', ui)
+        self.assertIn('pc2_steam_launch_selected(0);', ui)
+        self.assertIn('j->expect_deckcheatz=expect_deckcheatz;', ui)
+        self.assertIn('on_pc2_deckcheatz_copy_steam_option(NULL,NULL);', ui)
+        self.assertIn('Steam may execute saved Launch Options;', ui)
+        self.assertIn('GameWeld found a DeckCheatz wrapper in this game', ui)
+        self.assertIn('The running Steam client may have newer unsaved', ui)
+        self.assertIn('pc2_deckcheatz_steam_onebutton(void)', ui)
+        self.assertIn('"gameweld-deckcheatz-steam-readiness.py"', ui)
+        self.assertIn('if(!pc2_steam_launch_allowed()){', ui)
+        self.assertIn('on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d)', ui)
+        self.assertIn('"Play via Steam + DeckCheatz"', ui)
+        self.assertIn('"Set up DeckCheatz for Steam"', ui)
+        guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
+        guard = guard.split('static GtkWidget *box(', 1)[0]
+        for label in (
+            "Copy DeckCheatz Steam launch option",
+            "Set up one-session DeckCheatz",
+            "Play via Steam + DeckCheatz",
+        ):
+            self.assertIn(f'strcmp(s, "{label}")', guard)
+        primary = ui.split('static void on_pc2_bridge_primary(GtkButton*b,void*d){', 1)[1]
+        primary = primary.split('static void pc2_launch_with_steam_bridge', 1)[0]
+        self.assertIn('pc2_steam_launch_selected(1);', primary)
+        self.assertNotIn('gameweld-wemod-live-attach.py', primary)
+        self.assertNotIn('WeMod.exe', primary)
+
+    def test_one_session_gui_arm_on_exact_saved_wrapper_only(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('gameweld-deckcheatz-session.py', ui)
+        self.assertIn('pc2_session_configured_for_game(id)', ui)
+        self.assertIn('"session_wrapper_installed_in_saved_options\\": true', ui)
+        self.assertIn('j->session_mode=session_mode;', ui)
+        self.assertIn('pc2_deckcheatz_session_helper("arm"', ui)
+        self.assertIn('pc2_deckcheatz_session_helper("disarm"', ui)
+        self.assertIn('Set up one-session DeckCheatz', ui)
+        self.assertIn('on_pc2_deckcheatz_setup_session', ui)
+        self.assertIn('verified_empty,session_wrapper', ui)
+        self.assertIn('automatically revert to normal game execution', ui)
+        self.assertNotIn('localconfig.vdf', ui.split(
+            'static void *pc2_steam_launch_worker(void *data){', 1)[1].split(
+            'static void pc2_steam_launch_selected', 1)[0])
+
+    def test_preserve_original_gui_requires_backup_before_clipboard_copy(self):
+        ui = (Path(__file__).resolve().parents[1] /
+              "crates/wand-ui/appimage-gtk3/gameweld-native-040.c").read_text()
+        self.assertIn('gameweld-steam-launch-options-preserve.py', ui)
+        self.assertIn('pc2_steam_option_helper_run("--preview"', ui)
+        self.assertIn('pc2_steam_option_helper_run("--save-original"', ui)
+        self.assertIn('NEEDS_STEAM_UI_EMPTY_CHECK', ui)
+        self.assertIn('Did you personally confirm it is empty?', ui)
+        self.assertIn('do NOT continue: select No', ui)
+        self.assertIn('verified_empty=1;', ui)
+        self.assertIn('"--verified-empty-in-steam"', ui)
+        self.assertIn('pc2_steam_option_helper_run("--restore-original"', ui)
+        self.assertIn('NO replacement was copied.', ui)
+        self.assertIn('Steam itself will NOT be modified.', ui)
+        self.assertIn('proposed_launch_option', ui)
+        self.assertIn('requires_manual_review', ui)
+        self.assertIn('on_pc2_deckcheatz_restore_steam_option', ui)
+        self.assertIn('Restore original Steam launch option', ui)
+        guard = ui.split('static GtkWidget *button(const char *s, const char *cls) {', 1)[1]
+        guard = guard.split('static GtkWidget *box(', 1)[0]
+        self.assertIn('strcmp(s, "Restore original Steam launch option")', guard)
+        copying = ui.split('static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){', 1)[1]
+        copying = copying.split('static void on_pc2_deckcheatz_restore_steam_option', 1)[0]
+        self.assertLess(copying.index('pc2_steam_option_helper_run("--preview"'),
+                        copying.index('pc2_steam_option_helper_run("--save-original"'))
+        self.assertLess(copying.index('pc2_steam_option_helper_run("--save-original"'),
+                        copying.index('gtk_clipboard_set_text(clip,merged,-1);'))
+        self.assertNotIn('localconfig.vdf', copying)
 
     def test_primary_action_read_only_and_no_steam_mapping_mutations(self):
         with patch.dict(os.environ, self.env):

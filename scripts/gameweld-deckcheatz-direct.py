@@ -14,6 +14,7 @@ handoff; a successful subprocess spawn is NOT proof of a game/trainer launch.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -137,6 +138,32 @@ def validate_paths(args) -> tuple[Path, Path, Path, Path, Path, Path]:
     return launcher, proton, game, install, compat, steam
 
 
+def recognized_unreadable_host(process: Path) -> bool:
+    """Use the same conservative non-Wine desktop exception as live handoff.
+
+    Only exact names with inspected, non-WeMod cmdlines qualify. If either
+    inspector is unavailable, fail closed rather than guessing.
+    """
+    directory = Path(__file__).resolve().parent
+    live_path = directory / "gameweld-wemod-live-attach.py"
+    names_path = directory / "gameweld-prefix-runtime-preflight.py"
+    if (live_path.is_symlink() or names_path.is_symlink() or
+            not live_path.is_file() or not names_path.is_file()):
+        return False
+    try:
+        live_spec = importlib.util.spec_from_file_location("gw_direct_host_live", live_path)
+        names_spec = importlib.util.spec_from_file_location("gw_direct_host_names", names_path)
+        if not live_spec or not live_spec.loader or not names_spec or not names_spec.loader:
+            return False
+        live = importlib.util.module_from_spec(live_spec)
+        names = importlib.util.module_from_spec(names_spec)
+        live_spec.loader.exec_module(live)
+        names_spec.loader.exec_module(names)
+        return live.known_non_wine_host_with_unreadable_env(process, names)
+    except (OSError, ValueError, ImportError, AttributeError):
+        return False
+
+
 def active_game_process(appid: str, proc_root: Path = Path("/proc")) -> bool:
     """Fail closed if a same-user process is already tagged for this AppID."""
     count = 0
@@ -151,12 +178,23 @@ def active_game_process(appid: str, proc_root: Path = Path("/proc")) -> bool:
                 continue
             # /proc/.../environ may reveal unrelated secrets; never log it.
             with (item / "environ").open("rb") as inp:
-                env = inp.read(128 * 1024)
+                env = inp.read(128 * 1024 + 1)
+            if len(env) > 128 * 1024:
+                raise Blocked("Process environment exceeds safe inspection limit")
             if any(key + appid.encode() in env.split(b"\x00") for key in
                    (b"SteamAppId=", b"SteamGameId=", b"STEAM_COMPAT_APP_ID=")):
                 return True
-        except (OSError, PermissionError):
+        except FileNotFoundError:
+            # A process can exit during scanning; a vanished PID is harmless.
             continue
+        except OSError as exc:
+            # Some desktop services and Steam overlay UI processes expose
+            # their names but not their environments on KDE/CachyOS. Only the
+            # narrowly recognized host tasks may be skipped. Any Wine/Proton,
+            # WeMod or unknown inaccessible task still blocks direct launch.
+            if recognized_unreadable_host(item):
+                continue
+            raise Blocked("Cannot verify whether a game process is active") from exc
     return False
 
 
@@ -167,14 +205,31 @@ def build_plan(args) -> tuple[dict, dict[str, str]]:
     overrides = {
         "STEAM_COMPAT_DATA_PATH": str(compat),
         "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(steam),
+        "STEAM_COMPAT_INSTALL_PATH": str(install),
         "STEAM_COMPAT_TOOL_PATHS": str(proton.parent),
         "SteamAppId": args.appid,
         "SteamGameId": args.appid,
+        "SteamOverlayGameId": args.appid,
         "STEAM_COMPAT_APP_ID": args.appid,
+        "WINEDLLOVERRIDES": "version=n,b",
+        "WEMOD_LOG": str(launcher.parent / "wemod.log"),
         "SELF_UPDATE": "False",
         "PACKAGEPREFIX": "false",
         "TROUBLESHOOT": "False",
     }
+    options_source = Path(__file__).resolve().with_name("gameweld-deckcheatz-session-options.py")
+    if options_source.is_symlink() or not options_source.is_file():
+        raise Blocked("DeckCheatz custom launch-option composer unavailable")
+    spec = importlib.util.spec_from_file_location("gw_dc_custom_opts", options_source)
+    if not spec or not spec.loader:
+        raise Blocked("Cannot import custom launch-option composer")
+    options = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(options)
+    try:
+        argv, overrides, option_report = options.compose(
+            getattr(args, "steam_launch_options", "") or "", argv, overrides)
+    except options.OptionBlocked as exc:
+        raise Blocked(str(exc)) from exc
     return {
         "provider": PROVIDER,
         "mode": "experimental_direct_no_steam_options",
@@ -187,8 +242,13 @@ def build_plan(args) -> tuple[dict, dict[str, str]]:
         "game_working_directory": str(game.parent),
         "argv": argv,
         "env_overrides": overrides,
+        "steam_custom_launch_composition": option_report,
+        "current_steam_options_user_verified": bool(getattr(args, "steam_options_verified", False)),
         "steam_launch_options_modified": False,
         "will_invoke_steam_client": False,
+        "steam_runtime_container_reproduced": False,
+        "steam_api_overlay_drm_verified": False,
+        "steam_launch_options_applied": False,
         "prefix_can_be_modified_by_upstream_launcher": True,
         "warning": ("Experimental! Upstream DeckCheatz 1.x is intended as a Steam/Lutris command prefix. "
                     "Direct execution may not initialize SteamAPI or supported games correctly. "
@@ -210,6 +270,10 @@ def main(argv=None) -> int:
     parser.add_argument("--compatdata", type=Path)
     parser.add_argument("--steam-root", type=Path)
     parser.add_argument("--game-arg", action="append", default=[])
+    parser.add_argument("--steam-launch-options", default="",
+                        help="Exact CURRENT Steam Properties text; supported shell-free subset")
+    parser.add_argument("--steam-options-verified", action="store_true",
+                        help="User confirmed the selected game's current Steam Properties text")
     parser.add_argument("--confirm-prefix-changes", action="store_true")
     parser.add_argument("--experimental-direct-launch", action="store_true")
     args = parser.parse_args(argv)
@@ -227,6 +291,8 @@ def main(argv=None) -> int:
         print(json.dumps(plan, indent=2))
         return 0
 
+    if not args.steam_options_verified:
+        raise Blocked("Direct launch requires confirmation of CURRENT Steam Launch Options")
     if not (args.confirm_prefix_changes and args.experimental_direct_launch):
         raise Blocked("Direct launch requires BOTH --confirm-prefix-changes and "
                       "--experimental-direct-launch; preview before consenting")

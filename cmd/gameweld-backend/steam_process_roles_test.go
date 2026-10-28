@@ -15,7 +15,8 @@ func TestProcessRoleLabelsOnlyHeuristics(t *testing.T) {
 		{"wineserver","/usr/bin/wineserver","wine_runtime"},
 		{"services.exe","/usr/bin/wine64-preloader","wine_runtime"},
 		{"Adventure.exe","/usr/bin/wine64-preloader","windows_executable_candidate"},
-		{"AdCapMain","/usr/bin/wine64-preloader","wine_runtime"},
+		{"AdCapMain","/usr/bin/wine64-preloader","wine_loader_ambiguous"},
+		{"wine64","/usr/bin/wine64-preloader","wine_loader_ambiguous"},
 		{"unknown","/usr/bin/something","other_associated"},
 	} {
 		if got:=classifyAssociatedProcess(tc.comm,tc.exe);got!=tc.want {

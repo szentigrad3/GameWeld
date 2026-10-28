@@ -356,6 +356,16 @@ def play_configured_game(appid: str, *, launch=None,
             "GameWeld Bridge is not registered in the selected Steam installation; "
             "run Bridge setup before requesting Steam Play"
         )
+    # The repository script can be newer than the copy Steam actually runs.
+    # A saved GPU fallback is not effective until that registered copy is synced.
+    launcher_state = bridge_launcher_sync()
+    if launcher_state != "UP TO DATE":
+        raise ValueError(
+            "Installed Steam Bridge launcher is outdated or unverified: "
+            + launcher_state
+            + ". Update only the registered Bridge launcher before Play; "
+              "Steam settings and the game's Proton prefix do not need changing."
+        )
     if launch is None or associated_processes is None:
         source = Path(__file__).with_name("gameweld-steam-handoff.py")
         if not source.is_file():
@@ -380,7 +390,7 @@ def play_configured_game(appid: str, *, launch=None,
     return int(launch(appid))
 
 
-def primary_ui_state(appid: str) -> tuple[str, str]:
+def primary_ui_state(appid: str, *, game_dir: Path | None = None) -> tuple[str, str]:
     """Read-only and fail-closed primary action for one Steam game.
 
     This only describes the saved configuration. The actual game launch
@@ -415,6 +425,20 @@ def primary_ui_state(appid: str) -> tuple[str, str]:
     if not ((client / "version.dll").is_file()
             and (client / "resources/app.asar.backup").is_file()):
         return "repair", "WeMod Enhancer patch prerequisites are missing; check Advanced Providers."
+    launcher_state = bridge_launcher_sync()
+    if launcher_state != "UP TO DATE":
+        return "repair", (
+            "Installed Steam Bridge launcher is outdated or unverified: "
+            + launcher_state
+            + ". Update the registered Bridge launcher in Advanced Providers; "
+              "the game prefix and Steam settings do not need changing."
+        )
+    if game_dir is not None and netfx_registered_without_native_clr(appid, game_dir):
+        return "runtime", (
+            "Windows .NET registration exists, but the selected game prefix lacks "
+            "native CLR files. Check WeMod readiness and plan an isolated .NET test; "
+            "no game prefix or Steam setting was changed."
+        )
     return "play", "Steam Bridge and WeMod are configured. Launch still requires confirmation."
 
 
@@ -488,6 +512,7 @@ def dotnet_prefix_status(appid: str, game_dir: Path) -> str:
                 evidence.append(line[:160])
     lines.append("Windows .NET Framework registry evidence: " +
                  ("; ".join(evidence[:12]) if evidence else "NOT FOUND / INCONCLUSIVE"))
+    lines.extend(netfx_clr_evidence(prefix))
     for name, dirname in (("Windows Desktop .NET runtime","Microsoft.WindowsDesktop.App"),
                           (".NET shared runtime","Microsoft.NETCore.App")):
         roots = [prefix / "drive_c/Program Files/dotnet/shared" / dirname,
@@ -687,6 +712,419 @@ def steam_compat_selection(appid: str, *,
     return f"OTHER TOOL SELECTED (saved Steam mapping: {selected})"
 
 
+def netfx_clr_evidence(prefix: Path) -> list[str]:
+    """Check Windows .NET Framework v4 files without executing any runtime.
+
+    A Steam title may be assigned a different compatdata path. Treat missing
+    or symlinked candidate directories as inconclusive, not as proof of a
+    broken installation. Never guess or copy files from another game.
+    """
+    if prefix.is_symlink() or not prefix.is_dir():
+        return [".NET CLR files: INCONCLUSIVE (candidate prefix missing or symlinked)"]
+    windows = prefix / "drive_c/windows/Microsoft.NET"
+    if windows.is_symlink() or not windows.is_dir():
+        return [".NET CLR files: INCONCLUSIVE (Microsoft.NET directory unavailable)"]
+    report = []
+    missing = []
+    uncertain = False
+    for arch in ("Framework", "Framework64"):
+        folder = windows / arch / "v4.0.30319"
+        if folder.is_symlink() or not folder.is_dir():
+            report.append(f".NET CLR {arch}: INCONCLUSIVE (runtime folder unavailable)")
+            uncertain = True
+            continue
+        for dll in ("clr.dll", "mscorlib.dll"):
+            path = folder / dll
+            if path.is_symlink():
+                report.append(f".NET CLR {arch}/{dll}: INCONCLUSIVE (symlinked)")
+                uncertain = True
+            elif path.is_file():
+                try:
+                    report.append(f".NET CLR {arch}/{dll}: present ({path.stat().st_size} bytes)")
+                except OSError:
+                    report.append(f".NET CLR {arch}/{dll}: INCONCLUSIVE (unreadable)")
+                    uncertain = True
+            else:
+                report.append(f".NET CLR {arch}/{dll}: MISSING from candidate prefix")
+                missing.append((arch, dll))
+    missing_clr = sum(dll == "clr.dll" for _, dll in missing)
+    if missing_clr == 2 and not uncertain:
+        report.append("WARNING: both Windows .NET Framework v4 clr.dll files are missing; "
+                      "registration alone cannot establish a working CLR for WeMod.")
+    elif missing_clr:
+        report.append("WARNING: one or more Windows .NET Framework v4 CLR components "
+                      "are absent; this is not a successful runtime check.")
+    else:
+        report.append(".NET CLR assessment: file presence only; loading and WeMod "
+                      "compatibility NOT verified.")
+    return report
+
+
+def netfx_registered_without_native_clr(appid: str, game_dir: Path) -> bool:
+    """Advisory blocker only when a matching candidate prefix explicitly
+    claims .NET registration while *both* native Framework CLR DLLs are absent.
+
+    A directory scan does not establish actual runtime loading. Inconclusive
+    or unmatched game locations must not be mislabeled a broken native CLR.
+    """
+    try:
+        game = game_dir.expanduser().resolve(strict=True)
+        steamapps = game.parent.parent
+        manifest = steamapps / f"appmanifest_{appid}.acf"
+        if (not game.is_dir() or game.parent.name != "common" or
+                steamapps.name != "steamapps" or not manifest.is_file() or
+                manifest.is_symlink()):
+            return False
+        prefix = steamapps / "compatdata" / appid / "pfx"
+        registry = prefix / "system.reg"
+        if (registry.is_symlink() or not registry.is_file() or
+                registry.stat().st_size > 32 * 1024 * 1024):
+            return False
+        registry_text = registry.read_text(encoding="utf-8", errors="replace")
+        if "NET Framework Setup" not in registry_text:
+            return False
+        report = netfx_clr_evidence(prefix)
+        return any(
+            text.startswith("WARNING: both Windows .NET Framework v4 clr.dll files are missing")
+            for text in report
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def discover_ge_proton10_candidates(steamapps: Path) -> list[Path]:
+    """Bounded read-only discovery; folder names are NOT engine proof.
+
+    The selected Steam library and conventional Steam user locations are
+    inspected, but no tools are installed, executed or selected for a game.
+    Results are potential disposable-test runners, never a recommendation to
+    replace the game's working Compatibility selection.
+    """
+    home = Path.home()
+    steam_root = steamapps.parent
+    data_home = xdg_dir("XDG_DATA_HOME", ".local/share")
+    roots = (
+        # Steam-discoverable tools and GE installations in the game library.
+        steamapps / "common",
+        steam_root / "compatibilitytools.d",
+        home / ".steam" / "root" / "compatibilitytools.d",
+        home / ".steam" / "steam" / "compatibilitytools.d",
+        data_home / "Steam" / "compatibilitytools.d",
+        home / ".local" / "share" / "Steam" / "compatibilitytools.d",
+        # Reuse the existing read-only runner locations understood by
+        # GameWeld's Heroic repair tooling. Never trigger that repair flow.
+        data_home / "gameweld" / "repair-runtimes",
+        home / ".config" / "heroic" / "tools" / "proton",
+        home / ".local" / "share" / "heroic" / "tools" / "proton",
+        # Distro-packaged compatibility tools, if any.
+        Path("/usr/share/steam/compatibilitytools.d"),
+    )
+    # GE-Proton10-34 is a *label*, not a guarantee of a particular Wine
+    # version, patch level, installer behavior or binary provenance.
+    label = re.compile(r"(?:GE[-_ ]?Proton|Proton[-_ ]?GE)[-_ ]?10(?:[-_.]\d+)*", re.I)
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            for index, candidate in enumerate(root.iterdir()):
+                if index >= 256:  # hard bound for unusual/malicious folders
+                    break
+                if not label.fullmatch(candidate.name):
+                    continue
+                if candidate.is_symlink() or not candidate.is_dir():
+                    continue
+                script = candidate / "proton"
+                if script.is_symlink() or not script.is_file():
+                    continue
+                try:
+                    verified = validate_proton(script)
+                except (OSError, ValueError):
+                    continue
+                if verified not in seen:
+                    seen.add(verified)
+                    discovered.append(verified)
+                if len(discovered) >= 12:
+                    return discovered
+        except (OSError, PermissionError):
+            continue
+    return discovered
+
+
+def prepared_wemod_prefix_options(appid: str, game_dir: Path) -> str:
+    """Read-only prepared-prefix catalog, not an installation path."""
+    if not valid_appid(appid):
+        raise ValueError("Invalid Steam AppID")
+    game = game_dir.expanduser().resolve(strict=True)
+    steamapps = game.parent.parent
+    if (not game.is_dir() or game.parent.name != "common" or
+            steamapps.name != "steamapps" or
+            not (steamapps / f"appmanifest_{appid}.acf").is_file()):
+        raise ValueError("Selected Steam game/manifest mismatch")
+    entry = load_config().get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("Set up the selected game's Steam Bridge first")
+    proton = validate_proton(Path(entry["proton"]))
+    label = proton.parent.name
+    version = proton.parent / "version"
+    if version.is_file() and not version.is_symlink() and version.stat().st_size < 8192:
+        label += " " + version.read_text(encoding="utf-8", errors="replace")[:256]
+    source = Path(__file__).with_name("gameweld-deckcheatz-prefix-catalog.py")
+    if not source.is_file() or source.is_symlink():
+        raise ValueError("Prepared-prefix catalog helper is missing from this GameWeld build")
+    spec = importlib.util.spec_from_file_location("gameweld_prebuilt_catalog", source)
+    if not spec or not spec.loader:
+        raise ValueError("Prepared-prefix catalog cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    report = module.catalog_report(label)
+    return (
+        f"Selected game: AppID {appid} (Steam manifest matched)\n"
+        f"Existing game compatdata: {steamapps / 'compatdata' / appid} (NOT MODIFIED)\n"
+        + report
+    )
+
+
+def netfx_isolation_plan(
+    appid: str,
+    game_dir: Path,
+    *,
+    installer_path: Path | None = None,
+    expected_sha256: str | None = None,
+) -> str:
+    """Read-only isolated .NET experiment preflight; no Wine or writes.
+
+    A digest comparison requires a checksum independently obtained from a
+    trusted publisher. A matching user-supplied digest alone is not proof of
+    authenticity or compatibility, and never authorizes installation.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Invalid Steam AppID for isolated .NET test plan")
+    game = game_dir.expanduser().resolve(strict=True)
+    steamapps = game.parent.parent
+    manifest = steamapps / f"appmanifest_{appid}.acf"
+    if (not game.is_dir() or game.parent.name != "common" or
+            steamapps.name != "steamapps" or not manifest.is_file() or
+            manifest.is_symlink()):
+        raise ValueError("Select an installed Steam game with the matching AppID manifest")
+
+    entry = load_config().get(appid)
+    if not isinstance(entry, dict):
+        raise ValueError("Configure this game's Steam Bridge before planning an isolated test")
+    proton = validate_proton(Path(entry["proton"]))
+    client = validate_client(Path(entry["client"]))
+    current = steamapps / "compatdata" / appid
+    cache = xdg_dir("XDG_CACHE_HOME", ".cache")
+    root = cache / "gameweld" / "netfx-isolation"
+    proposed = root / f"appid-{appid}"
+    disallowed = (steamapps, game, current, proton.parent, client)
+    # Consider the complete proposed ancestry. A symlink outside the four
+    # previously checked final components could alias a Steam/library root.
+    unsafe_links = any(part.is_symlink() for part in (proposed, *proposed.parents))
+    overlaps_protected = any(
+        proposed == protected or proposed in protected.parents or
+        protected in proposed.parents
+        for protected in disallowed
+    )
+    occupied = proposed.exists() or proposed.is_symlink()
+
+    nearest = next((part for part in (proposed, *proposed.parents) if part.exists()), None)
+    disk_status = "INCONCLUSIVE (no readable parent filesystem)"
+    enough_space = False
+    if nearest is not None and not unsafe_links:
+        try:
+            free = shutil.disk_usage(nearest).free
+            free_gib = free / (1024 ** 3)
+            enough_space = free >= 8 * 1024 ** 3
+            disk_status = (
+                f"{free_gib:.1f} GiB available; conservative planning target: 8 GiB "
+                + ("(PASS)" if enough_space else "(LOW SPACE)")
+            )
+        except OSError:
+            pass
+    ready = not (unsafe_links or overlaps_protected or occupied) and enough_space
+
+    try:
+        selection = steam_compat_selection(appid, configured_proton=proton)
+    except (OSError, ValueError) as exc:
+        selection = "UNVERIFIED (read-only Steam compatibility lookup failed)"
+    # This is the saved Steam selection, not proof of a running process.
+    lines = [
+        f"GAMEWELD — ISOLATED .NET TEST PLAN • AppID {appid}",
+        "Mode: PLAN ONLY (READ-ONLY; no sandbox or installer created)",
+        "Selected Steam game: matching local AppID manifest filename (contents not verified)",
+        f"Saved Proton executable: {proton}",
+        f"Steam saved compatibility selection: {selection}",
+        "Actual live Proton executable/version: NOT VERIFIED (no process executed)",
+        "Candidate comparison: preserve the saved game Proton; explore GE-Proton10 "
+        "ONLY in a separate disposable test after approval.",
+        f"Existing game compatdata: {current} (DO NOT TOUCH)",
+        f"Proposed separate workspace: {proposed}",
+        "Workspace check: " +
+        ("AVAILABLE FOR A FUTURE APPROVED TEST" if ready else
+         "BLOCKED (occupied, symlink/overlap risk, or insufficient/unverified free space)"),
+        "Scratch filesystem free space: " + disk_status,
+    ]
+    candidates = discover_ge_proton10_candidates(steamapps)
+    if candidates:
+        lines.append(f"GE-Proton10 possible runners found: {len(candidates)} "
+                     "(read-only filename and toolmanifest checks)")
+        for candidate in candidates:
+            lines.append(f"  Candidate Proton launcher: {candidate}")
+        lines.append("Wine engine version and .NET installation compatibility: "
+                     "UNVERIFIED (never executed)")
+    else:
+        lines.append("GE-Proton10 possible runners: NOT DETECTED in scanned Steam roots "
+                     "(could be installed elsewhere)")
+        lines.append("No Proton version was downloaded, installed or selected.")
+    lines.append("GE-Proton10-34 official release (manual review only): "
+                 "https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/GE-Proton10-34")
+    lines.append("GE-Proton10-34 release provides its own SHA-512 checksum asset; "
+                 "verify it before trusting an obtained archive.")
+    lines.append("Microsoft .NET Framework 4.8 offline Runtime (manual review only): "
+                 "https://dotnet.microsoft.com/en-us/download/dotnet-framework/net48")
+
+    if installer_path is None:
+        if expected_sha256 is not None:
+            raise ValueError("An expected checksum requires --installer-path")
+        lines.append("Install source: NOT SELECTED OR VERIFIED")
+    else:
+        if (installer_path.is_symlink() or not installer_path.is_file() or
+                installer_path.stat().st_size == 0 or
+                installer_path.stat().st_size > 512 * 1024 ** 2):
+            raise ValueError("Installer candidate must be a nonempty regular non-symlinked file no larger than 512 MiB")
+        file_size = installer_path.stat().st_size
+        digest = hashlib.sha256()
+        with installer_path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        actual = digest.hexdigest()
+        lines.append(f"Installer candidate: {installer_path} ({file_size} bytes)")
+        lines.append(f"Installer computed SHA-256: {actual}")
+        if expected_sha256 is None:
+            lines.append("Installer checksum: NOT VERIFIED against a trusted publisher")
+        else:
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+                raise ValueError("Expected installer SHA-256 must be 64 hexadecimal characters")
+            if actual.lower() != expected_sha256.lower():
+                lines.append("Installer checksum: MISMATCH — DO NOT EXECUTE")
+            else:
+                lines.append("Installer checksum: MATCHES supplied digest; "
+                             "publisher provenance must still be independently verified")
+
+    if not ready:
+        lines.append("Experiment gate: BLOCKED — disposable workspace is unsafe "
+                     "or has insufficient/unverified free space.")
+    elif not candidates:
+        lines.append("Experiment gate: NOT READY — no GE-Proton10 candidate detected; "
+                     "review the official release before considering a download.")
+    elif installer_path is None:
+        lines.append("Experiment gate: NOT READY — no offline .NET installer selected.")
+    else:
+        lines.append("Experiment gate: NOT AUTHORIZED — candidate files alone do "
+                     "not prove publisher origin or compatibility.")
+    lines += [
+        "Compatibility of .NET installer with this Proton build: NOT VERIFIED",
+        "Proton run, downloads, prefix creation, registry changes and DLL copies: NOT PERFORMED",
+        "Do not run the previous dotnet48/MSI installer on the live game prefix.",
+        "Before any future sandbox test: independently verify installer origin "
+        "and checksum, and explicitly approve the disposable-only test.",
+        "After a future sandbox test: require actual CLR loading evidence; "
+        "a registry Release key or mere DLL presence is not a pass.",
+        "No automatic promotion/copying from sandbox into a Steam game prefix.",
+    ]
+    return "\n".join(lines)
+
+def preflight_report(appid: str, *, game_dir: Path | None = None) -> str:
+    """Bounded, read-only, game-scoped readiness summary for the GUI.
+
+    File/registry presence and historical logs never count as a successful
+    runtime launch. No Wine, Proton, MSI or Steam processes are started.
+    """
+    if not valid_appid(appid):
+        raise ValueError("Select an installed Steam Windows game")
+    state, reason = primary_ui_state(appid, game_dir=game_dir)
+    entry = load_config().get(appid)
+    next_action = "INVESTIGATE WINDOWS .NET RUNTIME" if state == "runtime" else state.upper()
+    lines = [
+        f"GAMEWELD — WEMOD READINESS • Steam AppID {appid}",
+        f"Next action: {next_action} — {reason}",
+    ]
+    if not isinstance(entry, dict):
+        lines += [
+            "WeMod auto-start: not configured",
+            "WeMod GPU fallback: not configured",
+        ]
+    else:
+        lines.append("WeMod auto-start: " +
+                     ("ENABLED" if entry.get("trainer_enabled") else "DISABLED"))
+        lines.append("WeMod GPU fallback: " +
+                     ("ENABLED (--disable-gpu on WeMod only)"
+                      if entry.get("wemod_disable_gpu") is True else "DISABLED"))
+        lines.append("Installed Steam Bridge: " + bridge_launcher_sync())
+
+    if game_dir is not None:
+        try:
+            game = game_dir.expanduser().resolve(strict=True)
+            steamapps = game.parent.parent
+            if (game.parent.name != "common" or steamapps.name != "steamapps" or
+                    not (steamapps / ("appmanifest_" + appid + ".acf")).is_file()):
+                lines.append(".NET registry: INCONCLUSIVE (selected game manifest mismatch)")
+            else:
+                registry = steamapps / "compatdata" / appid / "pfx/system.reg"
+                if (registry.is_file() and not registry.is_symlink() and
+                        registry.stat().st_size <= 32 * 1024 * 1024):
+                    content = registry.read_text(encoding="utf-8", errors="replace")
+                    if "NET Framework Setup" in content:
+                        lines.append(".NET registry: registration entries found; "
+                                     "runtime functionality NOT verified")
+                    else:
+                        lines.append(".NET registry: setup entries not found; "
+                                     "do not install .NET based on this check alone")
+                else:
+                    lines.append(".NET registry: INCONCLUSIVE (prefix or registry unavailable)")
+                clr_lines = netfx_clr_evidence(steamapps / "compatdata" / appid / "pfx")
+                lines.extend(clr_lines)
+                if state == "play" and any(line.startswith("WARNING:") for line in clr_lines):
+                    lines[1] = (
+                        "Next action: INVESTIGATE WINDOWS .NET RUNTIME — "
+                        "Steam Bridge is configured, but the selected prefix "
+                        "is missing native CLR components needed by some .NET apps. "
+                        "No installation or prefix repair was attempted."
+                    )
+        except (OSError, ValueError):
+            lines.append(".NET registry: INCONCLUSIVE (cannot inspect selected game)")
+
+    state_dir = xdg_dir("XDG_STATE_HOME", ".local/state") / "gameweld"
+    try:
+        logs = sorted(
+            (p for p in state_dir.glob(f"steam-bridge-{appid}-*.log")
+             if p.is_file() and not p.is_symlink() and p.stat().st_size < 2 * 1024 * 1024),
+            key=lambda p: p.stat().st_mtime, reverse=True,
+        ) if state_dir.is_dir() else []
+        if logs:
+            history = logs[0].read_text(encoding="utf-8", errors="replace")
+            fallback = next(
+                (line.split(":", 1)[1].strip().upper()
+                 for line in history.splitlines()
+                 if line.startswith("WeMod GPU fallback:")),
+                "NOT RECORDED",
+            )
+            lines.append(f"Previous Bridge handoff log: found; GPU fallback: {fallback} "
+                         "(historical, not the next launch)")
+        else:
+            lines.append("Previous Bridge handoff log: none found for this game")
+    except OSError:
+        lines.append("Previous Bridge handoff log: unavailable")
+
+    lines += [
+        "Live game/WeMod connection: NOT VERIFIED (no game was launched)",
+        "Safety: READ-ONLY; no .NET installer, prefix modification, or Steam setting change.",
+    ]
+    return "\n".join(lines)
+
+
 def format_status(appid: str | None = None, *,
                   game_dir: Path | None = None,
                   steam_root: Path | None = None) -> str:
@@ -736,9 +1174,9 @@ def format_status(appid: str | None = None, *,
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] in {"status", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"status", "preflight", "netfx-status", "netfx-plan", "prefix-catalog", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"}:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("action", choices=("status", "netfx-status", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
+        parser.add_argument("action", choices=("status", "preflight", "netfx-status", "netfx-plan", "prefix-catalog", "ui-state", "register", "configure", "setup", "trainer-on", "trainer-off", "trainer-gpu-off", "trainer-gpu-on", "play", "upgrade"))
         parser.add_argument("--steam-root", type=Path)
         parser.add_argument("--game-dir", type=Path)
         parser.add_argument("--appid")
@@ -746,13 +1184,34 @@ def main() -> int:
         parser.add_argument("--client", type=Path)
         parser.add_argument("--enable-trainer", action="store_true")
         parser.add_argument("--delay-seconds", type=int, default=12)
+        parser.add_argument("--installer-path", type=Path)
+        parser.add_argument("--expected-sha256")
         parser.add_argument("--confirm", action="store_true")
         args = parser.parse_args()
         if args.action == "ui-state":
             if not args.appid:
                 raise ValueError("UI state requires --appid")
-            action, reason = primary_ui_state(args.appid)
+            action, reason = primary_ui_state(args.appid, game_dir=args.game_dir)
             print(action + "\t" + reason.replace("\t", " ").replace("\n", " "))
+            return 0
+        if args.action == "preflight":
+            if not args.appid:
+                raise ValueError("Preflight requires --appid")
+            print(preflight_report(args.appid, game_dir=args.game_dir))
+            return 0
+        if args.action == "prefix-catalog":
+            if not args.appid or not args.game_dir:
+                raise ValueError("Prepared-prefix lookup requires --appid and --game-dir")
+            print(prepared_wemod_prefix_options(args.appid, args.game_dir))
+            return 0
+        if args.action == "netfx-plan":
+            if not args.appid or not args.game_dir:
+                raise ValueError("Isolated .NET plan requires --appid and --game-dir")
+            print(netfx_isolation_plan(
+                args.appid, args.game_dir,
+                installer_path=args.installer_path,
+                expected_sha256=args.expected_sha256
+            ))
             return 0
         if args.action == "netfx-status":
             if not args.appid or not args.game_dir:
