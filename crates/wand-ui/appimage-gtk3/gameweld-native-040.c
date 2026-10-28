@@ -3008,8 +3008,8 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         "GameWeld cannot verify these Steam settings. Game and WeMod must "
         "be closed before launch. No Steam setting will be changed. Continue?":
         use_uri?
-        "Retry launch via the registered Steam URL handler?\\n\\n"
-        "%.140s (Steam App ID %s)\\n\\n"
+        "Retry launch via the registered Steam URL handler?\n\n"
+        "%.140s (Steam App ID %s)\n\n"
         "Only use this if the previous Steam launch attempt was UNCONFIRMED and "
         "Steam is not already launching the game. This asks xdg-open to use "
         "steam://rungameid; it does not edit Steam Launch Options or select "
