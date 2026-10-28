@@ -88,6 +88,24 @@ class SteamHandoffTests(unittest.TestCase):
             time.sleep(0.02)
         self.assertEqual(marker.read_text(), "done")
 
+    def test_steam_handoff_removes_only_gameweld_private_environment(self):
+        marker = self.root / "env-probe"
+        self.fake_steam('env > "' + str(marker) + '"\n')
+        overrides = {
+            "APPDIR": "/tmp/gameweld-private-dev-AppDir",
+            "GAMEWELD_PC2_ENABLE_STEAM_WEMOD": "1",
+            "DISPLAY": ":99",
+        }
+        with patch.dict(os.environ, overrides), patch.object(
+                steam, "associated_process_count", return_value=0):
+            status, report = self.capture(
+                "3008130", steam=str(self.command), duration=0.1)
+        self.assertEqual(status, 2, report)
+        values = marker.read_text().splitlines()
+        self.assertFalse(any(line.startswith("APPDIR=") for line in values))
+        self.assertFalse(any(line.startswith("GAMEWELD_PC2_") for line in values))
+        self.assertIn("DISPLAY=:99", values)
+
     def test_steam_uri_transport_uses_registered_handler_without_shell(self):
         marker = self.root / "uri-argv"
         self.fake_steam('printf "%s\n" "$@" > "' + str(marker) + '"\nexit 0\n')
