@@ -217,6 +217,19 @@ def build_plan(args) -> tuple[dict, dict[str, str]]:
         "PACKAGEPREFIX": "false",
         "TROUBLESHOOT": "False",
     }
+    options_source = Path(__file__).resolve().with_name("gameweld-deckcheatz-session-options.py")
+    if options_source.is_symlink() or not options_source.is_file():
+        raise Blocked("DeckCheatz custom launch-option composer unavailable")
+    spec = importlib.util.spec_from_file_location("gw_dc_custom_opts", options_source)
+    if not spec or not spec.loader:
+        raise Blocked("Cannot import custom launch-option composer")
+    options = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(options)
+    try:
+        argv, overrides, option_report = options.compose(
+            getattr(args, "steam_launch_options", "") or "", argv, overrides)
+    except options.OptionBlocked as exc:
+        raise Blocked(str(exc)) from exc
     return {
         "provider": PROVIDER,
         "mode": "experimental_direct_no_steam_options",
@@ -229,6 +242,8 @@ def build_plan(args) -> tuple[dict, dict[str, str]]:
         "game_working_directory": str(game.parent),
         "argv": argv,
         "env_overrides": overrides,
+        "steam_custom_launch_composition": option_report,
+        "current_steam_options_user_verified": bool(getattr(args, "steam_options_verified", False)),
         "steam_launch_options_modified": False,
         "will_invoke_steam_client": False,
         "steam_runtime_container_reproduced": False,
@@ -255,6 +270,10 @@ def main(argv=None) -> int:
     parser.add_argument("--compatdata", type=Path)
     parser.add_argument("--steam-root", type=Path)
     parser.add_argument("--game-arg", action="append", default=[])
+    parser.add_argument("--steam-launch-options", default="",
+                        help="Exact CURRENT Steam Properties text; supported shell-free subset")
+    parser.add_argument("--steam-options-verified", action="store_true",
+                        help="User confirmed the selected game's current Steam Properties text")
     parser.add_argument("--confirm-prefix-changes", action="store_true")
     parser.add_argument("--experimental-direct-launch", action="store_true")
     args = parser.parse_args(argv)
@@ -272,6 +291,8 @@ def main(argv=None) -> int:
         print(json.dumps(plan, indent=2))
         return 0
 
+    if not args.steam_options_verified:
+        raise Blocked("Direct launch requires confirmation of CURRENT Steam Launch Options")
     if not (args.confirm_prefix_changes and args.experimental_direct_launch):
         raise Blocked("Direct launch requires BOTH --confirm-prefix-changes and "
                       "--experimental-direct-launch; preview before consenting")
