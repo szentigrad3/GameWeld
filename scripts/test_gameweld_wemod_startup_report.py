@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SOURCE = Path(__file__).with_name("gameweld-wemod-startup-report.py")
 spec = importlib.util.spec_from_file_location("gw_wemod_startup_report", SOURCE)
@@ -72,7 +73,7 @@ class WeModStartupReportTests(unittest.TestCase):
 
     def test_v2_log_root_is_separate_from_old_live_handoff(self):
         with tempfile.TemporaryDirectory() as home:
-            with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": home}):
+            with patch.dict(os.environ, {"XDG_STATE_HOME": home}):
                 self.assertEqual(mod.default_log_root(v2=True),
                                  Path(home) / "wand/sessions")
                 self.assertEqual(mod.default_log_root(),
