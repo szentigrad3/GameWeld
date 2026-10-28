@@ -126,9 +126,38 @@ class SteamManagedWeModTests(unittest.TestCase):
         # start a second trainer when the new launch route is selected.
         self.assertIn('pc2_deckcheatz_session_helper("status",id,NULL,pending', GUI)
         self.assertIn('strstr(pending,"\\\"session_armed\\\": true")', GUI)
-        self.assertIn('!strcmp(mode,"direct_wrapper_configured")', GUI)
+        self.assertIn('!strcmp(mode,"trainer_wrapper_present")', GUI)
         self.assertIn('!strcmp(mode,"incompatible_bridge_selected")', GUI)
+        self.assertIn('!strcmp(mode,"unverified")', GUI)
+        self.assertIn('"preserve-custom-options"', GUI)
+        self.assertIn('pc2_deckcheatz_saved_readiness(g,NULL,readiness,sizeof readiness)', GUI)
         self.assertIn("GameWeld will not start a second WeMod client", GUI)
+
+    def test_no_options_button_is_not_disabled_by_discovery_guard(self):
+        # PC2 disables any button absent from the centralized safe-action
+        # allowlist. This was the actual cause of the user's inert Play button.
+        self.assertIn('strcmp(s, "Play with WeMod (no Steam settings)")', GUI)
+        self.assertIn('static void pc2_guard_button(GtkWidget *w)', GUI)
+        self.assertIn('g_signal_connect_data(deckcheatz_test,"clicked",(GCallback)on_pc2_bridge_primary', GUI)
+        self.assertIn('G.pc2_deckcheatz_overview_play=direct;', GUI)
+        self.assertIn('pc2_bridge_apply_primary("checking"', GUI)
+
+    def test_no_options_respects_user_steam_commands_without_autosetup(self):
+        self.assertIn('pc2_deckcheatz_saved_readiness(g,NULL,readiness,sizeof readiness)', GUI)
+        self.assertIn('if(launcher&&*launcher){', GUI)
+        self.assertIn('"--preserve-custom-options"', GUI)
+        self.assertIn('pc2_steam_launch_selected(0);', GUI)
+        self.assertIn('[executable, "-applaunch", appid]', STEAM)
+        self.assertNotIn('"%command%"', STEAM)
+        self.assertIn('Steam will choose Proton and use its EXISTING Launch Options.', GUI)
+        # Separate live-prefix WeMod handoff must not require an editable
+        # saved Steam launch option or call the legacy mutating setup.
+        start = GUI.index('if(pc2_steam_no_options_allowed()&&!expect_deckcheatz){')
+        end = GUI.index('if(use_uri && !pc2_steam_wemod_allowed())', start)
+        branch = GUI[start:end]
+        self.assertNotIn('pc2_deckcheatz_auto_steam_setup(', branch)
+        self.assertNotIn('pc2_deckcheatz_find_launcher(', branch)
+        self.assertIn('GameWeld can restore only its own backed-up wrapper.', branch)
 
     def test_no_options_one_click_reuses_live_prefix_safety_rechecks(self):
         self.assertIn("if(j->steam_managed_wemod && (!strcmp(state,", GUI)
