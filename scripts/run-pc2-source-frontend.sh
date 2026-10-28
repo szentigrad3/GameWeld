@@ -33,10 +33,20 @@ unset GAMEWELD_PC2_ENABLE_STEAM_LAUNCH
 unset GAMEWELD_PC2_ENABLE_NATIVE_WRAPPER
 unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD
 unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON
+unset GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS
 if [[ "${1:-}" == "--enable-deckcheatz-onebutton-test" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1
   export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
   printf '%s\n' 'PC2 Steam-managed DeckCheatz experiment: automatic consented Steam shutdown/restart registers one-shot wrapper with protected backup; no manual Launch Options paste.'
+  set --
+fi
+# One initial in-app consent; no Steam shutdown, no per-game Launch Options
+# editing, and no fallback to the legacy one-shot wrapper registration.
+if [[ "${1:-}" == "--enable-no-steam-options-test" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
+  export GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS=1
+  printf '%s\n' 'PC2 NO-STEAM-OPTIONS experiment: normal Steam game launch then consented live-prefix WeMod client handoff. Never restarts Steam or edits its Launch Options. Attachment still needs verification.'
   set --
 fi
 if [[ "${1:-}" == "--enable-steam-wemod-test" && "$#" -eq 1 ]]; then
