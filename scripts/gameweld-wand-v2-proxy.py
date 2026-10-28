@@ -39,7 +39,8 @@ def source_path() -> Path:
     return root
 
 def invoke(appid: str, game_dir: Path, *, launch: bool,
-           accept_unreadable_process_risk: bool = False) -> dict:
+           accept_unreadable_process_risk: bool = False,
+           client_software_rendering: bool = False) -> dict:
     if not appid.isdecimal() or not 0 < int(appid) < 2**32:
         raise ProxyBlocked("invalid_appid")
     if not game_dir.is_absolute():
@@ -53,6 +54,8 @@ def invoke(appid: str, game_dir: Path, *, launch: bool,
         cmd.append("--approve-existing-prefix-change")
     if accept_unreadable_process_risk:
         cmd.append("--accept-unreadable-process-risk")
+    if client_software_rendering:
+        cmd.append("--client-software-rendering")
     p = subprocess.run(cmd, env=env, capture_output=True, text=True,
                        timeout=40, check=False)
     if p.returncode not in (0, 2, 3):
@@ -75,10 +78,13 @@ def main(argv=None):
     p.add_argument("--launch-client", action="store_true")
     p.add_argument("--accept-unreadable-process-risk", action="store_true",
                    help="only with explicit GameWeld user approval; <=8 unreadable processes")
+    p.add_argument("--client-software-rendering", action="store_true",
+                   help="opt-in Electron GPU fallback for WeMod.exe only")
     a = p.parse_args(argv)
     try:
         r = invoke(a.appid, a.install_dir, launch=a.launch_client,
-                   accept_unreadable_process_risk=a.accept_unreadable_process_risk)
+                   accept_unreadable_process_risk=a.accept_unreadable_process_risk,
+                   client_software_rendering=a.client_software_rendering)
     except (ProxyBlocked, OSError, subprocess.TimeoutExpired) as exc:
         r = {"state":"blocked", "reason_code":
              str(exc) if isinstance(exc, ProxyBlocked) else type(exc).__name__,
