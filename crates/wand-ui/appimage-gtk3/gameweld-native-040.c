@@ -6442,8 +6442,8 @@ static void on_pc2_deckcheatz_copy_steam_option(GtkButton*b,void*d){
           "Paste the combined command into this game's Steam Properties > General > Launch Options. "
           "Restore Original can recover the saved original. GameWeld did not edit Steam.",merged);
     log_line("Steam AppID %s: %s; copied safe combined command; Steam unchanged.",
-             g->appid,backup_reused?"verified existing original backup":
-             "saved a new original backup");
+             g->appid,current_baseline?"stored/verified current empty baseline; historical original unknown":
+             backup_reused?"verified existing original backup":"saved a new original backup");
 done:
     free(preview);free(saved);free(original);free(merged);free(confirmed);free(confirmed_original);free(decision);
 }
@@ -6471,8 +6471,16 @@ static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     }
     json_string(result,"original_launch_option",original,18000);
     if(!strstr(result,"\"COPY_ORIGINAL_TO_STEAM_MANUALLY\""))goto done;
+    int current_baseline=strstr(result,"\"verified_current_before_setup\"")!=NULL;
     GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
         GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+        current_baseline?
+        "Copy the VERIFIED CURRENT Steam launch setting for %.140s?\n\n"
+        "You confirmed the setting was empty before this new GameWeld setup. "
+        "The older historical backup was UNVERIFIED; this is NOT evidence "
+        "that your original custom launch commands were empty.\n\n"
+        "This only copies the empty setting to your clipboard; Steam won't "
+        "be modified automatically. Paste only if this is what you want. Continue?":
         "Copy the saved ORIGINAL Steam launch option for %.140s?\n\n"
         "This replaces only clipboard text. You must paste it into Steam "
         "Properties > General > Launch Options. A blank original is valid "
@@ -6482,9 +6490,15 @@ static void on_pc2_deckcheatz_restore_steam_option(GtkButton*b,void*d){
     if(accepted){
         GtkClipboard*clip=gtk_clipboard_get(gdk_atom_intern_static_string("CLIPBOARD"));
         if(clip)gtk_clipboard_set_text(clip,original,-1);
-        pc2_steam_option_message("Original Steam launch option copied",
+        pc2_steam_option_message(current_baseline?
+            "Verified current Steam launch setting copied":
+            "Original Steam launch option copied",
+            current_baseline?
+            "This was the explicitly verified EMPTY setting before GameWeld setup, "
+            "not a proven historical original. Review Steam Properties before pasting. "
+            "GameWeld has not modified Steam.":
             "Paste the saved original text into Steam's Launch Options field. "
-            "GameWeld has not modified Steam.",original[0]?original:"(original field was empty)");
+            "GameWeld has not modified Steam.",original[0]?original:"(saved field was empty)");
     }
 done:
     free(result);free(original);
