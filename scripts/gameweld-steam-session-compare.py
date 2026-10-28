@@ -22,7 +22,7 @@ MAX_LOG_FILE_BYTES = 67108864
 # A line can match more than one category; the raw line NEVER enters JSON.
 ERROR_WORDS = re.compile(
     r"traceback|exception|error|fail(?:ed|ure)?|fatal|not found|"
-    r"missing|unable|cannot|could not|timed out|permission denied|^ERR:\\s*$", re.I)
+    r"missing|unable|cannot|could not|timed out|permission denied|^ERR:\s*$", re.I)
 CATEGORY_WORDS = {
     "steam_or_proton": re.compile(r"steam|proton|compatdata|wine|wineserver", re.I),
     "game_or_process": re.compile(r"game|process|spawn|launch|exit|returncode", re.I),
