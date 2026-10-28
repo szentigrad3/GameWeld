@@ -311,6 +311,24 @@ class PreserveTests(unittest.TestCase):
         self.assertEqual(options.load_backup(APPID, ACCOUNT, self.backups), old)
         self.assertEqual(self.file.read_bytes(), original)
 
+    def test_setup_retry_is_idempotent(self):
+        original = "PROTON_LOG=1 %command% -dx11"
+        self.make_config(original)
+        code, output, error = self.run_main_with_fixture("--save-original")
+        self.assertEqual(code, 0, error)
+        self.assertEqual(json.loads(output)["result"], "ORIGINAL_BACKUP_SAVED")
+        backup = options.backup_file(APPID, ACCOUNT, self.backups)
+        initial = backup.read_bytes()
+        modified = backup.stat().st_mtime_ns
+        code, output, error = self.run_main_with_fixture("--save-original")
+        self.assertEqual(code, 0, error)
+        result = json.loads(output)
+        self.assertEqual(result["result"], "ORIGINAL_BACKUP_REUSED")
+        self.assertTrue(result["backup_reused"])
+        self.assertEqual(backup.read_bytes(), initial)
+        self.assertEqual(backup.stat().st_mtime_ns, modified)
+        self.unchanged()
+
     def test_preexisting_gameweld_state_can_be_public_but_backups_are_private(self):
         state = self.root / "preexisting-state"
         gw = state / "gameweld"
