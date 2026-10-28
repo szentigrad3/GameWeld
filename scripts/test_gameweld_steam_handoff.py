@@ -88,6 +88,36 @@ class SteamHandoffTests(unittest.TestCase):
             time.sleep(0.02)
         self.assertEqual(marker.read_text(), "done")
 
+    def test_steam_uri_transport_uses_registered_handler_without_shell(self):
+        marker = self.root / "uri-argv"
+        self.fake_steam('printf "%s\n" "$@" > "' + str(marker) + '"\nexit 0\n')
+        with patch.object(steam, "associated_process_count", return_value=0):
+            status, report = self.capture(
+                "3008130", steam=str(self.command), transport="steam-uri",
+                duration=0.1, require_idle_before_launch=True)
+        self.assertEqual(status, 2, report)  # A URI request is not startup proof
+        self.assertEqual(marker.read_text().strip(), "steam://rungameid/3008130")
+        self.assertIn("Steam launch transport: steam-uri", report)
+        self.assertIn("UNCONFIRMED", report)
+
+    def test_steam_uri_mode_does_not_bypass_existing_game_gate(self):
+        marker = self.root / "should-not-launch"
+        self.fake_steam('touch "' + str(marker) + '"\n')
+        with patch.object(steam, "associated_process_count", return_value=1):
+            status, report = self.capture(
+                "3008130", steam=str(self.command), transport="steam-uri",
+                duration=0, require_idle_before_launch=True)
+        self.assertEqual(status, 3, report)
+        self.assertFalse(marker.exists())
+
+    def test_invalid_transport_fails_before_any_subprocess(self):
+        with patch.object(steam.subprocess, "Popen") as spawn:
+            status, report = self.capture(
+                "3008130", steam=str(self.command), transport="shell", duration=0)
+        self.assertEqual(status, 3)
+        spawn.assert_not_called()
+        self.assertIn("unsupported Steam transport", report)
+
     def test_steam_handoff_observes_new_exact_process_association(self):
         # Mock one newly observed process after issuing the command. An
         # already-running unrelated/old association must not prove a new start.
