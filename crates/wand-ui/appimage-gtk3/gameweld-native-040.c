@@ -2983,6 +2983,39 @@ static void pc2_steam_launch_notice(const char *reason){
     gtk_dialog_run((GtkDialog*)dialog);
     gtk_widget_destroy(dialog);
 }
+/* Fail closed at the actual Steam launch transport, not only at the
+ * primary Library button. An alternate UI action must never announce a
+ * WeMod launch when Steam has no saved %command% wrapper configured. */
+static int pc2_deckcheatz_saved_readiness(const Game*g,
+                                         const char*launcher,
+                                         char*report,size_t cap){
+    if(!g||!launcher||!*launcher||!report||cap<256)return 0;
+    report[0]=0;
+    const char*appdir=getenv("APPDIR");
+    char helper[4096]={0};
+    if(appdir&&appdir[0]=='/')
+        snprintf(helper,sizeof helper,
+                 "%s/usr/libexec/gameweld-deckcheatz-steam-readiness.py",appdir);
+    else snprintf(helper,sizeof helper,"gameweld-deckcheatz-steam-readiness.py");
+    int fd[2];if(pipe(fd)!=0)return 0;
+    pid_t child=fork();
+    if(child==0){
+        close(fd[0]);setsid();
+        dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);
+        close(fd[1]);clear_desktop_activation_env();
+        if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
+            execlp("python3","python3",helper,"--appid",g->appid,
+                   "--launcher",launcher,"--compat-steam-root",
+                   g->steam_root,(char*)NULL);
+        else
+            execlp("python3","python3",helper,"--appid",g->appid,
+                   "--launcher",launcher,(char*)NULL);
+        _exit(127);
+    }
+    close(fd[1]);
+    if(child<0){close(fd[0]);return 0;}
+    return bounded_child_output(child,fd[0],report,cap,12);
+}
 static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_uri){
     if(!pc2_steam_launch_allowed()){
         if(expect_deckcheatz){
@@ -3006,6 +3039,35 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
     const char*id=g->appid;
     if(!id[0]||id[0]=='0'||strlen(id)>10){log_line("Invalid Steam ID; launch blocked.");return;}
     for(const char*q=id;*q;q++)if(!isdigit((unsigned char)*q)){log_line("Invalid Steam ID; launch blocked.");return;}
+    if(expect_deckcheatz){
+        char verified[8192]={0},mode[80]={0},why[900]={0};
+        if(!pc2_deckcheatz_saved_readiness(g,launcher,verified,sizeof verified)){
+            pc2_steam_launch_notice("Cannot verify this game's saved DeckCheatz Steam "
+                                    "wrapper; no Steam launch was requested.");
+            return;
+        }
+        json_string(verified,"state",mode,sizeof mode);
+        json_string(verified,"reason",why,sizeof why);
+        if(strcmp(mode,"direct_wrapper_configured") &&
+           strcmp(mode,"one_shot_shim_configured")){
+            char notice[1200];
+            snprintf(notice,sizeof notice,
+                "Steam can launch this game normally, but GameWeld cannot "
+                "launch WeMod through Steam because no validated per-game "
+                "DeckCheatz wrapper is configured. No Steam request was sent. "
+                "Use the backed-up one-time wrapper setup in GameWeld. %.500s",
+                why[0]?why:"Saved Steam Launch Options contain no verified wrapper.");
+            pc2_steam_launch_notice(notice);
+            return;
+        }
+        if(!strcmp(mode,"one_shot_shim_configured") &&
+           !pc2_session_configured_for_game(id)){
+            pc2_steam_launch_notice(
+                "The saved one-shot wrapper does not match the installed "
+                "GameWeld session shim. No game or trainer was launched.");
+            return;
+        }
+    }
     char request_path[160],expected_uri[160];
     snprintf(request_path,sizeof request_path,"/api/launch-preview?appid=%s",id);
     snprintf(expected_uri,sizeof expected_uri,"steam://rungameid/%s",id);
@@ -3131,34 +3193,10 @@ static void pc2_deckcheatz_steam_onebutton(void){
         log_line("DeckCheatz launcher not installed; offering managed installation.");
         pc2_deckcheatz_request_install(2);return;
     }
-    const char*appdir=getenv("APPDIR");
-    char helper[4096]={0},report[8192]={0};
-    if(appdir&&appdir[0]=='/')
-        snprintf(helper,sizeof helper,
-                 "%s/usr/libexec/gameweld-deckcheatz-steam-readiness.py",appdir);
-    else snprintf(helper,sizeof helper,"gameweld-deckcheatz-steam-readiness.py");
-    int fd[2];if(pipe(fd)!=0){pc2_steam_launch_notice(
-        "Cannot inspect saved Steam launch options.");return;}
-    pid_t child=fork();
-    if(child==0){
-        close(fd[0]);setsid();
-        dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);
-        close(fd[1]);clear_desktop_activation_env();
-        if(g->steam_root[0] && pc2_deckcheatz_folder(g->steam_root))
-            execlp("python3","python3",helper,"--appid",g->appid,
-                   "--launcher",launcher,"--compat-steam-root",
-                   g->steam_root,(char*)NULL);
-        else
-            execlp("python3","python3",helper,"--appid",g->appid,
-                   "--launcher",launcher,(char*)NULL);
-        _exit(127);
-    }
-    close(fd[1]);
-    if(child<0){close(fd[0]);pc2_steam_launch_notice(
-        "Could not start Steam Launch Options inspector.");return;}
-    if(!bounded_child_output(child,fd[0],report,sizeof report,12)){
-        pc2_steam_launch_notice("Could not verify saved Steam Launch Options. "
-                                "No game launched.");return;
+    char report[8192]={0};
+    if(!pc2_deckcheatz_saved_readiness(g,launcher,report,sizeof report)){
+        pc2_steam_launch_notice("Cannot inspect this game's saved DeckCheatz "
+                                "Steam wrapper. No Steam launch was requested.");return;
     }
     char state[80]={0},reason[800]={0};
     json_string(report,"state",state,sizeof state);
