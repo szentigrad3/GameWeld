@@ -72,6 +72,27 @@ class StalledSteamReportTests(unittest.TestCase):
                 "3008130", Path("/mnt/games/Steam"))
         self.assertEqual(state["state"], "no_exact_per_game_mapping")
 
+    def test_existing_prefix_runtime_is_labeled_historical_not_live(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            folder = root / "steamapps/compatdata/3008130"
+            folder.mkdir(parents=True)
+            (folder / "config_info").write_text("sample")
+            tool = root / "steamapps/common/Proton - Experimental"
+            tool.mkdir(parents=True)
+            (tool / "proton").write_text("#!/bin/sh")
+            class Resolver:
+                @staticmethod
+                def _compatdata_runtime_hint(_folder):
+                    return "Proton - Experimental", str(tool)
+            with patch.object(report, "peer", return_value=Resolver):
+                result = report.last_prefix_runtime_hint("3008130", root)
+            self.assertEqual(result["state"], "prefix_runtime_resolved")
+            self.assertTrue(result["launcher_file_present"])
+            self.assertFalse(result["current_steam_selection_verified"])
+            self.assertNotIn(directory, str(result))
+
     def test_pending_one_shot_status_reads_without_changing_token(self):
         import json
         import os
