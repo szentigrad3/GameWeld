@@ -92,11 +92,11 @@ def read_config_bytes(config: Path) -> bytes:
         raise SetupBlocked("Steam localconfig is too large")
     return data
 
-def replace_launch_option(raw: bytes, appid: str, expected: str, new: str, options) -> bytes:
-    """Replace ONLY the value token for the exact app's existing LaunchOptions.
+def saved_option_value(raw: bytes, appid: str, options) -> str | None:
+    """Read the exact game's saved option, distinguishing absent from empty.
 
-    VDF comments, unrelated apps, formatting and ordering stay byte-identical.
-    Missing or duplicate fields block rather than rewriting the full VDF.
+    Read-only callers may use None as a SETUP NEEDED hint. Only the closed-
+    Steam registration path is permitted to treat absence as an empty baseline.
     """
     try:
         text = raw.decode("utf-8")
@@ -111,11 +111,31 @@ def replace_launch_option(raw: bytes, appid: str, expected: str, new: str, optio
         node = options.only(node, key)
         if node is None:
             raise SetupBlocked("Steam game config entry is missing")
-    if not isinstance(node, dict) or options.only(node, "LaunchOptions") != expected:
+    if not isinstance(node, dict):
+        raise SetupBlocked("Steam game config entry is not a VDF object")
+    value = options.only(node, "LaunchOptions")
+    if value is not None and (not isinstance(value, str)
+                              or len(value) > options.MAX_OPTION):
+        raise SetupBlocked("Steam Launch Options have an unsafe value")
+    return value
+
+
+def replace_launch_option(raw: bytes, appid: str, expected: str | None,
+                          new: str, options) -> bytes:
+    """Replace the exact option, or insert it into an existing app entry.
+
+    Missing entries are inserted only after closed-Steam preflight by the
+    caller. Unrelated VDF bytes, comments, and other games are left intact.
+    Duplicate or altered entries always block.
+    """
+    saved = saved_option_value(raw, appid, options)
+    if saved != expected:
         raise SetupBlocked("Steam Launch Options changed; no edit made")
+    text = raw.decode("utf-8")
     stack = []
     pending = None
     locations = []
+    app_closings = []
     for m in LEX.finditer(text):
         tok = m.group()
         if tok.startswith("//") or tok.startswith("/*"):
@@ -129,6 +149,8 @@ def replace_launch_option(raw: bytes, appid: str, expected: str, new: str, optio
         if tok == "}":
             if pending is not None or not stack:
                 raise SetupBlocked("Unexpected VDF closing brace")
+            if tuple(stack) == (*TARGET, appid):
+                app_closings.append(m.start())
             stack.pop()
             continue
         if tok.startswith('"'):
@@ -146,11 +168,22 @@ def replace_launch_option(raw: bytes, appid: str, expected: str, new: str, optio
                     raise SetupBlocked("Steam LaunchOptions changed while preparing")
                 locations.append((m.start(), m.end()))
             pending = None
-    if pending is not None or stack or len(locations) != 1:
-        raise SetupBlocked("No unique exact game LaunchOptions token; no edit made")
-    start, end = locations[0]
+    if pending is not None or stack or len(app_closings) != 1:
+        raise SetupBlocked("No unique exact game VDF entry; no edit made")
     escaped = json.dumps(new, ensure_ascii=False)
-    changed = (text[:start] + escaped + text[end:]).encode("utf-8")
+    if expected is None:
+        if locations:
+            raise SetupBlocked("An unexpected Steam LaunchOptions field appeared")
+        # No pre-existing key: retain the original app entry verbatim and add
+        # the sole new pair just before its closing brace.
+        at = app_closings[0]
+        changed = (text[:at] + ' "LaunchOptions" ' + escaped + ' ' +
+                   text[at:]).encode("utf-8")
+    else:
+        if len(locations) != 1:
+            raise SetupBlocked("No unique exact game LaunchOptions token; no edit made")
+        start, end = locations[0]
+        changed = (text[:start] + escaped + text[end:]).encode("utf-8")
     if len(changed) > MAX_VDF:
         raise SetupBlocked("Steam config would exceed size limit")
     # Verify the modified structure with the same strict parser.
@@ -218,7 +251,11 @@ def register_steam_shim(appid: str, *, state_root: Path | None = None):
     options = peer("gameweld-steam-launch-options-preserve.py", "gw_auto_steam_options")
     session = peer("gameweld-deckcheatz-session.py", "gw_auto_steam_session")
     cfg, account = options.find_config(appid, None, None)
-    original = options.launch_option(cfg, appid)
+    # Steam is confirmed closed. A missing option on disk is now an explicit
+    # empty baseline, not evidence about a running client's cached options.
+    previous = read_config_bytes(cfg)
+    saved = saved_option_value(previous, appid, options)
+    original = saved if saved is not None else ""
     session.install_wrapper()
     wrapper = session.installed_wrapper_path()
     proposed, decision = session.compose(original, wrapper, appid)
@@ -227,8 +264,7 @@ def register_steam_shim(appid: str, *, state_root: Path | None = None):
                 "steam_launch_options_registered": True}
     if not proposed or not decision.startswith("SAFE_"):
         raise SetupBlocked("Custom launch syntax is too complex to preserve automatically: " + decision)
-    previous = read_config_bytes(cfg)
-    updated = replace_launch_option(previous, appid, original, proposed, options)
+    updated = replace_launch_option(previous, appid, saved, proposed, options)
     base = (state_root or Path(os.environ.get("XDG_STATE_HOME") or
             (Path.home() / ".local/state"))) / "gameweld/automatic-steam-setup" / account
     if not base.is_absolute():
@@ -251,7 +287,7 @@ def register_steam_shim(appid: str, *, state_root: Path | None = None):
         atomic_replace(cfg, updated, digest)
     finally:
         os.close(fd)
-    if options.launch_option(cfg, appid) != proposed:
+    if saved_option_value(read_config_bytes(cfg), appid, options) != proposed:
         raise SetupBlocked("Steam registration could not be verified")
     return {"result": "automatic_steam_wrapper_installed", "appid": appid,
             "steam_launch_options_registered": True,
