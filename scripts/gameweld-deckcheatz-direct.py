@@ -14,6 +14,7 @@ handoff; a successful subprocess spawn is NOT proof of a game/trainer launch.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -137,6 +138,32 @@ def validate_paths(args) -> tuple[Path, Path, Path, Path, Path, Path]:
     return launcher, proton, game, install, compat, steam
 
 
+def recognized_unreadable_host(process: Path) -> bool:
+    """Use the same conservative non-Wine desktop exception as live handoff.
+
+    Only exact names with inspected, non-WeMod cmdlines qualify. If either
+    inspector is unavailable, fail closed rather than guessing.
+    """
+    directory = Path(__file__).resolve().parent
+    live_path = directory / "gameweld-wemod-live-attach.py"
+    names_path = directory / "gameweld-prefix-runtime-preflight.py"
+    if (live_path.is_symlink() or names_path.is_symlink() or
+            not live_path.is_file() or not names_path.is_file()):
+        return False
+    try:
+        live_spec = importlib.util.spec_from_file_location("gw_direct_host_live", live_path)
+        names_spec = importlib.util.spec_from_file_location("gw_direct_host_names", names_path)
+        if not live_spec or not live_spec.loader or not names_spec or not names_spec.loader:
+            return False
+        live = importlib.util.module_from_spec(live_spec)
+        names = importlib.util.module_from_spec(names_spec)
+        live_spec.loader.exec_module(live)
+        names_spec.loader.exec_module(names)
+        return live.known_non_wine_host_with_unreadable_env(process, names)
+    except (OSError, ValueError, ImportError, AttributeError):
+        return False
+
+
 def active_game_process(appid: str, proc_root: Path = Path("/proc")) -> bool:
     """Fail closed if a same-user process is already tagged for this AppID."""
     count = 0
@@ -161,8 +188,12 @@ def active_game_process(appid: str, proc_root: Path = Path("/proc")) -> bool:
             # A process can exit during scanning; a vanished PID is harmless.
             continue
         except OSError as exc:
-            # Permission failures or other unreadable live processes must not
-            # turn an uncertain scan into authorization to launch.
+            # Some desktop services and Steam overlay UI processes expose
+            # their names but not their environments on KDE/CachyOS. Only the
+            # narrowly recognized host tasks may be skipped. Any Wine/Proton,
+            # WeMod or unknown inaccessible task still blocks direct launch.
+            if recognized_unreadable_host(item):
+                continue
             raise Blocked("Cannot verify whether a game process is active") from exc
     return False
 
