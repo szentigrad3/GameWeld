@@ -51,6 +51,14 @@ class SteamManagedWeModTests(unittest.TestCase):
         self.assertIn("GameWeld will NOT edit Steam Launch Options. Continue?", GUI)
         self.assertIn("Steam itself will launch the game", GUI)
 
+    def test_automatic_steam_setup_does_not_require_manual_copy(self):
+        self.assertIn("static void pc2_deckcheatz_auto_steam_setup(", GUI)
+        self.assertIn('"gameweld-deckcheatz-auto-steam-setup.py"', GUI)
+        self.assertIn('"--confirm","--shutdown-and-launch"', GUI)
+        self.assertIn("pc2_deckcheatz_auto_steam_setup(g->appid,launcher);", GUI)
+        self.assertIn("You will NOT paste or type anything in Steam.", GUI)
+        self.assertIn("Automatic Steam one-shot setup did not complete", GUI)
+
     def test_all_steam_deckcheatz_launches_require_verified_wrapper(self):
         self.assertIn("static int pc2_deckcheatz_saved_readiness(", GUI)
         self.assertIn("if(expect_deckcheatz){\n        char verified[8192]", GUI)
