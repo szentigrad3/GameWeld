@@ -2854,7 +2854,7 @@ static gboolean pc2_steam_launch_done(gpointer data){
     /* A verified game EXE or fresh AppID-associated process can lead to a
      * read-only WeMod check; trainer launch still has its own consent gate. */
     if(j->steam_managed_wemod && (!strcmp(state,"GAME EXECUTABLE OBSERVED") ||
-       !strcmp(state,"ASSOCIATED PROCESS OBSERVED")) &&
+       (!j->no_options_onebutton && !strcmp(state,"ASSOCIATED PROCESS OBSERVED"))) &&
        G.selected>=0 && G.selected<G.game_count &&
        !strcmp(G.games[G.selected].appid,j->appid)){
         pc2_steam_wemod_attach_selected_ex(0,j->no_options_onebutton?2:1,0);
