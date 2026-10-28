@@ -65,28 +65,44 @@ def classify_saved_option(option: str, launcher: Path, shim: Path, appid: str) -
             "reason": "No verified DeckCheatz Steam wrapper"}
 
 def saved_compatibility_bridge_state(appid: str, *, steam_root=None) -> dict:
-    """Inspect Steam's SAVED per-game compatibility tool, without mutation.
+    """Inspect SAVED per-title mapping without guessing the Steam live tool.
 
-    An installed compatibility tool is not proof it is selected. An old
-    GameWeld Bridge selected for this game is incompatible with wrapping
-    DeckCheatz outside the bridge: both try to supervise the same launch.
+    A missing *exact* mapping commonly means Steam uses a default Proton.
+    Neither that nor an old prefix's runtime proves the live Steam selection.
+    The user-provided Steam root is inspected in addition to native roots.
     """
+    info = {"source": "saved_steam_compatibility",
+            "live_client_selection_verified": False,
+            "steam_compatibility_modified": False}
+    if not appid.isdecimal() or not 0 < int(appid) < 2**32:
+        return {**info, "state": "invalid_appid"}
+    home = Path.home()
+    roots = ([Path(steam_root)] if steam_root is not None else []) + [
+        home / ".steam/root", home / ".steam/steam",
+        home / ".local/share/Steam",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+    ]
     try:
         bridge = import_peer("gameweld-steam-compat-bridge.py", "gw_dc_bridge_selection")
-        roots = [steam_root] if steam_root is not None else None
-        selected = bridge.steam_compat_selection(appid, steam_roots=roots)
+        selection = bridge.steam_compat_selection(appid, steam_roots=roots)
     except (OSError, ValueError, ImportError, AttributeError):
-        return {"state": "unverified", "source": "saved_steam_compatibility"}
-    if selected.startswith("GAMEWELD BRIDGE SELECTED"):
-        return {"state": "gameweld_bridge_selected",
-                "source": "saved_steam_compatibility",
-                "live_client_selection_verified": False}
-    if selected.startswith("OTHER TOOL SELECTED"):
-        return {"state": "other_compatibility_tool_selected",
-                "source": "saved_steam_compatibility",
-                "live_client_selection_verified": False}
-    return {"state": "unverified", "source": "saved_steam_compatibility",
-            "live_client_selection_verified": False}
+        return {**info, "state": "resolver_unavailable"}
+    if selection.startswith("GAMEWELD BRIDGE SELECTED"):
+        return {**info, "state": "gameweld_bridge_selected",
+                "exact_per_game_mapping": True}
+    if selection.startswith("OTHER TOOL SELECTED"):
+        return {**info, "state": "other_compatibility_tool_selected",
+                "exact_per_game_mapping": True}
+    if "conflicting saved tool mappings" in selection:
+        return {**info, "state": "conflicting_saved_mappings",
+                "exact_per_game_mapping": False}
+    if "no saved exact game mapping readable" in selection:
+        return {**info, "state": "no_exact_per_game_mapping",
+                "exact_per_game_mapping": False,
+                "explanation": "Steam may use a global/default compatibility tool. "
+                               "The saved per-game mapping does not identify its live tool."}
+    return {**info, "state": "unverified",
+            "exact_per_game_mapping": False}
 
 
 def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None) -> dict:
