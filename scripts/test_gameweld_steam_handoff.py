@@ -79,6 +79,65 @@ class SteamHandoffTests(unittest.TestCase):
         self.assertEqual(details[0][1], "redacted")
         self.assertEqual(details[0][2], "unavailable")
 
+    def test_wine_loader_is_ambiguous_and_windows_hint_is_redacted(self):
+        proc = self.root / "proc"
+        proc.mkdir()
+        item = proc / "525322"
+        item.mkdir()
+        (item / "environ").write_bytes(
+            b"SECRET_TOKEN=must-not-leak\0SteamAppId=3008130\0")
+        (item / "comm").write_text("wine64\n")
+        (item / "exe").symlink_to("/home/private/Proton/bin/wine64-preloader")
+        (item / "status").write_text(
+            "Name:\twine64\nState:\tS (sleeping)\nPPid:\t123\n")
+        (item / "cmdline").write_bytes(
+            b"/home/private/Proton/bin/wine64-preloader\0"
+            b"C:\\Program Files\\Some Game\\DyingLightGame.exe\0"
+            b"--private-token=must-not-leak\0")
+        details = steam.associated_process_details("3008130", str(proc))
+        self.assertEqual(details, [
+            (525322, "wine64", "wine64-preloader", "wine_loader_ambiguous")])
+        self.assertEqual(
+            steam.associated_process_context("3008130", 525322, str(proc)),
+            ("123", "S", "DyingLightGame.exe"))
+        self.assertEqual(
+            steam.associated_process_context("3008131", 525322, str(proc)),
+            ("unavailable", "?", "unavailable"))
+        self.assertNotIn("must-not-leak", repr(details))
+        self.assertNotIn("private", repr(details))
+
+    def test_wine_loader_without_safe_target_remains_unknown(self):
+        proc = self.root / "proc"
+        proc.mkdir()
+        item = proc / "300"
+        item.mkdir()
+        (item / "environ").write_bytes(b"SteamGameId=3008130\0")
+        (item / "comm").write_text("wine64\n")
+        (item / "exe").symlink_to("/tmp/Proton/bin/wine64-preloader")
+        (item / "status").write_text("PPid:\tnot-a-pid\nState:\tS (sleeping)\n")
+        (item / "cmdline").write_bytes(
+            b"wine64-preloader\0C:\\windows\\system32\\services.exe\0")
+        self.assertEqual(
+            steam.associated_process_context("3008130", 300, str(proc)),
+            ("unavailable", "S", "unavailable"))
+
+    def test_oversized_or_path_like_command_line_cannot_leak(self):
+        proc = self.root / "proc"
+        proc.mkdir()
+        item = proc / "301"
+        item.mkdir()
+        (item / "environ").write_bytes(b"SteamAppId=3008130\0")
+        (item / "comm").write_text("wine64\n")
+        (item / "cmdline").write_bytes(b"x" * 8193)
+        self.assertEqual(
+            steam.associated_process_context("3008130", 301, str(proc))[2],
+            "unavailable")
+        (item / "cmdline").write_bytes(
+            b"C:\\Users\\private\\token name.exe\0")
+        self.assertEqual(
+            steam.associated_process_context("3008130", 301, str(proc))[2],
+            "unavailable")
+
     def test_app_id_validation(self):
         for value in ("", "0", "01", " 1", "1;touch /tmp/x", "4294967296", "-1", "abc"):
             self.assertFalse(steam.valid_appid(value), value)
