@@ -30,15 +30,21 @@ def valid_appid(text: str) -> bool:
     )
 
 
-def associated_process_count(appid: str, root: str = "/proc") -> int:
+def associated_processes(appid: str, root: str = "/proc") -> list[pathlib.Path]:
+    """Return same-user PIDs with exact AppID environment tokens; no guessing.
+
+    Never expose a process's full environment or command line. The result is
+    only an association, not proof that the game executable is running.
+    """
     if not valid_appid(appid):
-        return 0
-    count, examined = 0, 0
+        return []
+    found = []
+    examined = 0
     expected = {(key + "=" + appid).encode() for key in KEYS}
     try:
         entries = os.scandir(root)
     except OSError:
-        return 0
+        return []
     with entries:
         for item in entries:
             if not item.name.isascii() or not item.name.isdecimal():
@@ -55,10 +61,59 @@ def associated_process_count(appid: str, root: str = "/proc") -> int:
                 if len(env) > MAX_ENV:
                     continue
                 if expected.intersection(env.split(b"\0")):
-                    count += 1
-            except (OSError, PermissionError):
+                    found.append(path)
+            except OSError:
+                # Missing/exiting/unreadable process: cannot infer identity.
                 continue
-    return count
+    return found
+
+
+def associated_process_count(appid: str, root: str = "/proc") -> int:
+    return len(associated_processes(appid, root))
+
+
+def _safe_process_basename(text: str) -> str:
+    name = os.path.basename(text.strip().removesuffix(" (deleted)"))
+    if not name or len(name) > 80:
+        return "unavailable"
+    if all(ch.isascii() and (ch.isalnum() or ch in "._+-") for ch in name):
+        return name
+    return "redacted"
+
+
+def associated_process_details(appid: str, root: str = "/proc") -> list[tuple[int, str, str, str]]:
+    """Read-only, redacted process roles; classification is NOT game proof."""
+    records = []
+    for directory in associated_processes(appid, root):
+        try:
+            pid = int(directory.name)
+            comm = _safe_process_basename((directory / "comm").read_text()[:128])
+        except (OSError, ValueError):
+            comm = "unavailable"
+            try:
+                pid = int(directory.name)
+            except ValueError:
+                continue
+        try:
+            executable = _safe_process_basename(os.readlink(directory / "exe"))
+        except OSError:
+            executable = "unavailable"
+        names = (comm + " " + executable).lower()
+        if any(part in names for part in (
+                "steamwebhelper", "steam-runtime", "steamservice",
+                "pressure-vessel", "reaper")):
+            role = "steam_helper"
+        elif any(part in names for part in (
+                "wineserver", "services.exe", "explorer.exe", "conhost.exe",
+                "winedevice.exe", "rpcss.exe", "plugplay.exe",
+                "wine64", "wine-preloader")):
+            role = "wine_runtime"
+        elif comm.lower().endswith(".exe"):
+            role = "windows_executable_candidate"
+        else:
+            role = "other_associated"
+        records.append((pid, comm, executable, role))
+    return sorted(records)
 
 
 def run_launch(appid: str, *, steam: str | None = None,
@@ -151,6 +206,8 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "launch"))
     parser.add_argument("--appid", required=True)
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--details", action="store_true",
+                        help="Read-only redacted process names for AppID associations")
     parser.add_argument("--transport", choices=("applaunch", "steam-uri"),
                         default="applaunch", help="Explicit Steam handoff transport")
     parser.add_argument("--require-idle-before-launch", action="store_true",
@@ -165,6 +222,14 @@ def main() -> int:
         ), flush=True)
         print("Read-only app-ID associated process count: " +
               str(associated_process_count(args.appid)), flush=True)
+        if args.details:
+            details = associated_process_details(args.appid)
+            if not details:
+                print("Process details: none visible", flush=True)
+            for pid, comm, executable, role in details:
+                print(f"AppID association: PID={pid} role={role} "
+                      f"comm={comm} executable={executable}", flush=True)
+            print("Process roles are heuristic; no game executable verified.", flush=True)
         print("No Steam command or trainer was launched.", flush=True)
         return 0
     if not args.confirm:
