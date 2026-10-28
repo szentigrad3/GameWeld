@@ -426,9 +426,14 @@ def main(argv=None):
         cfg, account = find_config(args.appid, args.steam_root, args.steam_account)
         if args.restore_original:
             old = load_backup(args.appid, account)
+            verified_current = verified_baseline_file(args.appid, account)
             result = {"result": "COPY_ORIGINAL_TO_STEAM_MANUALLY",
                       "appid": args.appid, "steam_account": account,
                       "original_launch_option": old,
+                      "restore_source": ("verified_current_before_setup"
+                                         if verified_current.exists() else
+                                         "protected_original_backup"),
+                      "historical_original_unverified": verified_current.exists(),
                       "steam_launch_options_changed": False}
         else:
             old = launch_option(cfg, args.appid)
