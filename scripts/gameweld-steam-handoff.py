@@ -136,6 +136,9 @@ def run_launch(appid: str, *, steam: str | None = None,
     if previous:
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
     if require_idle_before_launch and previous:
+        for pid, comm, executable, role in associated_process_details(appid):
+            print(f"Blocking AppID association: PID={pid} role={role} "
+                  f"comm={comm} executable={executable}", flush=True)
         print("Launch result: FAILED (this Steam AppID already has a running associated process).", flush=True)
         print("The game and any WeMod session must be closed before requesting a new wrapper launch.", flush=True)
         return 3
