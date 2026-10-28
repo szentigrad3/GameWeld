@@ -140,8 +140,9 @@ def find_install(root: Path, appid: str) -> tuple[Path, Path, Path]:
     return matches[0]
 
 
-def choose_exe(install: Path, selected: Path | None = None) -> Path:
-    if selected is None:
+def choose_exe(install: Path, selected: Path | None = None, *,
+               ignore_game_exe_env: bool = False) -> Path:
+    if selected is None and not ignore_game_exe_env:
         raw = os.environ.get("GAME_EXE")
         if raw:
             selected = Path(raw)
@@ -176,11 +177,56 @@ def choose_exe(install: Path, selected: Path | None = None) -> Path:
                 re.sub(r"[^a-z0-9]", "", x.stem.casefold())]
     if len(selected) == 1:
         return selected[0]
+    # Some official executables insert "Game" and architecture suffixes
+    # between the game's title words: e.g. DyingLightGame_TheBeast_x64_rwdi.exe.
+    # Accept only a UNIQUE all-title-token match, not a fuzzy best guess.
+    def words(value: str) -> list[str]:
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+        return re.findall(r"[a-z0-9]+", spaced.casefold())
+
+    title_words = [x for x in words(install.name)
+                   if x not in {"the", "a", "an", "of", "and", "edition", "definitive"}
+                   and len(x) >= 3]
+    if len(title_words) >= 2:
+        strong = []
+        for candidate in candidates:
+            name_parts = words(candidate.stem)
+            position = 0
+            for token in title_words:
+                try:
+                    position = name_parts.index(token, position) + 1
+                except ValueError:
+                    break
+            else:
+                # Don't misidentify utilities or launchers as the game binary.
+                if not set(name_parts) & {"launcher", "setup", "uninstall",
+                                          "crashreporter", "settings", "redist"}:
+                    strong.append(candidate)
+        if len(strong) == 1:
+            return strong[0]
     # A generic game might have separate launcher/tools/bootstrap exe files.
     # The first/x64 path is NEVER an acceptable automatic fallback.
     listed = "; ".join(str(x.relative_to(install)) for x in candidates[:15])
     raise DiscoveryBlocked("Ambiguous game executables: " + listed +
                            ". Pass --game-exe (or GAME_EXE).")
+
+
+def resolve_exe_for_install(appid: str, install: Path) -> Path:
+    """Read-only Steam manifest-backed executable resolution for GameWeld UI."""
+    if not APPID.fullmatch(appid) or int(appid) >= 2**32:
+        raise DiscoveryBlocked("Invalid Steam AppID")
+    if (not install.is_dir() or install.is_symlink() or
+            install.parent.name != "common" or
+            install.parent.parent.name != "steamapps"):
+        raise DiscoveryBlocked("Install directory must be a plain Steam common title")
+    manifest = install.parent.parent / ("appmanifest_" + appid + ".acf")
+    if manifest.is_symlink() or not manifest.is_file():
+        raise DiscoveryBlocked("No matching Steam appmanifest")
+    app_state = only(vdf(manifest), "AppState")
+    if not isinstance(app_state, dict) or (only(app_state, "appid") != appid or
+            only(app_state, "installdir") != install.name):
+        raise DiscoveryBlocked("Steam appmanifest does not match selected title")
+    return choose_exe(install, ignore_game_exe_env=True)
 
 
 def proton_version(compat: Path) -> str:
@@ -297,9 +343,12 @@ def main(argv=None) -> int:
                         help="Read-only resolved command and paths (default)")
     action.add_argument("--launch", action="store_true",
                         help="Experimental direct launch requiring two separate acknowledgements")
+    action.add_argument("--resolve-game-exe", action="store_true",
+                        help="Read-only manifest-backed EXE resolution for the selected game")
     parser.add_argument("--appid", required=True)
     parser.add_argument("--steam-root", type=Path)
     parser.add_argument("--game-exe", type=Path)
+    parser.add_argument("--install-dir", type=Path)
     parser.add_argument("--proton-dir", type=Path)
     parser.add_argument("--launcher", type=Path)
     parser.add_argument("--game-arg", action="append", default=[])
@@ -307,6 +356,15 @@ def main(argv=None) -> int:
     parser.add_argument("--experimental-direct-launch", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.resolve_game_exe:
+            if (args.install_dir is None or args.confirm_prefix_changes or
+                    args.experimental_direct_launch or args.game_exe is not None):
+                raise DiscoveryBlocked("EXE resolution requires --install-dir only; never launches")
+            exe = resolve_exe_for_install(args.appid, args.install_dir)
+            print(json.dumps({"status": "resolved", "selected": str(exe),
+                              "method": "unique_manifest_backed_title_match",
+                              "game_launched": False, "steam_options_modified": False}))
+            return 0
         plan, flags = build(args)
         if not args.launch:
             if args.confirm_prefix_changes or args.experimental_direct_launch:
