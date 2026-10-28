@@ -107,7 +107,7 @@ class SteamHandoffTests(unittest.TestCase):
         self.assertTrue(marker.exists())
         self.assertIn("Recognized existing WeMod-only Wine client(s): 1", report)
         self.assertIn("STEAM_ASSOCIATION_ONLY", report)
-        self.assertIn("NOT VERIFIED", report)
+        self.assertIn("game EXE not verified", report)
 
     def test_steam_launch_aborts_if_wemod_only_evidence_changes(self):
         marker = self.root / "steam-not-invoked"
