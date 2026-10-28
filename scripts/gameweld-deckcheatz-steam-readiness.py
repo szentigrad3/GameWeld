@@ -105,7 +105,8 @@ def saved_compatibility_bridge_state(appid: str, *, steam_root=None) -> dict:
             "exact_per_game_mapping": False}
 
 
-def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None) -> dict:
+def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None,
+              compat_steam_root=None) -> dict:
     options = import_peer("gameweld-steam-launch-options-preserve.py", "gw_steam_read")
     shimmod = import_peer("gameweld-deckcheatz-session.py", "gw_shim_read")
     try:
@@ -132,7 +133,8 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
         original = options.launch_option(cfg, appid)
         shim = shimmod.installed_wrapper_path()
         result = classify_saved_option(original, launcher, shim, appid)
-        selection = saved_compatibility_bridge_state(appid)
+        selection = saved_compatibility_bridge_state(
+            appid, steam_root=compat_steam_root or steam_root)
         result["saved_compatibility"] = selection
         if selection["state"] == "gameweld_bridge_selected":
             result["state"] = "incompatible_bridge_selected"
@@ -167,10 +169,13 @@ def main(argv=None):
     p.add_argument("--launcher", required=True, type=Path)
     p.add_argument("--steam-root", type=Path)
     p.add_argument("--steam-account")
+    p.add_argument("--compat-steam-root", type=Path,
+                   help="Game's Steam root to inspect for compatibility mapping only")
     args = p.parse_args(argv)
     try:
         report = readiness(args.appid, args.launcher,
-                           steam_root=args.steam_root, steam_account=args.steam_account)
+                           steam_root=args.steam_root, steam_account=args.steam_account,
+                           compat_steam_root=args.compat_steam_root)
     except (OSError, ValueError) as exc:
         report = {"appid": args.appid, "state": "unknown", "reason": str(exc),
                   "steam_options_modified": False}
