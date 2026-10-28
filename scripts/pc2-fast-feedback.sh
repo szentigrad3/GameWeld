@@ -12,6 +12,7 @@ echo "Crash-diagnostic helper syntax: PASS"
 python3 -m py_compile \
   scripts/gameweld-wemod-native-route.py \
   scripts/gameweld-wemod-live-attach.py \
+  scripts/gameweld-deckcheatz-session-options.py \
   scripts/gameweld-prepared-prefix-import.py \
   scripts/gameweld-prepared-prefix-activate.py \
   scripts/gameweld-prefix-runtime-preflight.py \
@@ -61,6 +62,8 @@ suites=(
   test_gameweld_prefix_runtime_preflight.py
   test_gameweld_wemod_native_route.py
   test_gameweld_wemod_live_attach.py
+  test_gameweld_deckcheatz_direct.py
+  test_gameweld_deckcheatz_session_options.py
   test_gameweld_prepared_prefix_import.py
   test_gameweld_prepared_prefix_activate.py
 )
