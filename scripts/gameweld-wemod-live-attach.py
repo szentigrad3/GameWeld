@@ -341,17 +341,40 @@ def launch(report: dict, private: dict, *, approved: bool,
     except OSError:
         log_path.unlink(missing_ok=True)
         raise
+    # A successfully spawned Proton helper can immediately reject a verb,
+    # fail to find a DLL, or exit without ever showing WeMod.exe.
+    # Poll only this newly-created child for a short bounded interval.
+    # Do not wait for the game or terminate any process.
+    early_exit = None
+    observe = getattr(child, "poll", None)
+    if callable(observe):
+        end = time.monotonic() + 1.5
+        while time.monotonic() < end:
+            early_exit = observe()
+            if early_exit is not None:
+                break
+            time.sleep(0.15)
     return {
-        "mode": "EXPERIMENTAL_CLIENT_HANDOFF_REQUESTED",
+        "mode": ("EXPERIMENTAL_CLIENT_SUBPROCESS_EXITED_EARLY"
+                 if early_exit is not None else "EXPERIMENTAL_CLIENT_HANDOFF_REQUESTED"),
         "pid": child.pid,
         "log": str(log_path),
+        "proton_subprocess_exited_early": early_exit is not None,
+        "proton_subprocess_early_exit_code": early_exit,
+        "wemod_window_verified": False,
         "steam_launch_options_changed": False,
         "steam_bridge_used": False,
         "new_game_launched": False,
         "wemod_gpu_disabled": disable_gpu,
         "trainer_attachment_verified": False,
         "in_game_activation_verified": False,
-        "message": "Client subprocess requested; confirm WeMod connection and actual in-game effect manually."
+        "message": (
+            "Proton subprocess exited during startup. WeMod window/attachment NOT verified. "
+            "Use gameweld-wemod-startup-report.py --appid to inspect the private log safely."
+            if early_exit is not None else
+            "Proton subprocess requested; WeMod window/attachment NOT verified. "
+            "If no WeMod window appears, run gameweld-wemod-startup-report.py --appid."
+        )
     }
 
 
