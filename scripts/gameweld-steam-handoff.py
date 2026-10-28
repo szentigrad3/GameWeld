@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import re
+import stat
 import shutil
 import subprocess
 import sys
@@ -21,6 +23,146 @@ KEYS = ("SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID")
 MAX_PROC = 8192
 MAX_ENV = 128 * 1024
 OBSERVE_SECONDS = 12
+
+
+
+# Steam's own client logs can reveal whether it began a launch, even when a
+# game process exits too quickly to be seen in a /proc polling interval.
+# Never print raw Steam log lines: they may include user paths or launch tokens.
+LOG_NAMES = ("gameprocess_log.txt", "console_log.txt", "console-linux.txt")
+LOG_READ_CAP = 256 * 1024
+LOG_MATCH_CAP = 1000
+
+
+def steam_log_dir(steam_root: pathlib.Path | None = None) -> pathlib.Path | None:
+    choices = []
+    if steam_root is not None:
+        choices.append(steam_root)
+    home = pathlib.Path.home()
+    choices.extend((
+        home / ".steam/steam",
+        home / ".steam/root",
+        home / ".local/share/Steam",
+    ))
+    visited = set()
+    for choice in choices:
+        try:
+            canonical = choice.resolve(strict=True)
+            if str(canonical) in visited:
+                continue
+            visited.add(str(canonical))
+            logs = canonical / "logs"
+            if logs.is_dir() and not logs.is_symlink():
+                return logs
+        except OSError:
+            continue
+    return None
+
+
+def _log_identity(path: pathlib.Path) -> tuple[int, int, int] | None:
+    try:
+        meta = path.lstat()
+        if not stat.S_ISREG(meta.st_mode) or meta.st_size < 0:
+            return None
+        return (meta.st_dev, meta.st_ino, meta.st_size)
+    except OSError:
+        return None
+
+
+def _steam_event_kind(line: str, appid: str) -> str | None:
+    # Exact AppID token, rather than matching another application's ID as
+    # a substring; do not echo any part of an untrusted log line.
+    id_pattern = rf"(?:\bAppID\s*[=: ]\s*|\bApp ID\s*[=: ]\s*|\bappid\s*[=: ]\s*){re.escape(appid)}(?!\d)"
+    url_pattern = rf"\b(?:rungameid|launch)/{re.escape(appid)}(?!\d)"
+    if not (re.search(id_pattern, line, re.IGNORECASE) or
+            re.search(url_pattern, line, re.IGNORECASE)):
+        return None
+    lower = line.lower()
+    if "game process added" in lower:
+        return "process_added"
+    if "game process removed" in lower:
+        return "process_removed"
+    if "game process updated" in lower:
+        return "process_updated"
+    if "already running" in lower or "already active" in lower:
+        return "already_running"
+    if "failed" in lower or "error" in lower:
+        return "possible_error"
+    if "gameaction" in lower or "launchapp" in lower:
+        return "launch_action"
+    if "rungameid/" in lower or "executesteamurl" in lower:
+        return "url_request"
+    return "other"
+
+
+class SteamLogProbe:
+    """Read-only summary of newly appended Steam client log events.
+
+    Opening the log does not modify Steam settings, trigger a game, or read
+    any user credential store. Any rotation, truncation, inaccessible file, or
+    change of inode remains inconclusive.
+    """
+
+    def __init__(self, steam_root: pathlib.Path | None = None):
+        self.directory = steam_log_dir(steam_root)
+        self.before = {
+            name: _log_identity(self.directory / name) if self.directory else None
+            for name in LOG_NAMES
+        }
+
+    def summary(self, appid: str, *, historical: bool = False) -> list[str]:
+        if self.directory is None:
+            return ["Steam client logs: not located (status --steam-root may help)."]
+        output = []
+        available = 0
+        matched = 0
+        for name in LOG_NAMES:
+            path = self.directory / name
+            identity = _log_identity(path)
+            if identity is None:
+                continue
+            available += 1
+            previous = self.before.get(name)
+            if not historical and (previous is None or identity[:2] != previous[:2]
+                                   or identity[2] < previous[2]):
+                output.append(f"Steam log {name}: changed/rotated; inconclusive.")
+                continue
+            start = max(0, identity[2] - LOG_READ_CAP) if historical else previous[2]
+            # If the append exceeds the bounded window, we cannot claim to
+            # have observed every event.
+            if identity[2] - start > LOG_READ_CAP:
+                start = identity[2] - LOG_READ_CAP
+                output.append(f"Steam log {name}: appended data exceeded safety window.")
+            try:
+                with path.open("rb") as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        continue
+                    stream.seek(start)
+                    data = stream.read(LOG_READ_CAP)
+            except OSError:
+                output.append(f"Steam log {name}: unreadable; inconclusive.")
+                continue
+            if start:
+                first_break = data.find(b"\n")
+                data = data[first_break + 1:] if first_break >= 0 else b""
+            kinds = {}
+            for raw in data.splitlines()[-LOG_MATCH_CAP:]:
+                kind = _steam_event_kind(raw.decode("utf-8", "replace"), appid)
+                if kind:
+                    kinds[kind] = kinds.get(kind, 0) + 1
+            if kinds:
+                matched += sum(kinds.values())
+                labels = ", ".join(f"{k}={v}" for k, v in sorted(kinds.items()))
+                output.append(f"Steam log {name} AppID events: {labels}.")
+        if available == 0:
+            return ["Steam client logs: no supported log files readable."]
+        if matched == 0:
+            output.append(
+                "Steam log AppID activity: none observed in the inspected window "
+                "(NOT proof Steam ignored the request)."
+            )
+        output.append("Steam logs are diagnostic only; no game process or trainer is verified.")
+        return output
 
 
 def valid_appid(text: str) -> bool:
@@ -237,7 +379,8 @@ def associated_non_client_processes(
 def run_launch(appid: str, *, steam: str | None = None,
                duration: float = OBSERVE_SECONDS,
                require_idle_before_launch: bool = False,
-               transport: str = "applaunch") -> int:
+               transport: str = "applaunch",
+               steam_root: pathlib.Path | None = None) -> int:
     if transport not in ("applaunch", "steam-uri"):
         print("Launch result: FAILED (unsupported Steam transport).", flush=True)
         return 3
@@ -248,6 +391,7 @@ def run_launch(appid: str, *, steam: str | None = None,
         return 3
     print("Steam executable: FOUND", flush=True)
     print("Steam launch transport: " + transport, flush=True)
+    log_probe = SteamLogProbe(steam_root)
     previous = associated_process_count(appid)
     if previous:
         print(f"Steam app-ID associated processes BEFORE launch: {previous}", flush=True)
@@ -312,12 +456,16 @@ def run_launch(appid: str, *, steam: str | None = None,
                     if status is not None and status != 0:
                         print(f"Steam command exit status: {status}", flush=True)
                         print("Launch result: FAILED (Steam command returned an error).", flush=True)
+                        for note in log_probe.summary(appid):
+                            print(note, flush=True)
                         return 3
                     observed = associated_process_count(appid)
                     if observed and (not previous or observed > previous):
                         print(f"Steam app-ID associated processes: {observed}", flush=True)
                         print("Launch result: STEAM_ASSOCIATION_OBSERVED", flush=True)
                         print("Game executable, visible window and trainer: NOT VERIFIED.", flush=True)
+                        for note in log_probe.summary(appid):
+                            print(note, flush=True)
                         return 0
                     if time.monotonic() >= deadline:
                         if status is None:
@@ -328,6 +476,8 @@ def run_launch(appid: str, *, steam: str | None = None,
                             print(f"Existing app-ID associated processes: {observed}", flush=True)
                         print("Launch result: UNCONFIRMED (no new game-associated process evidence).", flush=True)
                         print("Steam may still be starting the game; check Steam or its game logs.", flush=True)
+                        for note in log_probe.summary(appid):
+                            print(note, flush=True)
                         return 2
                     time.sleep(0.5)
             finally:
@@ -351,6 +501,10 @@ def main() -> int:
     parser.add_argument("action", choices=("status", "launch"))
     parser.add_argument("--appid", required=True)
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--steam-root", type=pathlib.Path,
+                        help="Steam client root to inspect read-only logs")
+    parser.add_argument("--steam-log-summary", action="store_true",
+                        help="Report sanitized, AppID-scoped Steam log event counts")
     parser.add_argument("--details", action="store_true",
                         help="Read-only redacted process names for AppID associations")
     parser.add_argument("--transport", choices=("applaunch", "steam-uri"),
@@ -377,13 +531,17 @@ def main() -> int:
                       f"comm={comm} executable={executable} PPID={parent} "
                       f"state={state} windows_target_hint={target}", flush=True)
             print("Process roles and Windows target hints are heuristic; no game executable verified.", flush=True)
+        if args.steam_log_summary:
+            for note in SteamLogProbe(args.steam_root).summary(args.appid, historical=True):
+                print(note, flush=True)
         print("No Steam command or trainer was launched.", flush=True)
         return 0
     if not args.confirm:
         parser.error("Steam launch requires an explicit --confirm from GameWeld's user dialog")
     return run_launch(args.appid,
                       require_idle_before_launch=args.require_idle_before_launch,
-                      transport=args.transport)
+                      transport=args.transport,
+                      steam_root=args.steam_root)
 
 
 if __name__ == "__main__":
