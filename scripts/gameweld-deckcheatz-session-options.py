@@ -7,6 +7,10 @@ Unknown wrappers/expressions fail closed rather than dropping custom options.
 from __future__ import annotations
 import re
 import shlex
+import argparse
+import importlib.util
+import json
+from pathlib import Path
 
 class OptionBlocked(ValueError):
     pass
@@ -91,3 +95,32 @@ def compose(text: str, command: list[str], env: dict[str, str]) -> tuple[list[st
         "original_user_options_remain_in_steam": True,
         "steam_runtime_supervisor_reproduced": False,
     }
+
+
+def read_saved_options(appid: str) -> dict:
+    """Inspect Steam's SAVED option for autofill, never assert it matches the live UI."""
+    source = Path(__file__).resolve().with_name("gameweld-steam-launch-options-preserve.py")
+    if source.is_symlink() or not source.is_file():
+        return {"status": "unknown", "reason": "Launch option inspector unavailable"}
+    try:
+        spec = importlib.util.spec_from_file_location("gw_dc_saved_options", source)
+        if not spec or not spec.loader:
+            raise OptionBlocked("Launch option inspector unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        config, _account = module.find_config(appid, None, None)
+        value = module.launch_option(config, appid)
+        return {"status": "saved_snapshot", "value": value,
+                "warning": "Verify against CURRENT Steam Properties; saved options may be stale"}
+    except (OSError, ValueError) as exc:
+        return {"status": "unknown", "reason": str(exc)}
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--read-saved", action="store_true")
+    p.add_argument("--appid", required=True)
+    args = p.parse_args()
+    if not args.read_saved:
+        p.error("Only read-only saved-options inspection is exposed")
+    print(json.dumps(read_saved_options(args.appid)))
