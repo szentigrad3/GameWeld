@@ -2958,7 +2958,10 @@ static void *pc2_steam_launch_worker(void *data){
          * ordinary game launch. */
         int request_sent=strstr(j->output,"Steam applaunch command: STARTED")!=NULL ||
                          strstr(j->output,"Steam steam-uri command: STARTED")!=NULL;
-        if(!request_sent){
+        int explicit_failure=strstr(j->output,"Launch result: FAILED")!=NULL;
+        if(!request_sent || explicit_failure){
+            /* No confirmed launch transport, or Steam reported a hard error.
+             * Never keep a trainer token armed after a definite failure. */
             char ignored[2048]={0};
             pc2_deckcheatz_session_helper("disarm",j->appid,NULL,ignored,sizeof ignored);
         }else if(strstr(j->output,"Launch result: STEAM_ASSOCIATION_ONLY") ||
