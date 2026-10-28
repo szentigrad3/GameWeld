@@ -35,6 +35,7 @@ unset GAMEWELD_PC2_ENABLE_STEAM_WEMOD
 unset GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON
 unset GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS
 unset GAMEWELD_PC2_USE_WAND_V2
+unset GAMEWELD_PC2_WEMOD_SOFTWARE_RENDERING
 if [[ "${1:-}" == "--enable-deckcheatz-onebutton-test" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_DECKCHEATZ_ONEBUTTON=1
   export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
@@ -48,6 +49,17 @@ if [[ "${1:-}" == "--enable-no-steam-options-test" && "$#" -eq 1 ]]; then
   export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
   export GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS=1
   printf '%s\n' 'PC2 NO-STEAM-OPTIONS experiment: normal Steam game launch then consented live-prefix WeMod client handoff. Never restarts Steam or edits its Launch Options. Attachment still needs verification.'
+  set --
+fi
+# Separate diagnostic trial: disable GPU acceleration for the WeMod Electron
+# client only. Not a Steam/Game/Proton GPU setting, and no automatic fallback.
+if [[ "${1:-}" == "--enable-v2-wemod-gpu-safe-test" && "$#" -eq 1 ]]; then
+  export GAMEWELD_PC2_ENABLE_STEAM_LAUNCH=1
+  export GAMEWELD_PC2_ENABLE_STEAM_WEMOD=1
+  export GAMEWELD_PC2_ENABLE_NO_STEAM_OPTIONS=1
+  export GAMEWELD_PC2_USE_WAND_V2=1
+  export GAMEWELD_PC2_WEMOD_SOFTWARE_RENDERING=1
+  printf '%s\n' 'PC2 Wand v2 GPU-safe test: Electron software rendering for WeMod.exe only. Steam/game graphics and Launch Options unchanged. No duplicate launch or auto fallback.'
   set --
 fi
 # Explicit v2 development route. Requires an independently installed, user-owned
