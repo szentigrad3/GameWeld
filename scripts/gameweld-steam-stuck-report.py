@@ -107,11 +107,17 @@ def saved_steam_option_state(appid: str) -> dict:
     """Summarize current saved option shape without leaking commands or paths."""
     try:
         options = peer("gameweld-steam-launch-options-preserve.py", "gw_stall_saved_options")
+        setup = peer("gameweld-deckcheatz-auto-steam-setup.py", "gw_stall_first_run")
         cfg, _account = options.find_config(appid, None, None)
-        saved = options.launch_option(cfg, appid)
+        saved = setup.saved_option_value(setup.read_config_bytes(cfg), appid, options)
     except (OSError, ValueError) as exc:
         return {"state": "unknown", "reason_category": type(exc).__name__,
                 "live_steam_cache_verified": False}
+    if saved is None:
+        return {"state": "missing_saved_launch_options_field",
+                "placeholder_count": 0, "live_steam_cache_verified": False,
+                "raw_option_text_included": False,
+                "next_step": "GameWeld managed setup only, after approved Steam shutdown"}
     try:
         tokens = shlex.split(saved)
     except ValueError:
@@ -216,6 +222,7 @@ def diagnose(appid: str, root: Path, install_dir: Path | None = None) -> dict:
     result["game_install_manifest_resolved"] = install_dir is not None
     result["lifecycle"] = life
     result["recognized_launcher_processes"] = recognized_launchers()
+    result["recognized_launcher_scope"] = "Same-user processes, not confirmed AppID-specific"
     result["saved_steam_launch_options"] = saved_steam_option_state(appid)
     result["saved_steam_compatibility"] = saved_compatibility_tool_state(appid, root)
     result["last_prefix_runtime"] = last_prefix_runtime_hint(appid, root)
