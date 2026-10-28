@@ -59,8 +59,10 @@ func classifyAssociatedProcess(comm,executable string) string {
 		strings.Contains(s,"plugplay.exe") {return "wine_runtime"}
 	// A Windows .exe name is only a heuristic, never game proof.
 	if strings.HasSuffix(strings.ToLower(comm),".exe") {return "windows_executable_candidate"}
+	// wine64-preloader also hosts game code, so its binary name alone
+	// is NOT enough to label this process as a harmless runtime helper.
 	if strings.Contains(s,"wine64")||strings.Contains(s,"wine-preloader") {
-		return "wine_runtime"
+		return "wine_loader_ambiguous"
 	}
 	return "other_associated"
 }
