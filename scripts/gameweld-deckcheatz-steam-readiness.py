@@ -64,6 +64,31 @@ def classify_saved_option(option: str, launcher: Path, shim: Path, appid: str) -
     return {**info, "state": "needs_setup",
             "reason": "No verified DeckCheatz Steam wrapper"}
 
+def saved_compatibility_bridge_state(appid: str, *, steam_root=None) -> dict:
+    """Inspect Steam's SAVED per-game compatibility tool, without mutation.
+
+    An installed compatibility tool is not proof it is selected. An old
+    GameWeld Bridge selected for this game is incompatible with wrapping
+    DeckCheatz outside the bridge: both try to supervise the same launch.
+    """
+    try:
+        bridge = import_peer("gameweld-steam-compat-bridge.py", "gw_dc_bridge_selection")
+        roots = [steam_root] if steam_root is not None else None
+        selected = bridge.steam_compat_selection(appid, steam_roots=roots)
+    except (OSError, ValueError, ImportError, AttributeError):
+        return {"state": "unverified", "source": "saved_steam_compatibility"}
+    if selected.startswith("GAMEWELD BRIDGE SELECTED"):
+        return {"state": "gameweld_bridge_selected",
+                "source": "saved_steam_compatibility",
+                "live_client_selection_verified": False}
+    if selected.startswith("OTHER TOOL SELECTED"):
+        return {"state": "other_compatibility_tool_selected",
+                "source": "saved_steam_compatibility",
+                "live_client_selection_verified": False}
+    return {"state": "unverified", "source": "saved_steam_compatibility",
+            "live_client_selection_verified": False}
+
+
 def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None) -> dict:
     options = import_peer("gameweld-steam-launch-options-preserve.py", "gw_steam_read")
     shimmod = import_peer("gameweld-deckcheatz-session.py", "gw_shim_read")
@@ -91,6 +116,18 @@ def readiness(appid: str, launcher: Path, *, steam_root=None, steam_account=None
         original = options.launch_option(cfg, appid)
         shim = shimmod.installed_wrapper_path()
         result = classify_saved_option(original, launcher, shim, appid)
+        selection = saved_compatibility_bridge_state(appid)
+        result["saved_compatibility"] = selection
+        if selection["state"] == "gameweld_bridge_selected":
+            result["state"] = "incompatible_bridge_selected"
+            result["reason"] = (
+                "Steam's saved per-game compatibility selection is GameWeld Bridge. "
+                "DeckCheatz must receive Steam's actual Proton command, not a "
+                "nested GameWeld Bridge launcher. In Steam > Properties > "
+                "Compatibility, select a verified working Proton tool, restart "
+                "Steam to reload saved settings, and retry. No game launched.")
+            result["steam_account"] = account
+            return result
         if result["state"] == "one_shot_shim_configured":
             # Saved text alone does not prove the installed shim still exists
             # or matches the source we reviewed. A stale shim could strand a
