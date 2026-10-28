@@ -53,11 +53,12 @@ class Blocked(ValueError):
     pass
 
 
-def default_log_root() -> Path:
+def default_log_root(*, v2: bool = False) -> Path:
     xdg = os.environ.get("XDG_STATE_HOME")
     if xdg and not Path(xdg).is_absolute():
         raise Blocked("XDG_STATE_HOME is not absolute")
-    return (Path(xdg) if xdg else Path.home() / ".local/state") / "gameweld/wemod-live"
+    base = Path(xdg) if xdg else Path.home() / ".local/state"
+    return base / ("wand/sessions" if v2 else "gameweld/wemod-live")
 
 
 def choose_log(appid: str, root: Path) -> Path:
@@ -131,12 +132,15 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--appid", required=True)
     parser.add_argument("--log", type=Path, help="explicit same-user private log (otherwise latest matching AppID)")
+    parser.add_argument("--v2", action="store_true", help="use isolated Wand v2 private session logs, never legacy handoff logs")
     args = parser.parse_args(argv)
     try:
         if not VALID_APPID.fullmatch(args.appid) or int(args.appid) >= 2 ** 32:
             raise Blocked("Invalid Steam AppID")
-        path = args.log if args.log is not None else choose_log(args.appid, default_log_root())
+        path = args.log if args.log is not None else choose_log(
+            args.appid, default_log_root(v2=args.v2))
         result = summarize(args.appid, path)
+        result["launcher_channel"] = "wand_v2_private_session" if args.v2 else "gameweld_live_handoff"
     except (Blocked, OSError) as exc:
         # Do not return exception text containing a user-supplied path.
         print(json.dumps({"steam_appid": args.appid,
