@@ -231,5 +231,94 @@ class AutoSteamTests(unittest.TestCase):
         self.assertFalse(result["game_window_verified"])
         self.assertFalse(result["wemod_attachment_verified"])
 
+    def _managed_restore_fixture(self, raw):
+        from types import SimpleNamespace
+        self.config.write_bytes(raw)
+        cfg, account = self.config, "4548901"
+        wrapper = self.root / "steam-session.py"
+        wrapper.write_text("#!/usr/bin/python3")
+        wrapper.chmod(0o700)
+        backup_original = []
+        disarmed = []
+        opts = SimpleNamespace(
+            find_config=lambda appid, root, user: (cfg, account),
+            parse_vdf=self.opts.parse_vdf, only=self.opts.only,
+            tokens=self.opts.tokens,
+            save_backup=lambda appid, user, old, **kw: backup_original.append(old),
+            load_backup=lambda appid, user: backup_original[0],
+        )
+        def compose(old, dest, aid):
+            command = ("/usr/bin/python3 " + str(dest) +
+                       " run --appid " + aid + " -- %command%")
+            return (command + (" " + old if old else ""),
+                    "SAFE_GAME_FLAGS" if old else "SAFE_EMPTY")
+        session = SimpleNamespace(
+            install_wrapper=lambda: None,
+            installed_wrapper_path=lambda: wrapper,
+            compose=compose,
+            disarm=lambda appid: disarmed.append(appid),
+        )
+        def peers(name, label):
+            return opts if name.endswith("preserve.py") else session
+        return opts, disarmed, peers
+
+    def test_zero_paste_restore_of_explicit_empty_original(self):
+        opts, disarmed, peers = self._managed_restore_fixture(self.raw)
+        with patch.object(auto, "peer", side_effect=peers), \
+             patch.object(auto, "steam_is_running", return_value=False):
+            auto.register_steam_shim(self.APPID, state_root=self.root / "state")
+            self.assertNotEqual(self.config.read_bytes(), self.raw)
+            result = auto.restore_steam_shim(self.APPID, state_root=self.root / "state")
+        self.assertFalse(result["original_option_was_absent"])
+        self.assertEqual(self.config.read_bytes(), self.raw)
+        self.assertEqual(disarmed, [self.APPID])
+
+    def test_zero_paste_restore_of_originally_absent_field(self):
+        raw = self.raw.replace(b'"LaunchOptions" ""', b'"Another" "value"', 1)
+        opts, disarmed, peers = self._managed_restore_fixture(raw)
+        with patch.object(auto, "peer", side_effect=peers), \
+             patch.object(auto, "steam_is_running", return_value=False):
+            auto.register_steam_shim(self.APPID, state_root=self.root / "state")
+            self.assertIsNotNone(auto.saved_option_value(
+                self.config.read_bytes(), self.APPID, self.opts))
+            result = auto.restore_steam_shim(self.APPID, state_root=self.root / "state")
+        self.assertTrue(result["original_option_was_absent"])
+        self.assertEqual(self.config.read_bytes(), raw)
+        self.assertEqual(disarmed, [self.APPID])
+
+    def test_restore_preserves_post_setup_edits_to_other_games(self):
+        opts, disarmed, peers = self._managed_restore_fixture(self.raw)
+        with patch.object(auto, "peer", side_effect=peers), \
+             patch.object(auto, "steam_is_running", return_value=False):
+            auto.register_steam_shim(self.APPID, state_root=self.root / "state")
+            self.config.write_bytes(self.config.read_bytes().replace(
+                b'"LaunchOptions" "-safe"', b'"LaunchOptions" "-other"', 1))
+            result = auto.restore_steam_shim(self.APPID, state_root=self.root / "state")
+        self.assertTrue(result["other_game_settings_preserved"])
+        expected = self.raw.replace(b'"LaunchOptions" "-safe"',
+                                    b'"LaunchOptions" "-other"', 1)
+        self.assertEqual(self.config.read_bytes(), expected)
+        self.assertEqual(disarmed, [self.APPID])
+
+    def test_restore_blocks_changed_game_option_without_touching_config(self):
+        opts, disarmed, peers = self._managed_restore_fixture(self.raw)
+        with patch.object(auto, "peer", side_effect=peers), \
+             patch.object(auto, "steam_is_running", return_value=False):
+            auto.register_steam_shim(self.APPID, state_root=self.root / "state")
+            changed = self.config.read_bytes().replace(
+                b'"LaunchOptions" "/usr', b'"LaunchOptions" "CUSTOM /usr', 1)
+            self.config.write_bytes(changed)
+            with self.assertRaisesRegex(auto.SetupBlocked, "differ from managed"):
+                auto.restore_steam_shim(self.APPID, state_root=self.root / "state")
+        self.assertEqual(self.config.read_bytes(), changed)
+        self.assertEqual(disarmed, [])
+
+    def test_restore_never_writes_when_steam_running(self):
+        before = self.config.read_bytes()
+        with patch.object(auto, "steam_is_running", return_value=True):
+            with self.assertRaisesRegex(auto.SetupBlocked, "must be closed"):
+                auto.restore_steam_shim(self.APPID, state_root=self.root / "state")
+        self.assertEqual(self.config.read_bytes(), before)
+
 if __name__ == "__main__":
     unittest.main()
