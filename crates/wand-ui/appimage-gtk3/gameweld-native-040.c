@@ -634,6 +634,8 @@ static void on_pc2_deckcheatz_restore_steam_option(GtkButton*,void*);
 static int pc2_deckcheatz_find_launcher(char *,size_t);
 static void on_pc2_deckcheatz_preview(GtkButton*,void*);
 static void pc2_deckcheatz_flow(int experimental_launch);
+static void pc2_deckcheatz_steam_onebutton(void);
+static void pc2_deckcheatz_request_install(int resume_mode);
 static void on_pc2_deckcheatz_install(GtkButton*,void*);
 static void on_pc2_deckcheatz_check_update(GtkButton*,void*);
 static void on_pc2_deckcheatz_update(GtkButton*,void*);
@@ -3031,10 +3033,11 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
         expect_deckcheatz?
         "Launch using your EXISTING Steam DeckCheatz option?\n\n"
         "%.140s (Steam App ID %s)\n\n"
-        "Confirm you already added the DeckCheatz wemod wrapper and "
-        "%%command%% to THIS game in Steam Properties > Launch Options. "
-        "GameWeld cannot verify these Steam settings. Game and WeMod must "
-        "be closed before launch. No Steam setting will be changed. Continue?":
+        "GameWeld found a DeckCheatz wrapper in this game's SAVED Steam "
+        "Launch Options. The running Steam client may have newer unsaved "
+        "settings. Steam itself will launch the game and pass %%command%% "
+        "to DeckCheatz. Game and WeMod must be closed before launch. "
+        "No Steam setting will be changed. Continue?":
         use_uri?
         "Retry launch via the registered Steam URL handler?\n\n"
         "%.140s (Steam App ID %s)\n\n"
@@ -3091,6 +3094,90 @@ static void pc2_steam_launch_selected_transport(int expect_deckcheatz,int use_ur
 }
 static void pc2_steam_launch_selected(int expect_deckcheatz){
     pc2_steam_launch_selected_transport(expect_deckcheatz,0);
+}
+/* A real Steam-managed DeckCheatz session must receive Steam's %command%.
+ * Never invoke a reconstructed direct Proton command from primary Play.
+ * Inspect only saved Steam Launch Options (live cache may differ); fail closed
+ * rather than launching the game without a trainer or asking for command text. */
+static void pc2_deckcheatz_steam_onebutton(void){
+    if(!pc2_deckcheatz_onebutton_allowed() || !pc2_steam_launch_allowed())return;
+    if(G.selected<0||G.selected>=G.game_count){pc2_steam_launch_notice(
+        "Select an installed Steam game in Library.");return;}
+    Game*g=&G.games[G.selected];
+    if(!game_is_steam(g)||game_is_steam_shortcut(g)){pc2_steam_launch_notice(
+        "This private Steam DeckCheatz test requires an installed Steam game.");return;}
+    if(!g->appid[0]||strlen(g->appid)>10){pc2_steam_launch_notice(
+        "Steam AppID is missing or invalid.");return;}
+    char launcher[4096]={0};
+    if(!pc2_deckcheatz_find_launcher(launcher,sizeof launcher)){
+        log_line("DeckCheatz launcher not installed; offering managed installation.");
+        pc2_deckcheatz_request_install(2);return;
+    }
+    const char*appdir=getenv("APPDIR");
+    char helper[4096]={0},report[8192]={0};
+    if(appdir&&appdir[0]=='/')
+        snprintf(helper,sizeof helper,
+                 "%s/usr/libexec/gameweld-deckcheatz-steam-readiness.py",appdir);
+    else snprintf(helper,sizeof helper,"gameweld-deckcheatz-steam-readiness.py");
+    int fd[2];if(pipe(fd)!=0){pc2_steam_launch_notice(
+        "Cannot inspect saved Steam launch options.");return;}
+    pid_t child=fork();
+    if(child==0){
+        close(fd[0]);setsid();
+        dup2(fd[1],STDOUT_FILENO);dup2(fd[1],STDERR_FILENO);
+        close(fd[1]);clear_desktop_activation_env();
+        execlp("python3","python3",helper,"--appid",g->appid,
+               "--launcher",launcher,(char*)NULL);
+        _exit(127);
+    }
+    close(fd[1]);
+    if(child<0){close(fd[0]);pc2_steam_launch_notice(
+        "Could not start Steam Launch Options inspector.");return;}
+    if(!bounded_child_output(child,fd[0],report,sizeof report,12)){
+        pc2_steam_launch_notice("Could not verify saved Steam Launch Options. "
+                                "No game launched.");return;
+    }
+    char state[80]={0},reason[800]={0};
+    json_string(report,"state",state,sizeof state);
+    json_string(report,"reason",reason,sizeof reason);
+    if(!strcmp(state,"direct_wrapper_configured")){
+        log_line("Steam saved config includes DeckCheatz wrapper for %s. "
+                 "Steam client handles actual game launch; live option cache remains unverified.",
+                 g->name);
+        pc2_steam_launch_selected(1);
+        return;
+    }
+    if(!strcmp(state,"one_shot_shim_configured")){
+        if(!pc2_session_configured_for_game(g->appid)){
+            pc2_steam_launch_notice("A session wrapper appears in saved Steam settings, "
+                                    "but GameWeld could not validate the installed one-shot shim. "
+                                    "Nothing launched.");return;
+        }
+        log_line("Steam saved config contains validated one-shot DeckCheatz shim for %s.",g->name);
+        pc2_steam_launch_selected(1);return;
+    }
+    if(!strcmp(state,"needs_setup")){
+        GtkWidget*dlg=gtk_message_dialog_new((GtkWindow*)G.window,
+            GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,
+            "Steam Launch Options were discovered automatically for %.140s.\n\n"
+            "They do not yet contain a verified DeckCheatz Steam wrapper. "
+            "Steam has no supported per-launch override for this installed game's "
+            "%%command%% wrapper. GameWeld will NOT bypass Steam or overwrite "
+            "the running client's configuration.\n\n"
+            "Create a safe, backed-up Steam wrapper setup proposal now? "
+            "One-time Steam Properties setup is still required.",
+            g->name);
+        int ok=gtk_dialog_run((GtkDialog*)dlg)==GTK_RESPONSE_YES;
+        gtk_widget_destroy(dlg);
+        if(ok)on_pc2_deckcheatz_setup_session(NULL,NULL);
+        return;
+    }
+    char message[1024]={0};
+    snprintf(message,sizeof message,
+             "Saved Steam Launch Options cannot be verified for this game/account. "
+             "No game launched. %.650s",
+             reason[0]?reason:"Steam client may have an unsaved or missing option.");
+    pc2_steam_launch_notice(message);
 }
 static void on_pc2_steam_uri_fallback(GtkButton*b,void*d){
     (void)b;(void)d;
@@ -5745,7 +5832,7 @@ static void on_pc2_bridge_primary(GtkButton*b,void*d){
         /* In Steam-managed WeMod test mode, launch game-only via Steam,
          * then separately preview/confirm the client handoff. Legacy modes
          * retain their explicitly selected launch behaviour. */
-        if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_flow(1);
+        if(pc2_deckcheatz_onebutton_allowed())pc2_deckcheatz_steam_onebutton();
         else if(pc2_steam_wemod_allowed())pc2_steam_launch_selected(0);
         else if(pc2_native_wrapper_allowed())pc2_native_wrapper_action(1);
         else pc2_steam_launch_selected(1);
@@ -6449,7 +6536,8 @@ static gboolean pc2_deckcheatz_install_done(void *data){
         if(j->resume_mode>=0){
             if(j->selected_index==G.selected && G.selected>=0){
                 log_line("Resuming the selected DeckCheatz action after managed installation.");
-                pc2_deckcheatz_flow(j->resume_mode);
+                if(j->resume_mode==2)pc2_deckcheatz_steam_onebutton();
+                else pc2_deckcheatz_flow(j->resume_mode);
             }else log_line("DeckCheatz installed; game selection changed. Choose the game and launch action again.");
         }
     }else{
@@ -6501,7 +6589,8 @@ static void pc2_deckcheatz_request_install(int resume_mode){
     char existing[4096]={0};
     if(pc2_deckcheatz_find_launcher(existing,sizeof existing)){
         log_line("DeckCheatz 1.x already installed at %s; no download required.",existing);
-        if(resume_mode>=0)pc2_deckcheatz_flow(resume_mode);
+        if(resume_mode==2)pc2_deckcheatz_steam_onebutton();
+        else if(resume_mode>=0)pc2_deckcheatz_flow(resume_mode);
         return;
     }
     GtkWidget*consent=gtk_message_dialog_new((GtkWindow*)G.window,
