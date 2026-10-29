@@ -20,3 +20,11 @@ The development monitor's positive native gRPC smoke has been confirmed by its t
 The GameWeld bridge rejects out-of-range loopback ports and boolean game exit codes, requires both processes to start and requires explicit trainer cleanup evidence. This does **not** prove the WeMod UI rendered or that a trainer attached.
 
 The GTK Play with WeMod callback must not be switched to this experimental bridge until GameWeld supplies a real monitor in the correct Steam Proton/Wine session, preserves the game's actual launch command, and verifies game identity and cleanup. Do not change Steam Launch Options or compatibility selection.
+
+## Batch 6: read-only Steam context evidence
+
+`scripts/gameweld-wand-v2-live-context.py` inspects only current user's /proc process environment, checking AppID, actual compatdata directory, and Wine prefix. The diagnostic result `steam_session_context_candidate` deliberately **does not** mean the Windows executable or trainer attachment was verified. No process is launched, stopped, injected, or reconfigured.
+
+A positively matched Steam process is insufficient to enable the GameWeld button. Before live handoff, GameWeld must preserve Steam's real game launch and arguments, positively correlate the Windows process with the chosen installation, and start the separate monitor inside that same Wine server. Do not treat the experimental monitor's own direct-game spawn as a replacement for Steam's launch. Development session bridge stays fail-closed.
+
+The external Batch 6 DeckCheatz monitor removes `WAND_MONITOR_SESSION_TOKEN` from its game/trainer child environments to avoid disclosing its control credential. The upstream client rejects WeMod exit or closure while the game is still active as a successful session, and requests monitor shutdown.
