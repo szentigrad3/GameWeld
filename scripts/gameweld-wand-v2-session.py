@@ -61,11 +61,14 @@ def run(argv: list[str] | None = None) -> int:
         return blocked("upstream_monitor_partial_start")
     if not isinstance(report.get("game_exit_code"), int):
         return blocked("upstream_game_exit_unreported")
+    if report.get("trainer_cleanup_verified") is not True:
+        return blocked("upstream_trainer_cleanup_unverified")
     print(json.dumps({"state": "gameweld_wand_v2_session_finished", "appid": a.appid,
                       "game_exit_code": report.get("game_exit_code"),
                       "game_started": report.get("game_started", False),
                       "trainer_process_started": report.get("trainer_process_started", False),
                       "trainer_attachment_verified": False,
+                      "trainer_cleanup_verified": True,
                       "steam_launch_options_changed": False, "game_prefix_modified": False}))
     return 0
 
