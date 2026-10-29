@@ -1600,7 +1600,7 @@ static void start_job(JobType type,const char *appid,const char *doing) {
 }
 
 static gboolean job_done(void *vp) {
-    Job *j=vp; log_line("%s: %s",j->success?"OK":"FAILED",j->message?j->message:""); if(j->type==JOB_WEMOD&&j->provider_retry)log_line(j->success?"Universal launch: WeMod provider staging recovered automatically on the serialized retry.":"Universal launch: WeMod provider staging retry did not recover; no additional launch was started."); char *e=NULL; refresh_model(&e); free(e); refresh_ui();
+    Job *j=vp; log_line("%s: %s",j->success?"OK":"FAILED",j->message?j->message:""); if(j->type==JOB_WEMOD_V2)log_line("DeckCheatz v2: monitor session lifecycle only; WeMod UI and trainer attachment are NOT independently verified."); if(j->type==JOB_WEMOD&&j->provider_retry)log_line(j->success?"Universal launch: WeMod provider staging recovered automatically on the serialized retry.":"Universal launch: WeMod provider staging retry did not recover; no additional launch was started."); char *e=NULL; refresh_model(&e); free(e); refresh_ui();
     if(j->type==JOB_WEMOD||j->type==JOB_WEMOD_V2)universal_wemod_job_active=0;
     if(G.play_button)gtk_widget_set_sensitive(G.play_button,TRUE);
     if(j->type==JOB_HEALTH && G.health_detail)gtk_label_set_text((GtkLabel*)G.health_detail,j->message?j->message:"");
