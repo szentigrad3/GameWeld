@@ -83,3 +83,13 @@ Review of the draft branch found that the Batch 10 JOB_WEMOD_V2 worker route con
 The development session bridge timeout is now 86,400 seconds (24 hours), matching the GameWeld controller instead of incorrectly killing a valid one-hour-plus game session. The separate complete Batch 11 source bundle also tightens the controller's own result verification: both game and trainer start evidence, a non-boolean integer game-exit code, and verified trainer cleanup are required. Its `check-gameweld-gtk.sh` prepares an isolated temporary worktree of this draft branch, stages the MIT-side adapters, performs a real GCC **syntax-only** check, then cleans up without touching the user's active branch or Steam. Package Python regression tests: 205 passed here.
 
 These tests do **not** establish a linked GameWeld AppImage, a live Steam/Proton handoff, a working WeMod window or actual trainer attachment. The GTK feature gate remains disabled by default, and the draft PR must not be merged until end-to-end field testing.
+
+## Batch 12: live Steam context discovery (source ZIP) and Linux PID lifetime safety
+
+The user's Batch 11 CachyOS checks passed: **14/14 Rust unit tests** and real GameWeld GTK3 `gcc -fsyntax-only` with `gtk_c_compiled=true`, `v2_driver_deployed=true`, `game_started=false` in a disposable worktree. These confirm native unit tests and C syntax, not a linked application or WeMod attachment.
+
+The independent complete Batch 12 source ZIP now adds `gameweld-wand-v2-steam-audit.py` (read-only `/proc` inspection using the selected Steam AppID) and `read_process_birth_token` (Linux `/proc/PID/stat` starttime verification) in the GameWeld runtime planner. The experimental controller checks that birth token again before it launches **only** the Windows monitor. Changed or reused PIDs block the handoff.
+
+**Important: new Batch 12 Python files are only in the ZIP; the draft PR does not yet contain those files.** The bundle's 222 Python unit tests passed against synthetic data. A real Steam/Proton audit has **not** been run; no actual game was launched or modified. The intended next command while the Steam game is already running is `python3 gameweld/scripts/gameweld-wand-v2-steam-audit.py --appid 3008130` from the Batch 12 ZIP root. Its result is runtime *candidate* evidence, not verified Win32 process identity or trainer attachment.
+
+The GameWeld GTK feature gate remains off in production. Do not merge PR #17 until the complete source, full GameWeld build, Steam handoff and actual WeMod GUI/attachment are verified.
