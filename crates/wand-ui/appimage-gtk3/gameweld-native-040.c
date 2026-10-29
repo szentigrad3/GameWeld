@@ -695,7 +695,7 @@ static int heroic_managed_session_state(const Game*g,long*game_pid,long*trainer_
 static int parse_games(const char *json) {
     const char *p=find_key(json,"games"); if(!p)return 0; p=strchr(p,'['); if(!p)return 0; p++;
     int count=0; while(*p && *p!=']' && count<MAX_GAMES){ while(*p && *p!='{' && *p!=']')p++; if(*p!='{')break; const char *start=p; int depth=0; int inq=0; do{ if(*p=='\"' && (p==start||p[-1]!='\\'))inq=!inq; if(!inq){if(*p=='{')depth++;else if(*p=='}')depth--;} p++; }while(*p && depth>0); size_t n=(size_t)(p-start); char *obj=malloc(n+1); memcpy(obj,start,n); obj[n]=0;
-        Game *g=&G.games[count]; memset(g,0,sizeof *g); json_string(obj,"appid",g->appid,sizeof g->appid); json_string(obj,"name",g->name,sizeof g->name); json_string(obj,"install_dir",g->install_dir,sizeof g->install_dir); json_string(obj,"selected_tool",g->selected_tool,sizeof g->selected_tool); g->wand_found=json_bool(obj,"wand_found",0); snprintf(g->provider,sizeof g->provider,"steam");snprintf(g->runner,sizeof g->runner,"steam");snprintf(g->key,sizeof g->key,"%s",g->appid); free(obj); if(g->appid[0])count++;
+        Game *g=&G.games[count]; memset(g,0,sizeof *g); json_string(obj,"appid",g->appid,sizeof g->appid); json_string(obj,"name",g->name,sizeof g->name); json_string(obj,"install_dir",g->install_dir,sizeof g->install_dir); json_string(obj,"executable",g->executable,sizeof g->executable); json_string(obj,"selected_tool",g->selected_tool,sizeof g->selected_tool); g->wand_found=json_bool(obj,"wand_found",0); snprintf(g->provider,sizeof g->provider,"steam");snprintf(g->runner,sizeof g->runner,"steam");snprintf(g->key,sizeof g->key,"%s",g->appid); free(obj); if(g->appid[0])count++;
     } return count;
 }
 
@@ -1499,8 +1499,8 @@ static gboolean heroic_session_status_tick(void *unused);
 
 static gboolean job_done(void *vp);
 
-typedef enum { JOB_SETUP, JOB_VERIFY, JOB_HEALTH, JOB_PLAY, JOB_WEMOD, JOB_REFRESH } JobType;
-typedef struct { JobType type; char appid[32]; char *message; int success; int provider_retry; } Job;
+typedef enum { JOB_SETUP, JOB_VERIFY, JOB_HEALTH, JOB_PLAY, JOB_WEMOD, JOB_WEMOD_V2, JOB_REFRESH } JobType;
+typedef struct { JobType type; char appid[32]; char game_exe[1024]; char install_dir[1024]; char *message; int success; int provider_retry; } Job;
 static int universal_wemod_job_active=0;
 
 static int backend_job_running(void){
@@ -1530,9 +1530,49 @@ static void launch_wemod_steam_after_set_game(Job *j,char **body){
     if(p<0){j->success=0;free(*body);*body=strdup("Could not start Steam for the selected WeMod launch.");}
 }
 
+
+/* Development-only GameWeld-owned DeckCheatz v2 session. The Python helper
+ * starts Steam normally, then attaches only its monitor to the verified live
+ * Wine server. This runs off the GTK main thread and never changes Steam
+ * launch options. Failures do not silently fall back to the old Proton gate. */
+static int run_wemod_v2_worker(Job *j,char **body){
+    int pipes[2];
+    if(pipe(pipes)!=0){*body=strdup("Could not establish GameWeld v2 status pipe.");return 0;}
+    pid_t pid=fork();
+    if(pid==0){
+        close(pipes[0]);dup2(pipes[1],STDOUT_FILENO);close(pipes[1]);
+        int dn=open("/dev/null",O_WRONLY);
+        if(dn>=0){dup2(dn,STDERR_FILENO);if(dn>2)close(dn);}
+        clear_desktop_activation_env();
+        const char *override=getenv("GAMEWELD_V2_DRIVER");
+        const char *appdir=getenv("APPDIR");
+        const char *root=getenv("GAMEWELD_SOURCE_ROOT");
+        char script[2048];
+        if(override&&*override)snprintf(script,sizeof script,"%s",override);
+        else if(appdir&&*appdir)snprintf(script,sizeof script,"%s/usr/libexec/gameweld-wand-v2-driver.py",appdir);
+        else snprintf(script,sizeof script,"%s/scripts/gameweld-wand-v2-driver.py",root&&*root?root:".");
+        execlp("python3","python3",script,"--appid",j->appid,
+               "--game-exe",j->game_exe,"--install-dir",j->install_dir,
+               "--launch-steam",(char*)NULL);
+        _exit(127);
+    }
+    close(pipes[1]);
+    if(pid<0){close(pipes[0]);*body=strdup("Could not start GameWeld v2 session worker.");return 0;}
+    char output[8192]={0};size_t used=0;ssize_t n=0;
+    while(used+1<sizeof output && (n=read(pipes[0],output+used,sizeof output-used-1))>0)used+=(size_t)n;
+    close(pipes[0]);
+    int status=0;while(waitpid(pid,&status,0)<0&&errno==EINTR){}
+    output[used]=0;
+    char state[128]={0};
+    if(used>0)json_string(output,"state",state,sizeof state);
+    *body=strdup(used?output:"GameWeld v2 session driver produced no status. Nothing was reported as attached.");
+    return WIFEXITED(status)&&WEXITSTATUS(status)==0&&!strcmp(state,"gameweld_v2_observed_session_finished");
+}
+
 static void *job_worker(void *vp) {
     Job *j=vp; char *body=NULL; int code=0; char path[256],data[128];
-    if(j->type==JOB_SETUP){ http_request("POST","/api/install","{}",&body,&code); j->success=(code>=200&&code<300); }
+    if(j->type==JOB_WEMOD_V2){j->success=run_wemod_v2_worker(j,&body);}
+    else if(j->type==JOB_SETUP){ http_request("POST","/api/install","{}",&body,&code); j->success=(code>=200&&code<300); }
     else if(j->type==JOB_VERIFY){ http_request("GET","/api/verify",NULL,&body,&code); j->success=(code>=200&&code<300); }
     else if(j->type==JOB_HEALTH){ snprintf(path,sizeof path,"/api/health?appid=%s",j->appid); http_request("GET",path,NULL,&body,&code); j->success=(code>=200&&code<300); }
     else if(j->type==JOB_PLAY||j->type==JOB_WEMOD){
@@ -1550,19 +1590,19 @@ static void *job_worker(void *vp) {
         }
     }
     else { j->success=1; body=strdup("Provider refresh queued on the GTK main thread."); }
-    if(body){ char msg[1800]={0}; json_string(body,"message",msg,sizeof msg); if(!msg[0])json_string(body,"error",msg,sizeof msg); if(!msg[0])json_string(body,"data",msg,sizeof msg); if(!msg[0])snprintf(msg,sizeof msg,"%s",body); j->message=strdup(msg); free(body);} else j->message=strdup(j->success?"Completed successfully.":"Operation failed.");
+    if(body){ char msg[1800]={0}; json_string(body,"message",msg,sizeof msg); if(!msg[0])json_string(body,"error",msg,sizeof msg); if(!msg[0])json_string(body,"reason",msg,sizeof msg); if(!msg[0])json_string(body,"data",msg,sizeof msg); if(!msg[0])snprintf(msg,sizeof msg,"%s",body); j->message=strdup(msg); free(body);} else j->message=strdup(j->success?"Completed successfully.":"Operation failed.");
     g_idle_add(job_done,j); return NULL;
 }
 static void start_job(JobType type,const char *appid,const char *doing) {
-    if(type==JOB_WEMOD&&universal_wemod_job_active){log_line("Universal launch: a WeMod provider launch is already being prepared. Wait for it to finish before starting another provider action.");return;}
-    Job *j=calloc(1,sizeof *j); j->type=type; if(appid)snprintf(j->appid,sizeof j->appid,"%s",appid);
-    if(type==JOB_WEMOD)universal_wemod_job_active=1;
-    log_line("%s",doing); if(G.play_button)gtk_widget_set_sensitive(G.play_button,FALSE); pthread_t t; if(pthread_create(&t,NULL,job_worker,j)==0)pthread_detach(t);else{if(type==JOB_WEMOD)universal_wemod_job_active=0;free(j);log_line("Could not start background launch worker.");}
+    if((type==JOB_WEMOD||type==JOB_WEMOD_V2)&&universal_wemod_job_active){log_line("Universal launch: a WeMod provider launch is already being prepared. Wait for it to finish before starting another provider action.");return;}
+    Job *j=calloc(1,sizeof *j); j->type=type; if(appid)snprintf(j->appid,sizeof j->appid,"%s",appid); if(type==JOB_WEMOD_V2&&G.selected>=0&&G.selected<G.game_count){Game*g=&G.games[G.selected];snprintf(j->game_exe,sizeof j->game_exe,"%s",g->executable);snprintf(j->install_dir,sizeof j->install_dir,"%s",g->install_dir);}
+    if(type==JOB_WEMOD||type==JOB_WEMOD_V2)universal_wemod_job_active=1;
+    log_line("%s",doing); if(G.play_button)gtk_widget_set_sensitive(G.play_button,FALSE); pthread_t t; if(pthread_create(&t,NULL,job_worker,j)==0)pthread_detach(t);else{if(type==JOB_WEMOD||type==JOB_WEMOD_V2)universal_wemod_job_active=0;free(j);log_line("Could not start background launch worker.");}
 }
 
 static gboolean job_done(void *vp) {
-    Job *j=vp; log_line("%s: %s",j->success?"OK":"FAILED",j->message?j->message:""); if(j->type==JOB_WEMOD&&j->provider_retry)log_line(j->success?"Universal launch: WeMod provider staging recovered automatically on the serialized retry.":"Universal launch: WeMod provider staging retry did not recover; no additional launch was started."); char *e=NULL; refresh_model(&e); free(e); refresh_ui();
-    if(j->type==JOB_WEMOD)universal_wemod_job_active=0;
+    Job *j=vp; log_line("%s: %s",j->success?"OK":"FAILED",j->message?j->message:""); if(j->type==JOB_WEMOD_V2)log_line("DeckCheatz v2: monitor session lifecycle only; WeMod UI and trainer attachment are NOT independently verified."); if(j->type==JOB_WEMOD&&j->provider_retry)log_line(j->success?"Universal launch: WeMod provider staging recovered automatically on the serialized retry.":"Universal launch: WeMod provider staging retry did not recover; no additional launch was started."); char *e=NULL; refresh_model(&e); free(e); refresh_ui();
+    if(j->type==JOB_WEMOD||j->type==JOB_WEMOD_V2)universal_wemod_job_active=0;
     if(G.play_button)gtk_widget_set_sensitive(G.play_button,TRUE);
     if(j->type==JOB_HEALTH && G.health_detail)gtk_label_set_text((GtkLabel*)G.health_detail,j->message?j->message:"");
     if((j->type==JOB_SETUP||j->type==JOB_VERIFY) && G.setup_detail)gtk_label_set_text((GtkLabel*)G.setup_detail,j->message?j->message:"");
@@ -2225,7 +2265,7 @@ static void on_launch_with_cheat_table(GtkButton*b,void*d){
     log_line("Cheat Engine table is assigned to %s, but Cheat Engine is not ready. Open Settings → Managed Cheat Engine Provider (.CT), install or choose CE, then retry.",g->name);
 }
 
-static void on_launch_with_wemod(GtkButton*b,void*d){(void)b;(void)d;if(G.selected<0||G.selected>=G.game_count){log_line("Choose a game first.");return;}Game*g=&G.games[G.selected];if(lutris_test4_extended_blocked(g,"WeMod launch"))return;if(!game_wemod_supported(g)){if(game_is_steam_shortcut(g))log_line("WeMod is not yet validated for Steam non-Steam shortcuts. Use Assigned Trainer, Aurora, Cheat Evolution, or a custom trainer for this shortcut.");else log_line("WeMod cannot launch for %s because the exact Heroic Wine/Proton runner or prefix is unresolved. Refresh Game Sources after launching the game once through Heroic.",g->name);return;}if(universal_pending_manager_path[0]){log_line("Universal launch: a trainer manager is already waiting for this game session. Let that launch finish before starting WeMod.");return;}if(game_is_steam(g)){start_job(JOB_WEMOD,g->appid,"Universal launch: preparing Steam game + WeMod compatibility provider…");return;}start_heroic_wemod_job(g);}
+static void on_launch_with_wemod(GtkButton*b,void*d){(void)b;(void)d;if(G.selected<0||G.selected>=G.game_count){log_line("Choose a game first.");return;}Game*g=&G.games[G.selected];if(game_is_steam(g)&&getenv("GAMEWELD_ENABLE_WAND_V2")&&!strcmp(getenv("GAMEWELD_ENABLE_WAND_V2"),"1")){if(!g->install_dir[0]){log_line("DeckCheatz v2: selected game install path unresolved; no game or monitor started.");return;}start_job(JOB_WEMOD_V2,g->appid,"DeckCheatz v2: starting normal Steam session and verifying the attached Windows observer...");return;}if(lutris_test4_extended_blocked(g,"WeMod launch"))return;if(!game_wemod_supported(g)){if(game_is_steam_shortcut(g))log_line("WeMod is not yet validated for Steam non-Steam shortcuts. Use Assigned Trainer, Aurora, Cheat Evolution, or a custom trainer for this shortcut.");else log_line("WeMod cannot launch for %s because the exact Heroic Wine/Proton runner or prefix is unresolved. Refresh Game Sources after launching the game once through Heroic.",g->name);return;}if(universal_pending_manager_path[0]){log_line("Universal launch: a trainer manager is already waiting for this game session. Let that launch finish before starting WeMod.");return;}if(game_is_steam(g)){start_job(JOB_WEMOD,g->appid,"Universal launch: preparing Steam game + WeMod compatibility provider…");return;}start_heroic_wemod_job(g);}
 static void on_launch_with_aurora(GtkButton*b,void*d){(void)b;(void)d;universal_launch_manager("cheat-happens-aurora","Cheat Happens Aurora");}
 static void on_launch_with_cheat_evolution(GtkButton*b,void*d){(void)b;(void)d;universal_launch_manager("cheat-evolution","Cheat Evolution");}
 static void on_launch_custom_trainer(GtkButton*b,void*d){
