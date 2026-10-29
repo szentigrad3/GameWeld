@@ -34,3 +34,9 @@ The external Batch 6 DeckCheatz monitor removes `WAND_MONITOR_SESSION_TOKEN` fro
 The separately distributed **Batch 7** source package adds the read-only GameWeld helper `gameweld-wand-v2-runtime-plan.py`. It requires full game executable-path correlation and exact selected Steam/Proton/WINEPREFIX/WINEDSERVER identity before producing a **non-executable** Windows-monitor launch plan. Cumulative package Python tests: 125/125, no errors. This helper is **not yet committed to this PR**; the ZIP is the source review artifact.
 
 A verified Linux PID does not establish Win32 PID identity. The published gRPC monitor's current launch protocol starts a new game process, which must not replace a Steam-managed game. GameWeld's existing Play with WeMod action remains unchanged. Do not merge or ship as functional until the monitor can observe the already-running Windows game, preserve Steam's original game startup/arguments, and verify WeMod GUI/attachment and cleanup.
+
+## Batch 8: experimental Windows observe-existing-game protocol
+
+The separate DeckCheatz AGPL source package now includes a Windows-only `ObserveExisting` gRPC call. Its read-only process snapshot finds an **unambiguous full executable-path match**, returns the Win32 PID, holds an OS wait handle, and reports game exit without launching or terminating the game. The monitor owns and closes the separately spawned trainer. The GameWeld session bridge now requests `--observe-existing-game`, **not** the monitor's old direct-game-spawn mode.
+
+Cumulative Batch 8 source tests: 140 Python tests passed from a clean extracted package. The changed Rust/Windows code **has not yet been cross-compiled or field-tested**, and WeMod GUI/attachment are unverified. The current GameWeld GUI Play-with-WeMod button remains unchanged, and the internal bridge is not invoked by a production path. Do not merge or deploy this draft before exact-game Wine testing and Steam session handoff validation.
