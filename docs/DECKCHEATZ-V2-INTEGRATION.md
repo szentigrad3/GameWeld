@@ -12,3 +12,11 @@ GameWeld adapter stages:
 **Known blockers before enablement:** The standalone upstream monitor Rust source in the separate Batch 2 artifact is not yet compiled or field-tested. Steam's exact launch command/arguments and session startup by GameWeld are still incomplete; the GameWeld GTK Play with WeMod callback is not yet switched to this adapter. The published DeckCheatz Rust monitor is not yet its specified gRPC implementation. This is a development interface only, not a functioning WeMod launch integration.
 
 Do not merge this draft until the upstream gRPC monitor builds, prefix/data safety review is complete, Steam’s original runtime command and game arguments are preserved, and the WeMod GUI, login, trainer attachment and cleanup pass live testing. Preserve AGPL/MIT attribution and distribution boundaries.
+
+## Batch 5 safety checks (2026-10-29)
+
+The development monitor's positive native gRPC smoke has been confirmed by its tester, including trainer cleanup. The new Batch 5 source adds stricter Rust process ownership and event sequencing, plus local gRPC failure tests. These changes are **not an installed GameWeld feature** and Rust Batch 5 compilation has not yet been verified.
+
+The GameWeld bridge rejects out-of-range loopback ports and boolean game exit codes, requires both processes to start and requires explicit trainer cleanup evidence. This does **not** prove the WeMod UI rendered or that a trainer attached.
+
+The GTK Play with WeMod callback must not be switched to this experimental bridge until GameWeld supplies a real monitor in the correct Steam Proton/Wine session, preserves the game's actual launch command, and verifies game identity and cleanup. Do not change Steam Launch Options or compatibility selection.
