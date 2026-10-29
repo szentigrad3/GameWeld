@@ -40,3 +40,11 @@ A verified Linux PID does not establish Win32 PID identity. The published gRPC m
 The separate DeckCheatz AGPL source package now includes a Windows-only `ObserveExisting` gRPC call. Its read-only process snapshot finds an **unambiguous full executable-path match**, returns the Win32 PID, holds an OS wait handle, and reports game exit without launching or terminating the game. The monitor owns and closes the separately spawned trainer. The GameWeld session bridge now requests `--observe-existing-game`, **not** the monitor's old direct-game-spawn mode.
 
 Cumulative Batch 8 source tests: 140 Python tests passed from a clean extracted package. The changed Rust/Windows code **has not yet been cross-compiled or field-tested**, and WeMod GUI/attachment are unverified. The current GameWeld GUI Play-with-WeMod button remains unchanged, and the internal bridge is not invoked by a production path. Do not merge or deploy this draft before exact-game Wine testing and Steam session handoff validation.
+
+## Batch 9: isolated Win32 observation smoke before GTK handoff
+
+The independent AGPL DeckCheatz source package **Batch 9** adds a disposable Wine prefix test for the actual Windows monitor executable. It compiles harmless Windows game/trainer fixtures, starts a real monitor under Wine, checks authenticated full-path and exact Win32 PID observation, and verifies that only the monitor-owned fixture trainer is closed after the observed fixture game exits. Python client also supports optional bounded gRPC Events deadline for this smoke.
+
+Source tests: 158/158 Python tests passed locally. **The Windows-under-Wine test has not yet been executed on CachyOS.** The prior Batch 8.3 Windows compilation and Rust tests were reported passing by the tester. Do not report the new Win32 observation smoke as passed until run.
+
+The GameWeld GTK `on_launch_with_wemod` callback still calls `ensure_proton_gate` / `arm_wand_launch` / `steam -applaunch`. It is **not** connected to a verified Windows observer. Do not remove or switch the production callback based on the disposable Wine smoke alone; Steam/Proton live session ownership, WeMod GUI and actual trainer attachment remain open. Nothing in Batch 9 changes Steam options, prefixes or GameWeld production installation.
