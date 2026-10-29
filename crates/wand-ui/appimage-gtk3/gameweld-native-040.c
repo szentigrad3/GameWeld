@@ -1571,7 +1571,8 @@ static int run_wemod_v2_worker(Job *j,char **body){
 
 static void *job_worker(void *vp) {
     Job *j=vp; char *body=NULL; int code=0; char path[256],data[128];
-    if(j->type==JOB_WEMOD_V2){j->success=run_wemod_v2_worker(j,&body);}\n    else if(j->type==JOB_SETUP){ http_request("POST","/api/install","{}",&body,&code); j->success=(code>=200&&code<300); }
+    if(j->type==JOB_WEMOD_V2){j->success=run_wemod_v2_worker(j,&body);}
+    else if(j->type==JOB_SETUP){ http_request("POST","/api/install","{}",&body,&code); j->success=(code>=200&&code<300); }
     else if(j->type==JOB_VERIFY){ http_request("GET","/api/verify",NULL,&body,&code); j->success=(code>=200&&code<300); }
     else if(j->type==JOB_HEALTH){ snprintf(path,sizeof path,"/api/health?appid=%s",j->appid); http_request("GET",path,NULL,&body,&code); j->success=(code>=200&&code<300); }
     else if(j->type==JOB_PLAY||j->type==JOB_WEMOD){
