@@ -57,6 +57,10 @@ def run(argv: list[str] | None = None) -> int:
         return blocked("upstream_session_report_invalid")
     if report.get("state") != "monitor_session_finished":
         return blocked("upstream_monitor_not_finished")
+    if report.get("game_started") is not True or report.get("trainer_process_started") is not True:
+        return blocked("upstream_monitor_partial_start")
+    if not isinstance(report.get("game_exit_code"), int):
+        return blocked("upstream_game_exit_unreported")
     print(json.dumps({"state": "gameweld_wand_v2_session_finished", "appid": a.appid,
                       "game_exit_code": report.get("game_exit_code"),
                       "game_started": report.get("game_started", False),
