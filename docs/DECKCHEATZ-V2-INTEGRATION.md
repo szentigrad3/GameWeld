@@ -28,3 +28,9 @@ The GTK Play with WeMod callback must not be switched to this experimental bridg
 A positively matched Steam process is insufficient to enable the GameWeld button. Before live handoff, GameWeld must preserve Steam's real game launch and arguments, positively correlate the Windows process with the chosen installation, and start the separate monitor inside that same Wine server. Do not treat the experimental monitor's own direct-game spawn as a replacement for Steam's launch. Development session bridge stays fail-closed.
 
 The external Batch 6 DeckCheatz monitor removes `WAND_MONITOR_SESSION_TOKEN` from its game/trainer child environments to avoid disclosing its control credential. The upstream client rejects WeMod exit or closure while the game is still active as a successful session, and requests monitor shutdown.
+
+## Batch 7: Steam live runtime plan (source bundle only)
+
+The separately distributed **Batch 7** source package adds the read-only GameWeld helper `gameweld-wand-v2-runtime-plan.py`. It requires full game executable-path correlation and exact selected Steam/Proton/WINEPREFIX/WINEDSERVER identity before producing a **non-executable** Windows-monitor launch plan. Cumulative package Python tests: 125/125, no errors. This helper is **not yet committed to this PR**; the ZIP is the source review artifact.
+
+A verified Linux PID does not establish Win32 PID identity. The published gRPC monitor's current launch protocol starts a new game process, which must not replace a Steam-managed game. GameWeld's existing Play with WeMod action remains unchanged. Do not merge or ship as functional until the monitor can observe the already-running Windows game, preserve Steam's original game startup/arguments, and verify WeMod GUI/attachment and cleanup.
