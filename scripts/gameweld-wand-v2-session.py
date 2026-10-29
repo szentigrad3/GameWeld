@@ -44,7 +44,7 @@ def run(argv: list[str] | None = None) -> int:
     command = [sys.executable, "-m", "wand_launcher.entrypoint", "--no-prompt",
                "--appid", str(a.appid), "--compatdata", str(a.compatdata),
                "--client-exe", str(a.client), "--game-exe", str(a.game_exe),
-               "--monitor-endpoint", a.monitor_endpoint, "--run-attached-monitor"]
+               "--monitor-endpoint", a.monitor_endpoint, "--run-attached-monitor", "--observe-existing-game"]
     try:
         result = subprocess.run(command, env=env, capture_output=True, text=True,
                                 check=False, timeout=3600)
