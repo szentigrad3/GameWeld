@@ -48,3 +48,16 @@ The independent AGPL DeckCheatz source package **Batch 9** adds a disposable Win
 Source tests: 158/158 Python tests passed locally. **The Windows-under-Wine test has not yet been executed on CachyOS.** The prior Batch 8.3 Windows compilation and Rust tests were reported passing by the tester. Do not report the new Win32 observation smoke as passed until run.
 
 The GameWeld GTK `on_launch_with_wemod` callback still calls `ensure_proton_gate` / `arm_wand_launch` / `steam -applaunch`. It is **not** connected to a verified Windows observer. Do not remove or switch the production callback based on the disposable Wine smoke alone; Steam/Proton live session ownership, WeMod GUI and actual trainer attachment remain open. Nothing in Batch 9 changes Steam options, prefixes or GameWeld production installation.
+
+## Batch 9 Windows-under-Wine acceptance evidence (2026-10-29)
+
+A tester has now executed the disposable Windows-under-Wine observer smoke and reported:
+- `state=windows_wine_observer_smoke_passed`, `win32_game_pid=528`
+- `game_started_by_monitor=false`, `game_exited=true`, `game_exit_code=0`
+- `trainer_process_started=true`, `trainer_cleanup_verified=true`, `monitor_exited=true`
+- `steam_changed=false`, `trainer_attached=false`
+- elapsed time 58.7 seconds
+
+The prerequisite probe also reported `observer_wine_prerequisites_ready`. This validates the independent monitor's process discovery/exit tracking under a **disposable Wine prefix** only; it does not validate the actual Steam game, WeMod renderer, trainer attachment, or that GameWeld launched the monitor. Do not report one-click launch complete.
+
+**Next integration gate:** replace the legacy GTK `JOB_WEMOD`/Proton gate implementation with a GameWeld-owned, normal Steam launch followed by authenticated monitor startup in the game's exact existing Wine server and `ObserveExisting` handoff. That requires Steam session/process identity and compatible GUI/trainer operation checks. Keep the production path unchanged until this gate passes; retain unrelated game/trainer provider flows.
