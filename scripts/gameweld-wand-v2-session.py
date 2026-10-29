@@ -45,9 +45,10 @@ def run(argv: list[str] | None = None) -> int:
                "--appid", str(a.appid), "--compatdata", str(a.compatdata),
                "--client-exe", str(a.client), "--game-exe", str(a.game_exe),
                "--monitor-endpoint", a.monitor_endpoint, "--run-attached-monitor", "--observe-existing-game"]
+    # Game sessions may last for hours; align with the GameWeld session owner.
     try:
         result = subprocess.run(command, env=env, capture_output=True, text=True,
-                                check=False, timeout=3600)
+                                check=False, timeout=86400)
     except (OSError, subprocess.TimeoutExpired):
         return blocked("upstream_monitor_session_failed")
     if result.returncode:
