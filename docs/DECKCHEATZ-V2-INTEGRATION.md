@@ -93,3 +93,11 @@ The independent complete Batch 12 source ZIP now adds `gameweld-wand-v2-steam-au
 **Important: new Batch 12 Python files are only in the ZIP; the draft PR does not yet contain those files.** The bundle's 222 Python unit tests passed against synthetic data. A real Steam/Proton audit has **not** been run; no actual game was launched or modified. The intended next command while the Steam game is already running is `python3 gameweld/scripts/gameweld-wand-v2-steam-audit.py --appid 3008130` from the Batch 12 ZIP root. Its result is runtime *candidate* evidence, not verified Win32 process identity or trainer attachment.
 
 The GameWeld GTK feature gate remains off in production. Do not merge PR #17 until the complete source, full GameWeld build, Steam handoff and actual WeMod GUI/attachment are verified.
+
+## Batch 12.2: missing Wine runtime exports — kernel-linked Proton evidence
+
+The user's live read-only Steam audit for AppID 3008130 saw 15 processes exposing the requested AppID, of which 12 correlated with the selected compatdata/prefix, but **all 12 lacked exported WINELOADER/WINESERVER**. This identifies an overly restrictive runtime-export assumption in the previous source, not proof that the game is absent.
+
+The separate complete Batch 12.2 ZIP updates the GameWeld MIT runtime plan, audit, diagnostic tool, and experimental session driver. When those variables are absent, they can independently verify that the kernel's **/proc/PID/exe symlink** resolves to a Wine executable under the selected Proton installation's `files/bin` directory. The Steam AppID, prefix, exact game executable and selected Proton identity must still match; conflicting exports still fail closed. The resulting runtime values are derived from that verified Proton tool, not a command-line basename.
+
+The source package passed **252 Python tests** (15 new tests), Python syntax, shell syntax, ZIP integrity and clean extraction. **The new live audit has not yet been executed on the user's Steam session**. Source modifications are distributed in the ZIP and not yet imported into the draft GitHub branch. Do not enable production WeMod launch from this diagnostic alone, and do not claim trainer attachment or Win32 game PID verification.
