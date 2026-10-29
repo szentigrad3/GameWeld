@@ -1,28 +1,14 @@
-# DeckCheatz rewrite/v2 integration (draft)
+# DeckCheatz rewrite/v2 integration (draft, batch 2)
 
-GameWeld is the only end-user GUI and game/session owner. DeckCheatz's AGPL-licensed rewrite remains a separate component. This MIT-licensed adapter invokes its headless preflight using an argument array, not a shell.
+GameWeld remains the sole user-facing GUI and launch/session owner. DeckCheatz's AGPL-licensed rewrite and Rust gRPC monitor are separate upstream components. This GameWeld branch supplies only MIT-licensed headless adapters. **Nothing in this draft changes Steam Launch Options or registered compatibility tools.**
 
-Upstream references:
-- https://github.com/DeckCheatz/wemod-launcher/tree/rewrite/v2
-- https://github.com/orgs/DeckCheatz/projects/3/
-- https://github.com/DeckCheatz/wemod-launcher/issues/301
-- https://github.com/DeckCheatz/wemod-launcher/issues/307
-- https://github.com/DeckCheatz/trainer-monitor
+Upstream design: https://github.com/DeckCheatz/wemod-launcher/tree/rewrite/v2 and https://github.com/DeckCheatz/wemod-launcher/issues/307.
 
-This PR does NOT complete the rewrite or activate game launches. The published v2 rewrite still lacks a functioning gRPC launcher and monitor. The separate monitor repository is not yet the specified gRPC implementation.
+GameWeld adapter stages:
+1. `scripts/gameweld-wand-v2-preflight.py` checks a selected app's existing prefix and user-selected WeMod executable, without starting processes.
+2. `scripts/gameweld-wand-v2-session.py` accepts --appid, --compatdata, --client, --game-exe, --monitor-endpoint and --rewrite-root **only when GameWeld has already created an authenticated monitor inside its selected live game Proton environment**. It passes these to the upstream headless entrypoint, never constructs another Proton command and never invokes a shell.
+3. Neither script claims a WeMod trainer is attached just because processes are seen.
 
-## Internal contract
+**Known blockers before enablement:** The standalone upstream monitor Rust source in the separate Batch 2 artifact is not yet compiled or field-tested. Steam's exact launch command/arguments and session startup by GameWeld are still incomplete; the GameWeld GTK Play with WeMod callback is not yet switched to this adapter. The published DeckCheatz Rust monitor is not yet its specified gRPC implementation. This is a development interface only, not a functioning WeMod launch integration.
 
-GameWeld can invoke the script with --appid APPID --compatdata COMPATDATA --client /path/to/WeMod.exe --rewrite-root /path/to/rewrite/v2, and optionally --client-sha256 EXPECTED_HASH.
-
-A single JSON object returns state gameweld_wand_v2_preflight_passed or blocked. A nonzero exit code means fail closed. The adapter never starts or stops the trainer/game, modifies Steam launch options or registers a compatibility tool.
-
-## Required before GUI enablement
-
-1. Implement the upstream monitor gRPC service and matching launcher client.
-2. Complete verified app acquisition, prefix migration/backups and shared login-data synchronization.
-3. Wire GameWeld's EXISTING Play with WeMod action to a functioning session controller using the game's Steam-supplied Proton/runtime, not a new GUI.
-4. Test trainer attachment, login, process lifetime, cleanup and normal game startup across Steam, Heroic and Lutris.
-5. Review AGPL/MIT license boundaries before distribution.
-
-Keep this PR draft until the upstream monitor and GameWeld session integration are operational.
+Do not merge this draft until the upstream gRPC monitor builds, prefix/data safety review is complete, Steam’s original runtime command and game arguments are preserved, and the WeMod GUI, login, trainer attachment and cleanup pass live testing. Preserve AGPL/MIT attribution and distribution boundaries.
