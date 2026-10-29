@@ -31,7 +31,8 @@ def run(argv: list[str] | None = None) -> int:
         return blocked("game_prefix_or_appid_mismatch")
     if not a.client.is_absolute() or not a.game_exe.is_absolute() or not a.client.is_file() or not a.game_exe.is_file():
         return blocked("client_or_game_executable_missing")
-    if not re.fullmatch(r"(?:127\.0\.0\.1|localhost):[0-9]{1,5}", a.monitor_endpoint):
+    match = re.fullmatch(r"(?:127\.0\.0\.1|localhost):([0-9]{1,5})", a.monitor_endpoint)
+    if match is None or not 1 <= int(match.group(1)) <= 65535:
         return blocked("monitor_not_localhost")
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", os.getenv("WAND_MONITOR_SESSION_TOKEN", "")):
         return blocked("monitor_token_missing")
@@ -59,7 +60,7 @@ def run(argv: list[str] | None = None) -> int:
         return blocked("upstream_monitor_not_finished")
     if report.get("game_started") is not True or report.get("trainer_process_started") is not True:
         return blocked("upstream_monitor_partial_start")
-    if not isinstance(report.get("game_exit_code"), int):
+    if type(report.get("game_exit_code")) is not int:
         return blocked("upstream_game_exit_unreported")
     if report.get("trainer_cleanup_verified") is not True:
         return blocked("upstream_trainer_cleanup_unverified")
