@@ -115,7 +115,8 @@ def run(argv: list[str] | None = None) -> int:
                       "game_started": report.get("game_started", False),
                       "trainer_process_started": report.get("trainer_process_started", False),
                       "trainer_attachment_verified": False,
-                      "trainer_cleanup_verified": True,
+                      "trainer_cleanup_verified": False,
+                      "upstream_trainer_cleanup_reported": True,
                       "steam_launch_options_changed": False, "game_prefix_modified": False}))
     return 0
 
