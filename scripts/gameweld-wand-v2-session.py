@@ -3,16 +3,55 @@
 """GameWeld backend handoff to a DeckCheatz/v2 monitor already running in the game's runtime.
 
 Not a launcher GUI and not a separate Proton invocation. Fail closed when
-GameWeld has not supplied a verified process monitor endpoint and session token.
+the local monitor endpoint/token prerequisites or live Linux process anchor fail.
+Windows PID, trainer attachment, and trainer cleanup require independent proof.
 """
 from __future__ import annotations
 import argparse
+import importlib.util
 import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+def _load_live_anchor():
+    source = Path(__file__).with_name("gameweld-wand-v2-live-anchor.py")
+    spec = importlib.util.spec_from_file_location("gameweld_wand_live_anchor_for_session", source)
+    if spec is None or spec.loader is None:
+        raise ValueError("live_anchor_source_missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_running_linux_game(appid: int, compatdata: Path, game_exe: Path) -> tuple[bool, str]:
+    """Revalidate a freshly acquired same-prefix PID/start tick before handoff.
+
+    This is only a Linux process safety gate. The upstream runtime must
+    independently establish Win32 process identity and monitor ownership.
+    """
+    try:
+        module = _load_live_anchor()
+        fresh = module.acquire_fresh_anchor(appid, compatdata, game_exe)
+        if fresh.get("state") != "linux_anchor_acquired":
+            return False, "linux_game_anchor_not_acquired"
+        pid = fresh.get("anchored_linux_pid")
+        ticks = fresh.get("anchored_process_start_ticks")
+        sampled = module.verify_anchor(appid, compatdata, game_exe,
+                                       pid=pid, start_ticks=ticks,
+                                       samples=3, interval_ms=400)
+    except (OSError, ValueError, RuntimeError, ImportError, AttributeError, TypeError):
+        return False, "linux_game_anchor_inspection_failed"
+    if (sampled.get("state") != "linux_runtime_anchor_stable"
+            or sampled.get("samples_completed") != 3
+            or sampled.get("linux_process_identity_stable") is not True
+            or sampled.get("same_prefix_wineserver_observed") is not True
+            or sampled.get("anchored_linux_pid") != pid
+            or sampled.get("anchored_process_start_ticks") != ticks):
+        return False, "linux_game_anchor_not_stable"
+    return True, "linux_game_anchor_stable"
 
 def run(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Internal GameWeld/Wand v2 session bridge")
@@ -39,6 +78,12 @@ def run(argv: list[str] | None = None) -> int:
     source = a.rewrite_root.resolve() / "src"
     if not (source / "wand_launcher/entrypoint.py").is_file():
         return blocked("deckcheatz_v2_source_missing")
+    # Fail closed before starting any upstream DeckCheatz session.
+    # The existence of a localhost monitor endpoint and an opaque token does
+    # not by itself prove a trusted Win32 process/attachment identity.
+    game_ok, game_reason = verify_running_linux_game(a.appid, a.compatdata, a.game_exe)
+    if not game_ok:
+        return blocked(game_reason)
     env = dict(os.environ)
     env["PYTHONPATH"] = str(source) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     command = [sys.executable, "-m", "wand_launcher.entrypoint", "--no-prompt",
