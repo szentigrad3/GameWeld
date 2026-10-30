@@ -13,12 +13,10 @@ import os
 from pathlib import Path
 
 GAME_ID_KEYS = ("SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID")
-EXCLUDED = frozenset(("steam", "steamwebhelper", "bash", "python", "python3", "gameweld", "wandd"))
 
 def read_environment(path: Path) -> dict[str, str]:
-    try:
-        raw = path.read_bytes()
-    except OSError:
+    raw = read_small(path)
+    if raw is None:
         return {}
     result: dict[str, str] = {}
     wanted = {s.encode("ascii") for s in (*GAME_ID_KEYS, "STEAM_COMPAT_DATA_PATH", "WINEPREFIX")}
@@ -42,11 +40,11 @@ def process_executable_hint(cmdline: bytes, game_exe: Path) -> bool:
 WINE_LOADERS = frozenset(("wine-preloader", "wine64-preloader"))
 MAX_PROC_BYTES = 2 * 1024 * 1024
 
-def read_small(path: Path) -> bytes | None:
+def read_small(path: Path, limit: int = MAX_PROC_BYTES) -> bytes | None:
     try:
         with path.open("rb") as stream:
-            data = stream.read(MAX_PROC_BYTES + 1)
-        return data if len(data) <= MAX_PROC_BYTES else None
+            data = stream.read(limit + 1)
+        return data if len(data) <= limit else None
     except OSError:
         return None
 
@@ -80,7 +78,7 @@ def exact_full_exe_in_argv(args: list[str], game_exe: Path) -> bool:
     return False
 
 def wine_modules_mapped(proc: Path) -> bool:
-    maps = read_small(proc / "maps")
+    maps = read_small(proc / "maps", 16 * 1024 * 1024)
     if maps is None:
         return False
     low = maps.lower()
