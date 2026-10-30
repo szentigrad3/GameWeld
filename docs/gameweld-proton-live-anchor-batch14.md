@@ -15,7 +15,7 @@ PIDs are ephemeral. Do not reuse them as launch authorization after a restart.
 
 ## Implementation
 
-`scripts/gameweld-wand-v2-live-anchor.py` samples the existing read-only context auditor 1–30 times, at 0–2000 ms intervals, without changing processes or files. Each sample must maintain exact AppID, the single same Wine game candidate, same PID and Linux start time, exact prefix identity, and a same-prefix wineserver. Any disappearance, second candidate, PID replacement, malformed evidence or unexpected claim of Win32/trainer success fails closed.
+`scripts/gameweld-wand-v2-live-anchor.py` automatically acquires a fresh current-session PID/start-tick anchor, then samples the existing read-only context auditor 1–30 times, at 0–2000 ms intervals, without changing processes or files. Each sample must maintain exact AppID, the single same Wine game candidate, same PID and Linux start time, exact prefix identity, and a same-prefix wineserver. Any disappearance, second candidate, PID replacement, malformed evidence or unexpected claim of Win32/trainer success fails closed.
 
 The result `linux_runtime_anchor_stable` is explicitly **not** proof of a Windows PID, monitor attachment, shared wineserver IPC, or WeMod injection. All trainer and Win32 proof flags remain false.
 
@@ -26,7 +26,7 @@ python3 scripts/test-gameweld-wand-v2-live-context.py -v
 python3 scripts/test-gameweld-wand-v2-live-anchor.py -v
 ```
 
-14 original reference tests + 19 Batch 14 liveness tests were run on the standalone local reference copy. The corresponding GitHub test files are committed to the branch; run them in the branch checkout to verify the exact GitHub snapshot.
+14 original reference tests + 24 Batch 14 liveness tests were run on the standalone local reference copy. The corresponding GitHub test files are committed to the branch; run them in the branch checkout to verify the exact GitHub snapshot.
 
 ## Live read-only command
 
@@ -42,10 +42,10 @@ python3 scripts/gameweld-wand-v2-live-anchor.py \
   --appid 3008130 \
   --compatdata /mnt/games/Steam/steamapps/compatdata/3008130 \
   --game-exe "/absolute/path/to/DyingLightGame_TheBeast_x64_rwdi.exe" \
-  --pid 58638 --start-ticks 3641164 --samples 3 --interval-ms 400
+  --samples 3 --interval-ms 400
 ```
 
-The PID and ticks above are **illustrative** from the uploaded session and may be stale. Never use them if a new game launch occurred.
+The live-anchor tool discovers the current candidate PID and Linux start ticks automatically before pinning and resampling them. Optional explicit `--pid` and `--start-ticks` must always be supplied together. Do not reuse historical values to authorize any trainer.
 
 ## Still blocked
 
