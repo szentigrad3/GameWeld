@@ -50,6 +50,43 @@ def _public_report(appid: int, pid: int, ticks: int) -> dict:
     }
 
 
+def acquire_fresh_anchor(appid: int, compatdata: Path, game_exe: Path,
+                         inspector: Callable | None = None) -> dict:
+    """Acquire a new pinned Linux candidate; never trust historic PID values."""
+    result = _public_report(appid, 0, 0)
+    if inspector is None:
+        inspector = _load_context_module().inspect_context
+    try:
+        obs = inspector(appid, compatdata, game_exe)
+    except (OSError, ValueError, RuntimeError):
+        result['reason'] = 'initial_inspection_failed'
+        return result
+    if not isinstance(obs, dict) or obs.get('appid') != appid:
+        result['reason'] = 'initial_inspection_invalid'
+        return result
+    if obs.get('state') != 'linux_game_process_candidate_correlated':
+        result['reason'] = 'initial_linux_candidate_not_unique'
+        return result
+    pid = obs.get('candidate_linux_pid')
+    ticks = obs.get('candidate_start_time_ticks')
+    if (type(pid) is not int or pid < 1 or type(ticks) is not int or ticks < 1
+            or obs.get('game_process_candidate_pids') != [pid]
+            or obs.get('exact_prefix_identity_crosschecked') is not True
+            or not isinstance(obs.get('wine_server_pids'), list)
+            or not obs.get('wine_server_pids')
+            or not all(type(x) is int and x > 0 for x in obs['wine_server_pids'])):
+        result['reason'] = 'initial_linux_candidate_identity_incomplete'
+        return result
+    if any(obs.get(k) is True for k in ('exact_runtime_verified', 'game_process_verified',
+                                        'monitor_attached', 'trainer_attachment_verified')):
+        result['reason'] = 'initial_inspection_crossed_trust_boundary'
+        return result
+    result['state'] = 'linux_anchor_acquired'
+    result['reason'] = 'read_only_anchor_requires_revalidation'
+    result['anchored_linux_pid'] = pid
+    result['anchored_process_start_ticks'] = ticks
+    return result
+
 def verify_anchor(
     appid: int, compatdata: Path, game_exe: Path,
     *, pid: int, start_ticks: int,
@@ -127,13 +164,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--appid', type=int, required=True)
     p.add_argument('--compatdata', type=Path, required=True)
     p.add_argument('--game-exe', type=Path, required=True)
-    p.add_argument('--pid', type=int, required=True)
-    p.add_argument('--start-ticks', type=int, required=True)
+    p.add_argument('--pid', type=int)
+    p.add_argument('--start-ticks', type=int)
     p.add_argument('--samples', type=int, default=3)
     p.add_argument('--interval-ms', type=int, default=400)
     args = p.parse_args(argv)
+    if (args.pid is None) != (args.start_ticks is None):
+        p.error('--pid and --start-ticks must be supplied together or both omitted')
+    if args.pid is None:
+        fresh = acquire_fresh_anchor(args.appid, args.compatdata, args.game_exe)
+        if fresh['state'] != 'linux_anchor_acquired':
+            print(json.dumps(fresh, sort_keys=True))
+            return 2
+        pid = fresh['anchored_linux_pid']
+        ticks = fresh['anchored_process_start_ticks']
+    else:
+        pid, ticks = args.pid, args.start_ticks
     result = verify_anchor(args.appid, args.compatdata, args.game_exe,
-                           pid=args.pid, start_ticks=args.start_ticks,
+                           pid=pid, start_ticks=ticks,
                            samples=args.samples, interval_ms=args.interval_ms)
     print(json.dumps(result, sort_keys=True))
     return 0 if result['state'] == 'linux_runtime_anchor_stable' else 2
