@@ -37,6 +37,34 @@ class AnchorTests(unittest.TestCase):
                                     samples=samples or len(observations), interval_ms=0,
                                     inspector=lambda *_: next(seq), sleeper=sleep)
 
+    def test_acquire_fresh_anchor_then_revalidate(self):
+        d = anchor.acquire_fresh_anchor(3008130, Path('/not/used'), Path('/not/used.exe'),
+                                        inspector=lambda *_: observation())
+        self.assertEqual(d['state'], 'linux_anchor_acquired')
+        self.assertEqual(d['anchored_linux_pid'], 58638)
+        self.assertEqual(d['anchored_process_start_ticks'], 3641164)
+        self.assertFalse(d['win32_pid_verified'])
+
+    def test_acquire_refuses_ambiguous_candidate(self):
+        d = anchor.acquire_fresh_anchor(3008130, Path('/not/used'), Path('/not/used.exe'),
+                                        inspector=lambda *_: observation(state='ambiguous_game_process_candidates'))
+        self.assertEqual(d['reason'], 'initial_linux_candidate_not_unique')
+
+    def test_acquire_refuses_malformed_candidate(self):
+        d = anchor.acquire_fresh_anchor(3008130, Path('/not/used'), Path('/not/used.exe'),
+                                        inspector=lambda *_: observation(candidate_linux_pid=True))
+        self.assertEqual(d['reason'], 'initial_linux_candidate_identity_incomplete')
+
+    def test_acquire_refuses_missing_wineserver(self):
+        d = anchor.acquire_fresh_anchor(3008130, Path('/not/used'), Path('/not/used.exe'),
+                                        inspector=lambda *_: observation(wine_server_pids=[]))
+        self.assertEqual(d['reason'], 'initial_linux_candidate_identity_incomplete')
+
+    def test_acquire_refuses_win32_claim(self):
+        d = anchor.acquire_fresh_anchor(3008130, Path('/not/used'), Path('/not/used.exe'),
+                                        inspector=lambda *_: observation(game_process_verified=True))
+        self.assertEqual(d['reason'], 'initial_inspection_crossed_trust_boundary')
+
     def test_three_sample_stable_game_candidate(self):
         d = self.check([observation(), observation(), observation()])
         self.assertEqual(d['state'], 'linux_runtime_anchor_stable')
