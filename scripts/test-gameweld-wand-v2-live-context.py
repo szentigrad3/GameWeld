@@ -127,6 +127,13 @@ class ContextTests(unittest.TestCase):
         proc = self.process(10, comm="something) tricky", start=8765)
         self.assertEqual(module.process_start_ticks(proc), 8765)
 
+    def test_missing_wineprefix_marker_is_rejected(self):
+        raw = self.env.replace(
+            f"WINEPREFIX={self.compat / 'pfx'}".encode(), b""
+        )
+        self.process(10, env=raw)
+        self.assertIsNone(self.inspect()["candidate_linux_pid"])
+
     def test_no_prefix_or_steam_config_written(self):
         missing = self.root / "steamapps/compatdata/111"
         r = module.inspect_context(111, missing, self.exe, self.proc)
