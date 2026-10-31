@@ -77,6 +77,34 @@ def _load_session_lock():
     return module
 
 
+def inspect_possible_provider_residue(appid: int, compatdata: Path) -> dict:
+    """Advisory post-session evidence, not GameWeld-owned cleanup proof."""
+    source = Path(__file__).with_name("gameweld-wand-v2-residue-audit.py")
+    try:
+        spec = importlib.util.spec_from_file_location("gameweld_wand_residue_for_session", source)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("residue_source_missing")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        report = module.report_possible_residue(appid, compatdata)
+        if report.get("state") != "read_only_provider_residue_audit":
+            raise RuntimeError("residue_scan_unavailable")
+        count = report.get("same_prefix_provider_candidate_count")
+        if type(count) is not int or count < 0:
+            raise RuntimeError("residue_scan_invalid_count")
+        return {
+            "provider_residue_audit_state": "read_only_provider_residue_audit",
+            "same_prefix_provider_candidate_count": count,
+            "provider_process_ownership_verified": False,
+        }
+    except (OSError, ValueError, RuntimeError, TypeError, AttributeError, ImportError):
+        return {
+            "provider_residue_audit_state": "residue_audit_unavailable",
+            "same_prefix_provider_candidate_count": None,
+            "provider_process_ownership_verified": False,
+        }
+
+
 def _run_guarded_session(a, blocked, source):
     # Fail closed before starting any upstream DeckCheatz session.
     # The existence of a localhost monitor endpoint and an opaque token does
@@ -127,7 +155,9 @@ def _run_guarded_session(a, blocked, source):
         return blocked("upstream_game_exit_unreported")
     if report.get("trainer_cleanup_verified") is not True:
         return blocked("upstream_trainer_cleanup_unverified")
+    residue = inspect_possible_provider_residue(a.appid, a.compatdata)
     print(json.dumps({"state": "gameweld_wand_v2_session_finished", "appid": a.appid,
+                      **residue,
                       "game_exit_code": report.get("game_exit_code"),
                       "game_started": report.get("game_started", False),
                       "trainer_process_started": report.get("trainer_process_started", False),
