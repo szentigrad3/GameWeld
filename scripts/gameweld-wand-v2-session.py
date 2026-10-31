@@ -26,6 +26,19 @@ def _load_live_anchor():
     return module
 
 
+
+def execute_bounded_monitor(command: list[str], env: dict[str, str]):
+    """Use a bounded streaming protocol, not 24 hours of capture_output."""
+    source = Path(__file__).with_name("gameweld-wand-v2-bounded-monitor.py")
+    spec = importlib.util.spec_from_file_location("gameweld_wand_bounded_monitor", source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("upstream_monitor_runner_missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_monitor(command, env, timeout_seconds=86400,
+                              max_stdout_bytes=262144)
+
+
 def verify_running_linux_game(appid: int, compatdata: Path, game_exe: Path) -> tuple[bool, str]:
     """Revalidate a freshly acquired same-prefix PID/start tick before handoff.
 
@@ -90,10 +103,19 @@ def run(argv: list[str] | None = None) -> int:
                "--appid", str(a.appid), "--compatdata", str(a.compatdata),
                "--client-exe", str(a.client), "--game-exe", str(a.game_exe),
                "--monitor-endpoint", a.monitor_endpoint, "--run-attached-monitor", "--observe-existing-game"]
-    # Game sessions may last for hours; align with the GameWeld session owner.
+    # The upstream child is directly owned by this bridge. Stream stdout into a
+    # bounded memory buffer; never let 24 hours of logs grow capture_output.
     try:
-        result = subprocess.run(command, env=env, capture_output=True, text=True,
-                                check=False, timeout=86400)
+        result = execute_bounded_monitor(command, env)
+    except RuntimeError as exc:
+        allowed = {
+            "upstream_monitor_invalid_limits", "upstream_monitor_spawn_failed",
+            "upstream_monitor_direct_child_unreaped", "upstream_monitor_timeout",
+            "upstream_monitor_output_pipe_not_closed", "upstream_monitor_output_read_failed",
+            "upstream_monitor_output_limit_exceeded", "upstream_monitor_output_not_utf8",
+            "upstream_monitor_runner_missing",
+        }
+        return blocked(str(exc) if str(exc) in allowed else "upstream_monitor_session_failed")
     except (OSError, subprocess.TimeoutExpired):
         return blocked("upstream_monitor_session_failed")
     if result.returncode:
@@ -102,6 +124,14 @@ def run(argv: list[str] | None = None) -> int:
         report = json.loads(result.stdout.strip())
     except (ValueError, TypeError):
         return blocked("upstream_session_report_invalid")
+    if not isinstance(report, dict):
+        return blocked("upstream_session_report_invalid")
+    if "appid" in report and (type(report["appid"]) is not int or report["appid"] != a.appid):
+        return blocked("upstream_appid_mismatch")
+    # This is an observe-existing-game bridge; an upstream claim to have
+    # launched the actual Steam game means session ownership has diverged.
+    if report.get("game_started_by_monitor") is True:
+        return blocked("upstream_unexpected_game_launch")
     if report.get("state") != "monitor_session_finished":
         return blocked("upstream_monitor_not_finished")
     if report.get("game_started") is not True or report.get("trainer_process_started") is not True:
