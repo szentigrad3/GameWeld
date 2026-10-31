@@ -1,0 +1,54 @@
+name: Steam Proton process identity regression tests
+
+on:
+  push:
+    branches:
+      - fix/wand-v2-proton-game-identity-batch13-20261030
+  pull_request:
+    paths:
+      - 'scripts/gameweld-wand-v2-live-context.py'
+      - 'scripts/gameweld-wand-v2-live-anchor.py'
+      - 'scripts/gameweld-wand-v2-session.py'
+      - 'scripts/gameweld-wand-v2-bounded-monitor.py'
+      - 'scripts/gameweld-wand-v2-aio.py'
+      - 'scripts/gameweld-wand-v2-win32-evidence.py'
+      - 'scripts/gameweld-wand-v2-session-lock.py'
+      - 'scripts/gameweld-wand-v2-residue-audit.py'
+      - 'scripts/gameweld-wand-v2-driver.py'
+      - 'scripts/gameweld-wand-v2-runtime-plan.py'
+      - 'scripts/gameweld-wand-v2-configure.py'
+      - 'scripts/test-gameweld-wand-v2-*.py'
+      - '.github/workflows/steam-proton-identity-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-process-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Syntax and import compilation
+        run: |
+          python -m py_compile scripts/gameweld-wand-v2-live-context.py scripts/gameweld-wand-v2-live-anchor.py scripts/gameweld-wand-v2-session.py scripts/gameweld-wand-v2-bounded-monitor.py scripts/gameweld-wand-v2-aio.py scripts/gameweld-wand-v2-win32-evidence.py scripts/gameweld-wand-v2-session-lock.py scripts/gameweld-wand-v2-residue-audit.py scripts/gameweld-wand-v2-driver.py
+      - name: Batch 13 game identity tests
+        run: python scripts/test-gameweld-wand-v2-live-context.py -v
+      - name: Batch 14 bounded liveness tests
+        run: python scripts/test-gameweld-wand-v2-live-anchor.py -v
+      - name: Batch 15 session pre-handoff tests
+        run: python scripts/test-gameweld-wand-v2-session-gate.py -v
+      - name: Batch 16 bounded monitor subprocess tests
+        run: python scripts/test-gameweld-wand-v2-bounded-monitor.py -v
+      - name: Batch 17 automatic game and prefix discovery tests
+        run: python scripts/test-gameweld-wand-v2-aio.py -v
+      - name: Batch 18 untrusted Windows observer evidence checks
+        run: python scripts/test-gameweld-wand-v2-win32-evidence.py -v
+      - name: Batch 19 per-AppID GameWeld session lock tests
+        run: python scripts/test-gameweld-wand-v2-session-lock.py -v
+      - name: Batch 20 read-only provider process residue tests
+        run: python scripts/test-gameweld-wand-v2-residue-audit.py -v

@@ -1558,15 +1558,37 @@ static int run_wemod_v2_worker(Job *j,char **body){
     }
     close(pipes[1]);
     if(pid<0){close(pipes[0]);*body=strdup("Could not start GameWeld v2 session worker.");return 0;}
-    char output[8192]={0};size_t used=0;ssize_t n=0;
-    while(used+1<sizeof output && (n=read(pipes[0],output+used,sizeof output-used-1))>0)used+=(size_t)n;
+    char output[8192]={0};size_t used=0;ssize_t n=0;int oversized=0;
+    /* Always drain the child's output until EOF; otherwise large output
+       could block the child while GTK waits for it to exit. */
+    char chunk[4096];
+    while((n=read(pipes[0],chunk,sizeof chunk))!=0){
+        if(n<0){if(errno==EINTR)continue;oversized=1;break;}
+        size_t count=(size_t)n;
+        size_t room=sizeof output-1-used;
+        if(count>room){oversized=1;count=room;}
+        if(count){memcpy(output+used,chunk,count);used+=count;}
+    }
     close(pipes[0]);
-    int status=0;while(waitpid(pid,&status,0)<0&&errno==EINTR){}
+    int status=0;pid_t waited;
+    do{waited=waitpid(pid,&status,0);}while(waited<0&&errno==EINTR);
     output[used]=0;
+    if(oversized){
+        *body=strdup("GameWeld v2 driver exceeded its bounded status output; refusing success.");
+        return 0;
+    }
     char state[128]={0};
     if(used>0)json_string(output,"state",state,sizeof state);
     *body=strdup(used?output:"GameWeld v2 session driver produced no status. Nothing was reported as attached.");
-    return WIFEXITED(status)&&WEXITSTATUS(status)==0&&!strcmp(state,"gameweld_v2_observed_session_finished");
+    /* A completed observation or merely started trainer is not evidence
+       of working WeMod. Keep GTK fail-closed until the Windows observer
+       supplies independently verified identity, attachment and cleanup. */
+    return waited==pid&&WIFEXITED(status)&&WEXITSTATUS(status)==0
+        &&!strcmp(state,"gameweld_v2_attachment_verified")
+        &&json_bool(output,"win32_pid_verified",0)
+        &&json_bool(output,"trainer_attachment_verified",0)
+        &&json_bool(output,"trainer_cleanup_verified",0)
+        &&!json_bool(output,"game_started_by_monitor",1);
 }
 
 static void *job_worker(void *vp) {
