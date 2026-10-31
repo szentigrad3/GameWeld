@@ -24,7 +24,7 @@ MIT-only features:
 - A **separate** `--gpu-fallback-with-private-log` wrapper mode is explicitly opt-in and requires THREE acknowledgments. It retains ALL previously verified game/wineserver Linux PID/birth checks, trainer-disabled Win32 authenticated RPC and server-side Execute denial, selected Proton loader, hash-pinned selected WeMod PE and owned Linux pidfd cleanup. It starts ONLY WeMod.exe with `--disable-gpu --disable-gpu-compositing` added to that process, NOT Steam/game. NO `--no-sandbox`, ASAR integrity bypass, manually edited Steam Launch Options, `pkill wine` or trainer queue. Child processes may remain after bounded 25-second observation, GUI/attachment/cleanup still UNVERIFIED.
 - Diagnostic category matching now includes Electron GPU process failures and Windows network service lookup, without emitting raw private output.
 
-Verification: **688/688 Python unittests passed** in source, including **23 new focused Batch38 tests**. Shell syntax, Python syntax and ZIP CRC passed. Clean-extraction test was separately started and must be checked before claiming a second full pass. Rust/Wine GUI live tests were NOT executed in authoring environment.
+Verification: **688/688 Python unittests passed** in source, including **23 new focused Batch38 tests**. Shell syntax, Python syntax and ZIP CRC passed. **688/688 Python tests also PASSED again from a clean extraction of the final ZIP (57.735 seconds)**; both complete runs passed independently. Rust/Wine GUI live tests were NOT executed in authoring environment.
 
 ## Safe user sequence
 
