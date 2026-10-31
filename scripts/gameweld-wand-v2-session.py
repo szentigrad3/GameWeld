@@ -66,31 +66,18 @@ def verify_running_linux_game(appid: int, compatdata: Path, game_exe: Path) -> t
         return False, "linux_game_anchor_not_stable"
     return True, "linux_game_anchor_stable"
 
-def run(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Internal GameWeld/Wand v2 session bridge")
-    p.add_argument("--appid", required=True, type=int)
-    p.add_argument("--compatdata", required=True, type=Path)
-    p.add_argument("--client", required=True, type=Path)
-    p.add_argument("--game-exe", required=True, type=Path)
-    p.add_argument("--monitor-endpoint", required=True)
-    p.add_argument("--rewrite-root", required=True, type=Path)
-    a = p.parse_args(argv)
-    def blocked(why: str) -> int:
-        print(json.dumps({"state": "gameweld_wand_v2_blocked", "reason": why, "appid": a.appid,
-                          "steam_launch_options_changed": False, "game_prefix_modified": False}))
-        return 2
-    if a.appid < 1 or a.compatdata.name != str(a.appid) or not (a.compatdata / "pfx/drive_c").is_dir():
-        return blocked("game_prefix_or_appid_mismatch")
-    if not a.client.is_absolute() or not a.game_exe.is_absolute() or not a.client.is_file() or not a.game_exe.is_file():
-        return blocked("client_or_game_executable_missing")
-    match = re.fullmatch(r"(?:127\.0\.0\.1|localhost):([0-9]{1,5})", a.monitor_endpoint)
-    if match is None or not 1 <= int(match.group(1)) <= 65535:
-        return blocked("monitor_not_localhost")
-    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", os.getenv("WAND_MONITOR_SESSION_TOKEN", "")):
-        return blocked("monitor_token_missing")
-    source = a.rewrite_root.resolve() / "src"
-    if not (source / "wand_launcher/entrypoint.py").is_file():
-        return blocked("deckcheatz_v2_source_missing")
+
+def _load_session_lock():
+    source = Path(__file__).with_name("gameweld-wand-v2-session-lock.py")
+    spec = importlib.util.spec_from_file_location("gameweld_wand_v2_session_lock", source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("session_lock_source_missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_guarded_session(a, blocked, source):
     # Fail closed before starting any upstream DeckCheatz session.
     # The existence of a localhost monitor endpoint and an opaque token does
     # not by itself prove a trusted Win32 process/attachment identity.
@@ -149,6 +136,55 @@ def run(argv: list[str] | None = None) -> int:
                       "upstream_trainer_cleanup_reported": True,
                       "steam_launch_options_changed": False, "game_prefix_modified": False}))
     return 0
+
+def run(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description="Internal GameWeld/Wand v2 session bridge")
+    p.add_argument("--appid", required=True, type=int)
+    p.add_argument("--compatdata", required=True, type=Path)
+    p.add_argument("--client", required=True, type=Path)
+    p.add_argument("--game-exe", required=True, type=Path)
+    p.add_argument("--monitor-endpoint", required=True)
+    p.add_argument("--rewrite-root", required=True, type=Path)
+    a = p.parse_args(argv)
+    def blocked(why: str) -> int:
+        print(json.dumps({"state": "gameweld_wand_v2_blocked", "reason": why, "appid": a.appid,
+                          "steam_launch_options_changed": False, "game_prefix_modified": False}))
+        return 2
+    if a.appid < 1 or a.compatdata.name != str(a.appid) or not (a.compatdata / "pfx/drive_c").is_dir():
+        return blocked("game_prefix_or_appid_mismatch")
+    if not a.client.is_absolute() or not a.game_exe.is_absolute() or not a.client.is_file() or not a.game_exe.is_file():
+        return blocked("client_or_game_executable_missing")
+    match = re.fullmatch(r"(?:127\.0\.0\.1|localhost):([0-9]{1,5})", a.monitor_endpoint)
+    if match is None or not 1 <= int(match.group(1)) <= 65535:
+        return blocked("monitor_not_localhost")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", os.getenv("WAND_MONITOR_SESSION_TOKEN", "")):
+        return blocked("monitor_token_missing")
+    source = a.rewrite_root.resolve() / "src"
+    if not (source / "wand_launcher/entrypoint.py").is_file():
+        return blocked("deckcheatz_v2_source_missing")
+    # A private, nonblocking per-AppID flock is held throughout the
+    # expensive liveness gate and complete upstream child lifecycle.
+    # A second GameWeld instance cannot start another monitor for this AppID.
+    try:
+        lock_impl = _load_session_lock()
+        lock_fd = lock_impl.acquire_session_lock(a.appid)
+    except RuntimeError as exc:
+        reason = str(exc)
+        known = {
+            "duplicate_gameweld_session", "invalid_session_appid",
+            "unsafe_session_runtime_directory",
+            "session_runtime_directory_not_private",
+            "session_runtime_directory_unavailable", "session_lock_unavailable",
+            "unsafe_session_lock_file", "session_lock_path_changed",
+            "session_lock_source_missing",
+        }
+        return blocked(reason if reason in known else "gameweld_session_lock_failed")
+    except (OSError, ValueError):
+        return blocked("gameweld_session_lock_failed")
+    try:
+        return _run_guarded_session(a, blocked, source)
+    finally:
+        lock_impl.release_session_lock(lock_fd)
 
 if __name__ == "__main__":
     sys.exit(run())
