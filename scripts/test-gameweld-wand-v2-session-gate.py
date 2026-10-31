@@ -198,6 +198,58 @@ class BridgeGateTests(unittest.TestCase):
         verify.assert_not_called()
         runner.assert_not_called()
 
+    def test_existing_gameweld_session_blocks_duplicate_monitor(self):
+        lockdir = self.root / "private-locks"
+        lockdir.mkdir(mode=0o700)
+        with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(lockdir)}):
+            implementation = bridge._load_session_lock()
+            owner = implementation.acquire_session_lock(3008130)
+            try:
+                code, obj, verify, runner = self.execute(
+                    gate=(True, "linux_game_anchor_stable"))
+                self.assertEqual(code, 2)
+                self.assertEqual(obj["reason"], "duplicate_gameweld_session")
+                verify.assert_not_called()
+                runner.assert_not_called()
+            finally:
+                implementation.release_session_lock(owner)
+
+    def test_session_lock_releases_after_monitor_success(self):
+        lockdir = self.root / "private-locks"
+        lockdir.mkdir(mode=0o700)
+        with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(lockdir)}):
+            for _ in range(2):
+                code, obj, _, runner = self.execute(
+                    gate=(True, "linux_game_anchor_stable"))
+                self.assertEqual(code, 0)
+                runner.assert_called_once()
+            implementation = bridge._load_session_lock()
+            owner = implementation.acquire_session_lock(3008130)
+            implementation.release_session_lock(owner)
+
+    def test_unsafe_session_runtime_directory_refuses_monitor(self):
+        lockdir = self.root / "world-readable"
+        lockdir.mkdir(mode=0o755)
+        with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(lockdir)}):
+            code, obj, verify, runner = self.execute(
+                gate=(True, "linux_game_anchor_stable"))
+            self.assertEqual(code, 2)
+            self.assertEqual(obj["reason"], "session_runtime_directory_not_private")
+            verify.assert_not_called()
+            runner.assert_not_called()
+
+    def test_monitor_failure_still_releases_session_lock(self):
+        lockdir = self.root / "private-locks"
+        lockdir.mkdir(mode=0o700)
+        with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(lockdir)}):
+            _, report, _, _ = self.execute(
+                gate=(True, "linux_game_anchor_stable"),
+                subprocess_result=SimpleNamespace(returncode=2, stdout="{}"))
+            self.assertEqual(report["reason"], "upstream_monitor_rejected")
+            implementation = bridge._load_session_lock()
+            owner = implementation.acquire_session_lock(3008130)
+            implementation.release_session_lock(owner)
+
     def test_live_gate_requires_three_samples_and_identity(self):
         good = dict(state="linux_runtime_anchor_stable", samples_completed=3,
                     linux_process_identity_stable=True, same_prefix_wineserver_observed=True,
