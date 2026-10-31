@@ -19,7 +19,7 @@ Added:
 
 **No Wine/Windows RPC**, no Steam edits or Launch Options, no `nsenter`, no sudo, no Wine socket access, no process signalling, no trainer queue and no credential inspection. `unreadable` is a valid non-authoritative result; do not ask user to disable ptrace safeguards. Filesystem inode identity does NOT prove a Wine IPC socket is connectable, and overlay/bind mounts can create different identity for equivalent file content.
 
-Focused 13/13 tests, ZIP CRC and clean extraction PASS. **Complete inherited suite was still executing at initial doc creation**; don't claim a 784/784 pass until a final exit code is confirmed. Rust and live CachyOS test NOT performed here.
+Focused 13/13 tests, ZIP CRC and clean extraction PASS. **Final verified:** working-tree full regression **784/784 tests PASS** (145.502s, exit 0), and complete clean extraction of the FINAL ZIP **784/784 PASS again** (94.245s, exit 0). Python compilation, Bash syntax and ZIP CRC passed on the clean extraction. Rust/Cargo unavailable and unbuilt; no live WeMod or CachyOS path probe executed here. Rust and live CachyOS test NOT performed here.
 
 ## Next user action — read-only, no second WeMod launch
 
