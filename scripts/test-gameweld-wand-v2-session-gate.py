@@ -250,6 +250,49 @@ class BridgeGateTests(unittest.TestCase):
             owner = implementation.acquire_session_lock(3008130)
             implementation.release_session_lock(owner)
 
+    def test_same_prefix_provider_residue_is_advisory_only(self):
+        evidence = {
+            "provider_residue_audit_state": "read_only_provider_residue_audit",
+            "same_prefix_provider_candidate_count": 2,
+            "provider_process_ownership_verified": False,
+        }
+        with patch.object(bridge, "inspect_possible_provider_residue", return_value=evidence):
+            code, obj, _, runner = self.execute(
+                gate=(True, "linux_game_anchor_stable"))
+        self.assertEqual(code, 0)
+        self.assertEqual(obj["same_prefix_provider_candidate_count"], 2)
+        self.assertFalse(obj["provider_process_ownership_verified"])
+        self.assertFalse(obj["trainer_cleanup_verified"])
+        runner.assert_called_once()
+
+    def test_unavailable_residue_audit_does_not_claim_cleanup(self):
+        evidence = {
+            "provider_residue_audit_state": "residue_audit_unavailable",
+            "same_prefix_provider_candidate_count": None,
+            "provider_process_ownership_verified": False,
+        }
+        with patch.object(bridge, "inspect_possible_provider_residue", return_value=evidence):
+            code, obj, _, runner = self.execute(
+                gate=(True, "linux_game_anchor_stable"))
+        self.assertEqual(code, 0)
+        self.assertIsNone(obj["same_prefix_provider_candidate_count"])
+        self.assertFalse(obj["trainer_cleanup_verified"])
+        runner.assert_called_once()
+
+    def test_zero_residue_does_not_claim_cleanup(self):
+        evidence = {
+            "provider_residue_audit_state": "read_only_provider_residue_audit",
+            "same_prefix_provider_candidate_count": 0,
+            "provider_process_ownership_verified": False,
+        }
+        with patch.object(bridge, "inspect_possible_provider_residue", return_value=evidence):
+            code, obj, _, runner = self.execute(
+                gate=(True, "linux_game_anchor_stable"))
+        self.assertEqual(code, 0)
+        self.assertFalse(obj["trainer_cleanup_verified"])
+        self.assertFalse(obj["provider_process_ownership_verified"])
+        runner.assert_called_once()
+
     def test_live_gate_requires_three_samples_and_identity(self):
         good = dict(state="linux_runtime_anchor_stable", samples_completed=3,
                     linux_process_identity_stable=True, same_prefix_wineserver_observed=True,
