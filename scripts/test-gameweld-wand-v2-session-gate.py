@@ -57,7 +57,7 @@ class BridgeGateTests(unittest.TestCase):
             }))
         with patch.dict(os.environ, {"WAND_MONITOR_SESSION_TOKEN": token}), \
              patch.object(bridge, "verify_running_linux_game", return_value=gate) as verify, \
-             patch.object(bridge.subprocess, "run", return_value=subprocess_result) as runner, \
+             patch.object(bridge, "execute_bounded_monitor", return_value=subprocess_result) as runner, \
              redirect_stdout(io.StringIO()) as capture:
             code = bridge.run(args)
         return code, json.loads(capture.getvalue()), verify, runner
@@ -134,6 +134,61 @@ class BridgeGateTests(unittest.TestCase):
             subprocess_result=SimpleNamespace(returncode=0, stdout="not json"))
         self.assertEqual(code, 2)
         self.assertEqual(obj["reason"], "upstream_session_report_invalid")
+
+    def test_upstream_cross_appid_claim_rejected(self):
+        result = SimpleNamespace(returncode=0, stdout=json.dumps({
+            "state": "monitor_session_finished", "appid": 1234,
+            "game_started": True, "trainer_process_started": True,
+            "trainer_cleanup_verified": True, "game_exit_code": 0,
+        }))
+        code, report, _, runner = self.execute(
+            gate=(True, "linux_game_anchor_stable"), subprocess_result=result)
+        self.assertEqual(code, 2)
+        self.assertEqual(report["reason"], "upstream_appid_mismatch")
+        runner.assert_called_once()
+
+    def test_upstream_direct_game_spawn_claim_rejected(self):
+        result = SimpleNamespace(returncode=0, stdout=json.dumps({
+            "state": "monitor_session_finished", "appid": 3008130,
+            "game_started": True, "trainer_process_started": True,
+            "trainer_cleanup_verified": True, "game_exit_code": 0,
+            "game_started_by_monitor": True,
+        }))
+        code, report, _, _ = self.execute(
+            gate=(True, "linux_game_anchor_stable"), subprocess_result=result)
+        self.assertEqual(code, 2)
+        self.assertEqual(report["reason"], "upstream_unexpected_game_launch")
+
+    def test_upstream_wrong_shape_rejected(self):
+        code, report, _, _ = self.execute(
+            gate=(True, "linux_game_anchor_stable"),
+            subprocess_result=SimpleNamespace(returncode=0, stdout="[]"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["reason"], "upstream_session_report_invalid")
+
+    def test_bounded_output_failure_refused(self):
+        with patch.dict(os.environ, {"WAND_MONITOR_SESSION_TOKEN": TOKEN}), \
+             patch.object(bridge, "verify_running_linux_game",
+                          return_value=(True, "linux_game_anchor_stable")), \
+             patch.object(bridge, "execute_bounded_monitor",
+                          side_effect=RuntimeError("upstream_monitor_output_limit_exceeded")), \
+             redirect_stdout(io.StringIO()) as capture:
+            code = bridge.run(self.args)
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(capture.getvalue())["reason"],
+                         "upstream_monitor_output_limit_exceeded")
+
+    def test_monitor_timeout_failure_refused(self):
+        with patch.dict(os.environ, {"WAND_MONITOR_SESSION_TOKEN": TOKEN}), \
+             patch.object(bridge, "verify_running_linux_game",
+                          return_value=(True, "linux_game_anchor_stable")), \
+             patch.object(bridge, "execute_bounded_monitor",
+                          side_effect=RuntimeError("upstream_monitor_timeout")), \
+             redirect_stdout(io.StringIO()) as capture:
+            code = bridge.run(self.args)
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(capture.getvalue())["reason"],
+                         "upstream_monitor_timeout")
 
     def test_missing_compatdata_refused_without_launch(self):
         (self.compatdata / "pfx/drive_c").rmdir()
