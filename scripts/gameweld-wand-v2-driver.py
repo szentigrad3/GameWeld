@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Experimental GameWeld GTK -> Steam -> DeckCheatz v2 handoff driver.
+"""STAGING GUARD: provisional GameWeld GTK v2 driver, no launch until Batch 21 source is overlaid.
 
 Only the real Steam client can launch a game. Never edit launch options,
 compatibility settings or prefix files. The actual Windows observer and its
@@ -140,6 +140,11 @@ def run(argv=None, *, aio=None, anchor=None, context=None, session=None,
     if APP_ID.fullmatch(a.appid) is None:
         return blocked(0, "invalid_steam_appid")
     appid = int(a.appid)
+    # Batch 21 provided the actual complete DeckCheatz v2 controller and
+    # schema=1 configuration format. This earlier prototype has a different
+    # config schema and MUST NOT start Steam or a monitor until the reviewed
+    # complete MIT controller is overlaid into this draft worktree.
+    return blocked(appid, "batch21_full_source_driver_overlay_required")
     selected = validate_install(a.game_exe, a.install_dir)
     if selected is None:
         return blocked(appid, "selected_steam_game_executable_invalid")
