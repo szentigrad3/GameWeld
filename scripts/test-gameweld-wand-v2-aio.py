@@ -73,14 +73,14 @@ class SteamAIOTests(unittest.TestCase):
         return aio.discover(APPID, self.steam, proc_root=self.proc,
                             steam=steam, context=context)
 
-    def run(self):
+    def run_aio(self):
         return aio.run(APPID, self.steam, proc_root=self.proc,
                        steam=steam, context=context, anchor=anchor,
                        samples=3, interval_ms=0)
 
     def test_finds_true_game_and_auto_resamples(self):
         self.running()
-        r = self.run()
+        r = self.run_aio()
         self.assertEqual(r["state"], "linux_runtime_anchor_stable")
         self.assertEqual(r["candidate_linux_pid"], 102)
         self.assertEqual(r["samples_completed"], 3)
@@ -157,7 +157,7 @@ class SteamAIOTests(unittest.TestCase):
         self.running()
         path = self.apps / f"appmanifest_{APPID}.acf"
         before = path.read_bytes()
-        r = self.run()
+        r = self.run_aio()
         self.assertEqual(r["state"], "linux_runtime_anchor_stable")
         self.assertEqual(path.read_bytes(), before)
 
