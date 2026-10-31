@@ -23,7 +23,7 @@ This establishes that Wine's Win32 process enumeration sees **one process named 
 
 ## Complete Batch27 source package (separate from this PR)
 
-The downloadable complete development ZIP `GameWeld-DeckCheatz-Batch27-Complete-Source-DEV.zip` is 227,514 bytes, 118 entries, SHA256 `e4b06358e98d4d39805099d0ea9a622a2758a5203f3b6ef45d5187d0720ad15f`.
+The downloadable complete development ZIP `GameWeld-DeckCheatz-Batch27-Complete-Source-DEV.zip` is 231,685 bytes, 119 entries, SHA256 `417b329cdef33419c27413ccfec6922920b5fc80c806951c92e1aa9600cb133f`.
 
 Modified **only MIT** `gameweld/scripts/gameweld-wand-v2-win32-probe.py`:
 
@@ -38,7 +38,7 @@ A new guarded `apply-gameweld-pr18-batch27.sh` can optionally stage **only the M
 
 ## Verification
 
-**428/428 Python tests passed**, 31 new tests (24 for alias/probe; seven isolated Git staging tests). Python compilation and Bash syntax checks passed. ZIP integrity check passed, and 428 tests passed from a clean extraction. No modified Rust code in this batch; nevertheless no new Windows build or real Win32 retry was run in this authoring environment.
+**428/428 Python tests passed**, 31 new tests (24 for alias/probe; seven isolated Git staging tests, including a bundled Batch26 source fixture). Python compilation and Bash syntax checks passed. ZIP integrity check passed, and 428 tests passed from a clean extraction. No modified Rust code in this batch; nevertheless no new Windows build or real Win32 retry was run in this authoring environment.
 
 ## CachyOS instructions
 
