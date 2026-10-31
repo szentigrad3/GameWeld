@@ -18,7 +18,7 @@ The explicit GPU fallback mode from Batch38 is unchanged. A GPU launch retry rem
 
 ## Development verification
 
-**712/712 Python unittests passed in working tree**, including 24 new tests. Python compilation, Bash syntax, ZIP integrity passed. ZIP `GameWeld-DeckCheatz-Batch39-Complete-Source-DEV.zip` SHA256 `b699254b6c3a439b5bfde2652c616d0dadd497584ac50a2da23cfd264af62bb3`, 173 entries, 391708 bytes. Clean extracted run was started independently, to be confirmed separately; do not label it passed until verified. Rust/Windows builds and any live CachyOS execution not performed here; AGPL Rust observer unchanged.
+**712/712 Python unittests passed in working tree**, including 24 new tests. Python compilation, Bash syntax, ZIP integrity passed. ZIP `GameWeld-DeckCheatz-Batch39-Complete-Source-DEV.zip` SHA256 `b699254b6c3a439b5bfde2652c616d0dadd497584ac50a2da23cfd264af62bb3`, 173 entries, 391708 bytes. **712/712 Python tests also PASSED again from a clean extraction of the FINAL ZIP, in 73.614s; independent full-suite double pass confirmed.** Rust/Windows builds and any live CachyOS execution not performed here; AGPL Rust observer unchanged.
 
 ## Exact next user gate
 
