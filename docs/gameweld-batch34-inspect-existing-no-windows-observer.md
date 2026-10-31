@@ -23,7 +23,7 @@ The historical Batch33 staging helper now pins its own original fixture; a new g
 ## Verification boundary
 
 - Batch34 source archive `GameWeld-DeckCheatz-Batch34-Complete-Source-DEV.zip` contains **153 entries**, ZIP CRC passed; SHA256 `ce89d54c08cb20fb90f50e21792e42bcb9d1b91247c6b9bb8b285deb5a703433`.
-- **619/619 Python tests passed** in authoring source, 16 new tests including CLI-level no-Windows-observer, guarded normal preflight, identity checks, CLI candidate/no-candidate reporting and local SHA-pinned Git staging.
+- **619/619 Python tests passed TWICE** (working source and a clean extraction of the final ZIP), 16 new tests including CLI-level no-Windows-observer, guarded normal preflight, identity checks, CLI candidate/no-candidate reporting and local SHA-pinned Git staging.
 - Rust/Cargo unavailable here: Rust tests **SKIPPED**, not passed. **Live CachyOS inspection not yet run** as of this documentation.
 - Full source ZIP is delivered in the user conversation, **not automatically pushed into the GitHub source branch**; only this documentation is committed. The user's local uncommitted GameWeld staging remains untouched.
 
