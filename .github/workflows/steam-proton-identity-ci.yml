@@ -10,6 +10,7 @@ on:
       - 'scripts/gameweld-wand-v2-live-anchor.py'
       - 'scripts/gameweld-wand-v2-session.py'
       - 'scripts/gameweld-wand-v2-bounded-monitor.py'
+      - 'scripts/gameweld-wand-v2-aio.py'
       - 'scripts/test-gameweld-wand-v2-*.py'
       - '.github/workflows/steam-proton-identity-ci.yml'
   workflow_dispatch:
@@ -28,7 +29,7 @@ jobs:
           python-version: '3.13'
       - name: Syntax and import compilation
         run: |
-          python -m py_compile scripts/gameweld-wand-v2-live-context.py scripts/gameweld-wand-v2-live-anchor.py scripts/gameweld-wand-v2-session.py scripts/gameweld-wand-v2-bounded-monitor.py
+          python -m py_compile scripts/gameweld-wand-v2-live-context.py scripts/gameweld-wand-v2-live-anchor.py scripts/gameweld-wand-v2-session.py scripts/gameweld-wand-v2-bounded-monitor.py scripts/gameweld-wand-v2-aio.py
       - name: Batch 13 game identity tests
         run: python scripts/test-gameweld-wand-v2-live-context.py -v
       - name: Batch 14 bounded liveness tests
@@ -37,3 +38,5 @@ jobs:
         run: python scripts/test-gameweld-wand-v2-session-gate.py -v
       - name: Batch 16 bounded monitor subprocess tests
         run: python scripts/test-gameweld-wand-v2-bounded-monitor.py -v
+      - name: Batch 17 automatic game and prefix discovery tests
+        run: python scripts/test-gameweld-wand-v2-aio.py -v
