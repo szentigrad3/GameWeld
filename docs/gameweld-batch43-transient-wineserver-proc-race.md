@@ -33,7 +33,7 @@ Complete source development ZIP in conversation: `GameWeld-DeckCheatz-Batch43-Co
 
 **Avoid another Windows observer rebuild:** the helper `apply-batch43-to-batch42.sh TARGET --check|--apply` only updates the exact previously verified Batch42 provenance Python file and adds the unit test, after checking fixed SHA-256 digests, refusing symlinks, unknown local edits and incorrect target directory. A real pristine Batch42 fixture was exercised: dry-run PASS, apply PASS and idempotent second apply PASS. No user's actual local folder was touched.
 
-Working source suite **798/798 PASS** (before adding 7 helper tests), while 21 final focused tests PASS. Final clean-extracted ZIP full suite running separately; label it PASS only after actual completion. No Cargo/Rust execution here, no live Wine/WeMod/game. Trainer-capable production operations remain disabled.
+Working source suite **798/798 PASS** (before adding 7 helper tests), and final clean-extracted ZIP `bash run-all-tests.sh` **805/805 PASS** (exit code 0). All **21 Batch43 focused tests PASS**. Python compile, Bash syntax and ZIP integrity PASS. No Cargo/Rust execution here, no live Wine/WeMod/game. Trainer-capable production operations remain disabled.
 
 **Next user check:** first read-only `bash run-wemod-gui-pilot.sh --inspect-existing` on the running game. The prior five process candidates were an historical finite observation and must not be assumed gone or owned. No new WeMod launch before a clean candidate scan, provenance and readiness and explicit user consent. Do not alter Steam Launch Options, disable Electron ASAR/TLS checks, kill unrelated Wine processes, or enable trainer queue.
 
