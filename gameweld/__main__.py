@@ -8,6 +8,7 @@ from .diagnostics import game_report
 from .ipc import preflight, run_probe, run_benchmark
 from .history import (read_report, record_summary, sanitise_benchmark,
                       history_report, compare_summaries)
+from .startup import compare_startup, startup_trend
 
 
 def main(argv=None):
@@ -17,6 +18,10 @@ def main(argv=None):
     parser.add_argument('--review-benchmark', metavar='JSON', help='Read and sanitise one benchmark without saving it')
     parser.add_argument('--record-benchmark', metavar='JSON', help='Explicitly import a benchmark into local history')
     parser.add_argument('--compare-benchmarks', nargs=2, metavar=('OLD','NEW'), help='Read-only startup comparison')
+    parser.add_argument('--startup-compare', nargs=2, metavar=('OLD','NEW'),
+                        help='Compare verified startup samples without launching Wine')
+    parser.add_argument('--startup-trend', action='store_true',
+                        help='Read-only session-weighted saved benchmark trend')
     parser.add_argument('--save-history', action='store_true', help='Persist sanitised summary after consented benchmark')
     parser.add_argument('--steamapps', help='Read-only Steam steamapps location')
     parser.add_argument('--diagnose-appid', type=int)
@@ -32,10 +37,16 @@ def main(argv=None):
         parser.error('--timeout must be between 10 and 120 seconds')
     if args.save_history and not args.ipc_benchmark:
         parser.error('--save-history is only valid with --ipc-benchmark')
-    if args.history or args.review_benchmark or args.record_benchmark or args.compare_benchmarks:
+    if (args.history or args.review_benchmark or args.record_benchmark or
+            args.compare_benchmarks or args.startup_compare or args.startup_trend):
         try:
             if args.history:
                 result = history_report()
+            elif args.startup_trend:
+                result = startup_trend()
+            elif args.startup_compare:
+                result = compare_startup(read_report(args.startup_compare[0]),
+                                         read_report(args.startup_compare[1]))
             elif args.review_benchmark:
                 result = read_report(args.review_benchmark)
             elif args.record_benchmark:

@@ -30,3 +30,12 @@ checks. This does not verify that all detached Wine helper processes ended.
 Desktop 0.4.0 adds opt-in local numeric-only benchmark history, a History tab,
 strict report import, CLI comparisons and deduplication. Full GTK4 user
 interaction, including importing your existing 0.3 report, still requires a CachyOS test.
+
+## Batch 0.5.0-alpha
+
+Two-session prior test mean READY 7,924.5 ms; later one-session user test 35,247 ms.
+Both passed IPC protocol and owned prefix cleanup, but the slower result is one
+observation, not evidence of the cause. Startup performance comparison, weighted
+history statistics, and separate spawn-vs-READY timing fields added. The legacy
+history schema is unchanged. Graphical GTK4 testing and real new timing evidence
+are still pending on CachyOS. No game attachment or trainer execution.

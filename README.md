@@ -91,3 +91,17 @@ comparison, with a warning that differences are not causal evidence.
 — opt in to saving a successful live-run summary. The existing fixture hash
 and game-memory prohibitions remain unchanged. The history log is strictly
 local, 0600, symlink-resistant and capped at 64 records.
+
+## Batch 0.5: startup performance diagnostics
+
+The successful IPC protocol is unchanged; future runs now report Wine launcher spawn
+time separately from waiting for READY. The new read-only commands:
+
+
+```bash
+bash run.sh --startup-compare ~/Downloads/gameweld-desktop-030-benchmark.json ~/Downloads/gameweld-desktop-040-benchmark.json
+bash run.sh --startup-trend
+```
+
+Startup differences are observations only. One slow run cannot establish a Wine regression or its cause.
+The history schema remains compatible with 0.4.0. Do not share raw Wine logs or alter Proton settings to troubleshoot this dashboard.

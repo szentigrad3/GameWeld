@@ -109,6 +109,7 @@ def _run_once_v2(wine, fixture, timeout, *, cancel_event=None):
     stdout_bytes=0;stderr_bytes=0;linebuf=bytearray();timestamps=[];roundtrips={};sent_at={}
     began=time.monotonic();deadline=began+timeout
     active_helpers=None; helper_review=None
+    launcher_spawn_ms=None; ready_wait_ms=None; launched_at=None
     temp=tempfile.TemporaryDirectory(prefix='gameweld77-ipc-wine-')
     process=None
     try:
@@ -122,9 +123,12 @@ def _run_once_v2(wine, fixture, timeout, *, cancel_event=None):
                 if count<=0:raise OSError('write_failed')
                 mv=mv[count:]
         finally:os.close(fd)
+        spawn_began=time.monotonic()
         process=subprocess.Popen([wine,str(probe)],cwd=str(root),env=env,
              stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
              close_fds=True,start_new_session=True,bufsize=0)
+        launched_at=time.monotonic()
+        launcher_spawn_ms=round((launched_at-spawn_began)*1000,3)
         started=True
         sel=selectors.DefaultSelector()
         try:
@@ -159,6 +163,7 @@ def _run_once_v2(wine, fixture, timeout, *, cancel_event=None):
                         observed_at=time.monotonic()
                         timestamps.append(round((observed_at-began)*1000))
                         if stage == 1:
+                            ready_wait_ms=round(max(0,observed_at-(launched_at or began))*1000,3)
                             try:active_helpers=helpers.snapshot_active(env['WINEPREFIX'],
                                 owned_pgid=process.pid)
                             except (OSError, ValueError):active_helpers=None
@@ -205,6 +210,9 @@ def _run_once_v2(wine, fixture, timeout, *, cancel_event=None):
         'milestone_elapsed_ms':dict(zip(STAGES,timestamps)),
         'roundtrip_ms':roundtrips,
         'startup_elapsed_ms':timestamps[0] if timestamps else None,
+        'launcher_spawn_ms':launcher_spawn_ms,
+        'wine_ready_wait_ms':ready_wait_ms,
+        'post_ready_session_ms':round(max(0,(time.monotonic()-began)*1000-timestamps[0]),3) if timestamps else None,
         'session_elapsed_ms':round((time.monotonic()-began)*1000),
         'observed_helper_review':helper_review,
         'timeout_reached':timed_out,'output_limit_reached':output_limit,
@@ -267,4 +275,7 @@ def run_benchmark(*, consent=False, fixture=None, timeout=75, runs=2, cancel_eve
             'startup_min_ms':min(startups) if startups else None,
             'startup_max_ms':max(startups) if startups else None,
             'startup_mean_ms':round(sum(startups)/len(startups),1) if startups else None,
-            'roundtrip_ms_by_command':ipc_metrics,'attempts':attempts}
+            'roundtrip_ms_by_command':ipc_metrics,
+            'launcher_spawn_ms':[a.get('launcher_spawn_ms') for a in attempts],
+            'wine_ready_wait_ms':[a.get('wine_ready_wait_ms') for a in attempts],
+            'attempts':attempts}

@@ -8,6 +8,7 @@ from .core import installed_games, load_settings, save_settings, find_games
 from .diagnostics import game_report
 from .ipc import fixture_default_path, preflight, run_probe, run_benchmark
 from .history import read_report, record_summary, sanitise_benchmark, history_report
+from .startup import startup_trend
 
 CSS = '''
 .gw-heading {font-size: 23px; font-weight: 700;}
@@ -246,14 +247,27 @@ class DesktopWindow(Gtk.ApplicationWindow):
         try:
             report = history_report()
             records = report['records']
+            trend = startup_trend()
+            mean = trend['session_weighted_mean_ms']
+            median = trend['session_median_ms']
+            summary_line = (f"{trend['successful_session_count']} measured sessions"
+                            + (f"  ·  mean READY {mean/1000:.2f} s" if mean is not None else '')
+                            + (f"  ·  median {median/1000:.2f} s" if median is not None else ''))
             self.history_status.set_text(
-                f"{report['record_count']} saved reports  ·  {report['success_count']} successful")
+                f"{report['record_count']} saved reports  ·  {report['success_count']} successful\n"
+                + summary_line)
             lines = []
             for item in reversed(records[-30:]):
                 value = item['startup_mean_ms']
                 startup = f'{value / 1000:.2f} s' if value is not None else 'not measured'
                 lines.append(f"{item['recorded_at_utc']}   {item['state']}\n"
                              f"   {item['runs_completed']} session(s)  ·  mean READY {startup}\n")
+            if trend['latest_vs_earlier_ratio'] is not None:
+                ratio = trend['latest_vs_earlier_ratio']
+                lines.insert(0, f"Latest report / earlier sessions: {ratio:.2f}× startup time\n"
+                                + ('Single-run comparison; not evidence of a cause.\n'
+                                   if trend['latest_comparison_is_single_run']
+                                   else 'Observational comparison; not a verified cause.\n'))
             self.history_text.get_buffer().set_text('\n'.join(lines) or 'No benchmark summaries recorded.')
         except (OSError, ValueError):
             self.history_status.set_text('Cannot load saved history. Check local file permissions/format.')

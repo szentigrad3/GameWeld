@@ -243,12 +243,18 @@ def record_summary(summary, *, path=None):
 
 def history_report(*, path=None):
     entries = load_history(path)
+    all_sessions = [attempt['startup_ms'] for entry in entries
+                    for attempt in entry['summary']['attempts']
+                    if attempt['state'] == 'owned_win64_v2_protocol_verified'
+                    and type(attempt['startup_ms']) in (int,float)]
     means = [e['summary'].get('startup_mean_ms') for e in entries]
     means = [m for m in means if type(m) in (int,float) and math.isfinite(m)]
     return {'operation': 'gameweld-benchmark-history', 'schema_version': SCHEMA,
             'state': 'history_loaded', 'record_count': len(entries),
             'success_count': sum(e['summary'].get('state')=='isolated_ipc_benchmark_verified' for e in entries),
             'startup_mean_of_recorded_sessions_ms': round(sum(means)/len(means), 2) if means else None,
+            'startup_session_count': len(all_sessions),
+            'startup_weighted_mean_ms': round(sum(all_sessions)/len(all_sessions), 2) if all_sessions else None,
             'records': [{'recorded_at_utc': e['recorded_at_utc'],
                          'id': e['summary']['id'], 'state': e['summary']['state'],
                          'runs_completed': e['summary']['runs_completed'],
@@ -262,6 +268,8 @@ def compare_summaries(left, right):
     if not isinstance(left, dict) or not isinstance(right, dict):
         raise ValueError('invalid_comparison')
     a, b = left.get('startup_mean_ms'), right.get('startup_mean_ms')
+    if (a is not None and _metric(a) is None) or (b is not None and _metric(b) is None):
+        raise ValueError('invalid_comparison_metric')
     difference = round(b-a, 3) if type(a) in (int,float) and type(b) in (int,float) else None
     return {'operation': 'gameweld-benchmark-comparison', 'schema_version': SCHEMA,
             'state': 'comparison_ready', 'old_mean_ms': a, 'new_mean_ms': b,
