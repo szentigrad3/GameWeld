@@ -5,7 +5,7 @@ import sys
 from . import __version__
 from .core import installed_games, load_settings
 from .diagnostics import game_report
-from .ipc import preflight, run_probe
+from .ipc import preflight, run_probe, run_benchmark
 
 
 def main(argv=None):
@@ -15,9 +15,14 @@ def main(argv=None):
     parser.add_argument('--diagnose-appid', type=int)
     parser.add_argument('--ipc-preflight', action='store_true')
     parser.add_argument('--ipc-test', action='store_true', help='Run one owned pinned fixture only')
+    parser.add_argument('--ipc-benchmark', action='store_true', help='Run 1-3 sequential owned fixture sessions')
+    parser.add_argument('--runs', type=int, default=2, help='IPC benchmark sessions: 1 to 3')
+    parser.add_argument('--timeout', type=int, default=75, help='Per-fixture session timeout: 10 to 120 sec')
     parser.add_argument('--consent-owned-fixture', action='store_true', help='Required for --ipc-test')
     parser.add_argument('--fixture', help='Must match the pinned original Win64 v2 SHA-256')
     args = parser.parse_args(argv)
+    if (args.ipc_test or args.ipc_benchmark) and not 10 <= args.timeout <= 120:
+        parser.error('--timeout must be between 10 and 120 seconds')
     if args.smoke:
         prefs=load_settings()
         games=installed_games(args.steamapps or prefs['steamapps'])
@@ -39,9 +44,17 @@ def main(argv=None):
         print(json.dumps(preflight(args.fixture),sort_keys=True))
         return 0
     if args.ipc_test:
-        report=run_probe(consent=args.consent_owned_fixture,fixture=args.fixture,timeout=75)
+        report=run_probe(consent=args.consent_owned_fixture,fixture=args.fixture,timeout=args.timeout)
         print(json.dumps(report,sort_keys=True))
         return 0 if report.get('state')=='owned_win64_v2_protocol_verified' else 1
+    if args.ipc_benchmark:
+        try:
+            report=run_benchmark(consent=args.consent_owned_fixture,fixture=args.fixture,
+                                 timeout=args.timeout,runs=args.runs)
+        except ValueError:
+            parser.error('--runs must be 1..3 and timeout 10..120')
+        print(json.dumps(report,sort_keys=True))
+        return 0 if report.get('state')=='isolated_ipc_benchmark_verified' else 1
     try:
         from .ui import launch
         return launch()

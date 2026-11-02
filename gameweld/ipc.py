@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from . import helpers
 
 PROBE_BYTES=4096
 PROBE_NAME='gameweld_sidecar_probe_v2.exe'
@@ -100,13 +101,14 @@ def _environment(root):
         except OSError:pass
     return env
 
-def _run_once_v2(wine, fixture, timeout):
+def _run_once_v2(wine, fixture, timeout, *, cancel_event=None):
     """Run the hash-pinned v2 PE only, on a private prefix, fail closed."""
     nonce=secrets.token_hex(8)  # never serialized to reports
     stage=0;started=False;reaped=False;timed_out=False;output_limit=False
     stopped=False;exit_zero=False;cleanup=False;error='not_started'
     stdout_bytes=0;stderr_bytes=0;linebuf=bytearray();timestamps=[];roundtrips={};sent_at={}
     began=time.monotonic();deadline=began+timeout
+    active_helpers=None; helper_review=None
     temp=tempfile.TemporaryDirectory(prefix='gameweld77-ipc-wine-')
     process=None
     try:
@@ -130,6 +132,8 @@ def _run_once_v2(wine, fixture, timeout):
             sel.register(process.stderr,selectors.EVENT_READ,'stderr')
             error='protocol_incomplete'
             while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    error='cancelled';break
                 remain=deadline-time.monotonic()
                 if remain<=0:timed_out=True;error='timeout';break
                 if process.poll() is not None and not sel.get_map():break
@@ -154,8 +158,11 @@ def _run_once_v2(wine, fixture, timeout):
                         stage+=1
                         observed_at=time.monotonic()
                         timestamps.append(round((observed_at-began)*1000))
+                        if stage == 1:
+                            try:active_helpers=helpers.snapshot_active(env['WINEPREFIX'])
+                            except (OSError, ValueError):active_helpers=None
                         if stage>1 and stage-2 in sent_at:
-                            roundtrips[COMMANDS[stage-2].lower()]=round((observed_at-sent_at[stage-2])*1000)
+                            roundtrips[COMMANDS[stage-2].lower()]=round((observed_at-sent_at[stage-2])*1000,3)
                         if stage<=3:
                             try:
                                 process.stdin.write(frame(COMMANDS[stage-1],nonce))
@@ -184,6 +191,8 @@ def _run_once_v2(wine, fixture, timeout):
             for pipe in (process.stdin,process.stdout,process.stderr):
                 try:pipe.close()
                 except (OSError,ValueError,AttributeError):pass
+        try:helper_review=helpers.review(active_helpers)
+        except (OSError, ValueError):helper_review={'state':'review_failed','all_detached_helpers_reaped_verified':False,'raw_process_details_disclosed':False}
         try:temp.cleanup();cleanup=True
         except OSError:cleanup=False
     all_good=all((started,stage==4,stopped,exit_zero,reaped,cleanup)) and not timed_out and not output_limit
@@ -194,6 +203,9 @@ def _run_once_v2(wine, fixture, timeout):
         'owned_launcher_reaped':reaped,'temporary_prefix_cleanup_verified':cleanup,
         'milestone_elapsed_ms':dict(zip(STAGES,timestamps)),
         'roundtrip_ms':roundtrips,
+        'startup_elapsed_ms':timestamps[0] if timestamps else None,
+        'session_elapsed_ms':round((time.monotonic()-began)*1000),
+        'observed_helper_review':helper_review,
         'timeout_reached':timed_out,'output_limit_reached':output_limit,
         'error_category':error if not all_good else 'none',
         'stdout_bytes_observed':stdout_bytes,'stderr_bytes_observed':stderr_bytes,
@@ -202,7 +214,7 @@ def _run_once_v2(wine, fixture, timeout):
         'detached_wine_helpers_reaped_verified':False}
 
 
-def run_probe(*, consent=False, fixture=None, timeout=75):
+def run_probe(*, consent=False, fixture=None, timeout=75, cancel_event=None):
     """A single owned, isolated session; no arbitrary binary can pass the SHA gate."""
     base={'operation':'gameweld-ipc-fixture','schema_version':1,'fixture_only':True,
           'trainer_launched':False,'game_memory_accessed':False,'steam_modified':False,
@@ -217,5 +229,41 @@ def run_probe(*, consent=False, fixture=None, timeout=75):
         return {**base,'state':'fixture_integrity_failed','fixture_process_started':False}
     wine=_find_wine()
     if wine is None:return {**base,'state':'system_wine_unavailable','fixture_process_started':False}
-    result=_run_once_v2(wine,payload,timeout)
+    result=_run_once_v2(wine,payload,timeout,cancel_event=cancel_event)
     return {**base,**result}
+
+
+def run_benchmark(*, consent=False, fixture=None, timeout=75, runs=2, cancel_event=None):
+    """Run 1-3 fresh, hash-pinned isolated sessions, stopping at first failure."""
+    if type(runs) is not int or not 1 <= runs <= 3:
+        raise ValueError('invalid_run_count')
+    base={'operation':'gameweld-ipc-benchmark','schema_version':1,'runs_requested':runs,
+          'trainer_launched':False,'game_memory_accessed':False,'steam_modified':False,
+          'safe_to_attach':False,'raw_paths_disclosed':False,
+          'detached_wine_helpers_reaped_verified':False}
+    if consent is not True:
+        return {**base,'state':'consent_required','runs_completed':0,'attempts':[]}
+    attempts=[]
+    for _ in range(runs):
+        if cancel_event is not None and cancel_event.is_set():
+            break
+        attempt=run_probe(consent=True,fixture=fixture,timeout=timeout,
+                          cancel_event=cancel_event)
+        attempts.append(attempt)
+        if attempt.get('state') != 'owned_win64_v2_protocol_verified':
+            break
+    success=len(attempts)==runs and all(
+        a.get('state')=='owned_win64_v2_protocol_verified' for a in attempts)
+    startups=[a['startup_elapsed_ms'] for a in attempts if a.get('startup_elapsed_ms') is not None]
+    ipc_metrics={key:[a.get('roundtrip_ms',{}).get(key) for a in attempts
+                      if isinstance(a.get('roundtrip_ms',{}).get(key), (int,float))]
+                 for key in ('ping','status','stop')}
+    cancelled = cancel_event is not None and cancel_event.is_set()
+    return {**base,'state':'isolated_ipc_benchmark_verified' if success else
+            'isolated_ipc_benchmark_cancelled' if cancelled else 'isolated_ipc_benchmark_failed',
+            'runs_completed':len(attempts),'all_protocols_verified':success,
+            'startup_elapsed_ms':startups,
+            'startup_min_ms':min(startups) if startups else None,
+            'startup_max_ms':max(startups) if startups else None,
+            'startup_mean_ms':round(sum(startups)/len(startups),1) if startups else None,
+            'roundtrip_ms_by_command':ipc_metrics,'attempts':attempts}

@@ -1,19 +1,19 @@
-# GameWeld Desktop 0.2.0-alpha status
+# GameWeld Desktop 0.3.0-alpha — source and verification status
 
-## Verified in development container
+## Host evidence carried into 0.3.0
 
-- 36 offline tests and Python source compilation passed.
-- Original Batch77 fixture's byte count, PE format and pinned hash agree.
-- Four-stage original protocol verified with an owned fake Wine launcher; malformed response fails closed.
-- Generated source ZIP integrity check passes.
+The user ran the 0.2.0 desktop IPC fixture on CachyOS. READY, PING/PONG, STATUS and STOP/STOPPED all passed, the launcher exited zero, and the temporary prefix was removed. Time to READY was approximately 20.7 seconds. This is a confirmed real-host **desktop supervisor** success for the exact pinned Win64 test fixture, not trainer compatibility.
 
-## Host-only gates still open
+## 0.3.0 changes requiring new host validation
 
-- GTK4 UI layout, selection, notes editing and live status on CachyOS.
-- IPC Lab run with **real system Wine** on CachyOS. This new desktop integration has not been exercised on the host yet.
-- Complete cleanup of unobserved detached Wine helpers is not provable.
-- No live Steam game / Proton process identity or trainer functionality has been validated.
+- Optional one-, two- or three-session Wine benchmark with explicit consent and owned-process cancellation.
+- Separate cold-start timing (time until READY) and sub-millisecond IPC round-trip measurement.
+- Bounded read-only /proc census matching only an exact owned WINEPREFIX, with two post-exit checks against previously observed PID/starttime identities.
+- Neither this census nor zero post-exit matches prove all detached Wine helpers were reaped.
+- GTK4 IPC tab run-count selector and mean startup display.
 
-## Historical evidence
+## Remaining restrictions
 
-Earlier Batch77 ran the original Win64 v2 fixture under isolated system Wine in two verified CachyOS sessions. That is a separate, known good baseline and does **not** substitute for testing the new UI supervisor.
+No third-party trainers, game-memory access, live game attachment, Steam launch-option changes, arbitrary executable selection, or Steam Proton prefix reuse. The Wine benchmark executes only the pinned original 4096-byte GameWeld Win64 v2 probe. All private process information is kept out of shareable JSON.
+
+Development-environment tests use original fake Wine children for the protocol, not the actual Linux GTK4 desktop runtime. Real GTK4 visual and 0.3.0 Wine integration testing must take place on CachyOS.

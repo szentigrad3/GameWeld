@@ -14,7 +14,8 @@ class UIStaticTests(unittest.TestCase):
     def test_no_paned(self):self.assertNotIn('Gtk.Paned(',self.text)
     def test_ipc_requires_consent(self):
         self.assertIn('self.ipc_consent.get_active()',self.text)
-        self.assertIn('run_probe(consent=True',self.text)
+        self.assertIn('run_benchmark(consent=True',self.text)
+        self.assertIn('self.ipc_run_count.get_selected() + 1',self.text)
     def test_notes(self):self.assertIn('on_save_note',self.text)
     def test_readonly_inspect(self):self.assertIn('game_report(game)',self.text)
     def test_no_external_trainer(self):

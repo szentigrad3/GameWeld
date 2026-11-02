@@ -6,7 +6,7 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, Gdk, GLib
 from .core import installed_games, load_settings, save_settings, find_games
 from .diagnostics import game_report
-from .ipc import fixture_default_path, preflight, run_probe
+from .ipc import fixture_default_path, preflight, run_probe, run_benchmark
 
 CSS = '''
 .gw-heading {font-size: 23px; font-weight: 700;}
@@ -46,6 +46,8 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.favourites_only = False
         self.selected_appid = None
         self.busy = False
+        self.cancel_event = threading.Event()
+        self.connect('close-request', self.on_close_request)
         self.set_child(self.make_ui())
         self.refresh_games()
 
@@ -168,13 +170,23 @@ class DesktopWindow(Gtk.ApplicationWindow):
         check = Gtk.Button(label='Check fixture and Wine (read-only)')
         check.connect('clicked', self.on_ipc_preflight)
         page.append(check)
-        self.ipc_consent = Gtk.CheckButton(label='I authorise ONE isolated Wine fixture test (no game/trainer access)')
+        run_options = box(vertical=False, spacing=9)
+        run_options.append(label('Isolated sessions:'))
+        self.ipc_run_count = Gtk.DropDown.new_from_strings(['1', '2', '3'])
+        self.ipc_run_count.set_selected(0)
+        run_options.append(self.ipc_run_count)
+        page.append(run_options)
+        self.ipc_consent = Gtk.CheckButton(label='I authorise the selected number of isolated Wine fixture sessions (no game/trainer access)')
         self.ipc_consent.connect('toggled', self.on_consent)
         page.append(self.ipc_consent)
-        self.run_button = Gtk.Button(label='Run READY / PING / STATUS / STOP test')
+        self.run_button = Gtk.Button(label='Run IPC protocol benchmark')
         self.run_button.set_sensitive(False)
         self.run_button.connect('clicked', self.on_ipc_run)
         page.append(self.run_button)
+        self.cancel_button = Gtk.Button(label='Cancel owned IPC test')
+        self.cancel_button.set_sensitive(False)
+        self.cancel_button.connect('clicked', self.on_ipc_cancel)
+        page.append(self.cancel_button)
         page.append(label('All raw paths, process IDs and probe challenges are excluded from exported results. '
                           'Complete detached Wine helper cleanup is not guaranteed.', 'gw-safety'))
         self.ipc_status = label('No IPC test started.')
@@ -201,7 +213,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(save)
         self.preferences_status = label('Favourites and personal notes are saved locally.')
         page.append(self.preferences_status)
-        page.append(label('GameWeld 0.2.0-alpha. Third-party trainers, live-game memory '
+        page.append(label('GameWeld 0.3.0-alpha. Third-party trainers, live-game memory '
                           'access and Steam launch-option changes are unavailable.', 'gw-safety'))
         self.tabs.add_titled(page, 'settings', 'Preferences')
 
@@ -353,24 +365,44 @@ class DesktopWindow(Gtk.ApplicationWindow):
 
     def show_ipc_result(self, report):
         self.ipc_output.get_buffer().set_text(json.dumps(report, indent=2, sort_keys=True))
-        self.ipc_status.set_text('IPC: ' + report.get('state', 'unknown'))
+        label_text = 'IPC: ' + report.get('state', 'unknown')
+        if isinstance(report.get('startup_mean_ms'), (int,float)):
+            label_text += f"  ·  mean Wine startup: {report['startup_mean_ms']/1000:.2f} s"
+        self.ipc_status.set_text(label_text)
 
     def on_ipc_preflight(self, _):
         self.show_ipc_result(preflight(self.fixture_entry.get_text()))
+
+    def on_ipc_cancel(self, _):
+        if self.busy:
+            self.cancel_event.set()
+            self.cancel_button.set_sensitive(False)
+            self.ipc_status.set_text('Cancelling the owned Wine fixture; cleanup in progress…')
+
+    def on_close_request(self, *_args):
+        if self.busy:
+            self.on_ipc_cancel(None)
+            return True  # The owned child must be cleaned up before window close.
+        return False
 
     def on_ipc_run(self, _):
         if self.busy or not self.ipc_consent.get_active():return
         self.busy = True
         self.run_button.set_sensitive(False)
+        self.cancel_event.clear()
+        self.cancel_button.set_sensitive(True)
         self.ipc_consent.set_active(False)
-        self.ipc_status.set_text('Running one owned Wine fixture in a temporary prefix…')
+        count = self.ipc_run_count.get_selected() + 1
+        self.ipc_status.set_text(f'Running {count} owned Wine fixture session(s) in fresh temporary prefixes…')
         fixture = self.fixture_entry.get_text()
         def worker():
-            try:result = run_probe(consent=True, fixture=fixture, timeout=75)
+            try:result = run_benchmark(consent=True, fixture=fixture, timeout=75, runs=count,
+                                     cancel_event=self.cancel_event)
             except Exception:result = {'state': 'ipc_error', 'trainer_launched':False,
                                       'game_memory_accessed':False}
             def deliver():
                 self.busy = False
+                self.cancel_button.set_sensitive(False)
                 self.show_ipc_result(result)
                 return False
             GLib.idle_add(deliver)
