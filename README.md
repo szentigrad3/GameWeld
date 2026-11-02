@@ -1,4 +1,4 @@
-# GameWeld — Desktop 0.3.0 Alpha
+# GameWeld — Desktop 0.4.0 Alpha
 
 A source-built **GTK4 desktop application** for Linux, developed as the clean GameWeld reboot.
 
@@ -66,4 +66,28 @@ The IPC lab is a **controlled engineering fixture**, not a game trainer. All tes
 
 ## Test limitations
 
-Offline tests validate parser correctness, preferences, safe paths, diagnostics and a simulated IPC lifecycle. **GTK4 interface changes and the new multi-session benchmark require host validation on CachyOS.** The 0.2.0 desktop IPC integration was validated in one real CachyOS session, but that does not verify the 0.3.0 benchmark or helper observer.
+Offline tests validate parser correctness, preferences, safe paths, diagnostics and a simulated IPC lifecycle. **GTK4 interface changes and the new multi-session benchmark require host validation on CachyOS.** Desktop 0.3.0 was subsequently validated with two real CachyOS sessions (startup 9.025 s and 6.824 s). The new 0.4.0 History tab and persistence workflow still require CachyOS graphical testing.
+
+## New in 0.4.0: local history and comparison
+
+After a successful fixture benchmark you can **opt in** to saving a small summary
+at `$XDG_STATE_HOME/gameweld/benchmarks.json` (fallback
+`~/.local/state/gameweld/benchmarks.json`). A new History tab shows the last
+30 entries, supports importing prior benchmark JSON reports and never stores
+raw stderr, Wine prefixes, PIDs or challenges.
+
+`bash run.sh --history` — read the summaries, no Wine execution.
+
+`bash run.sh --review-benchmark ~/Downloads/gameweld-desktop-030-benchmark.json` —
+validate and redact the existing test, without saving.
+
+`bash run.sh --record-benchmark ~/Downloads/gameweld-desktop-030-benchmark.json` —
+explicitly import this earlier host benchmark.
+
+`bash run.sh --compare-benchmarks OLD.json NEW.json` — read-only mean READY
+comparison, with a warning that differences are not causal evidence.
+
+`bash run.sh --ipc-benchmark --consent-owned-fixture --runs 2 --save-history`
+— opt in to saving a successful live-run summary. The existing fixture hash
+and game-memory prohibitions remain unchanged. The history log is strictly
+local, 0600, symlink-resistant and capped at 64 records.

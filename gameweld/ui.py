@@ -7,6 +7,7 @@ from gi.repository import Gtk, Gdk, GLib
 from .core import installed_games, load_settings, save_settings, find_games
 from .diagnostics import game_report
 from .ipc import fixture_default_path, preflight, run_probe, run_benchmark
+from .history import read_report, record_summary, sanitise_benchmark, history_report
 
 CSS = '''
 .gw-heading {font-size: 23px; font-weight: 700;}
@@ -74,6 +75,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         root.append(self.tabs)
         self.make_library()
         self.make_ipc()
+        self.make_history()
         self.make_preferences()
         return root
 
@@ -179,6 +181,10 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.ipc_consent = Gtk.CheckButton(label='I authorise the selected number of isolated Wine fixture sessions (no game/trainer access)')
         self.ipc_consent.connect('toggled', self.on_consent)
         page.append(self.ipc_consent)
+        self.ipc_save_history = Gtk.CheckButton(
+            label='Save a privacy-minimised benchmark summary to local history')
+        self.ipc_save_history.set_active(False)
+        page.append(self.ipc_save_history)
         self.run_button = Gtk.Button(label='Run IPC protocol benchmark')
         self.run_button.set_sensitive(False)
         self.run_button.connect('clicked', self.on_ipc_run)
@@ -200,6 +206,70 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(output_sc)
         self.tabs.add_titled(page, 'lab', 'IPC Lab')
 
+    def make_history(self):
+        page = margins(box(spacing=12), 8)
+        page.set_vexpand(True)
+        page.append(label('IPC Benchmark History', 'gw-heading'))
+        page.append(label('Only numerical timing summaries and bounded status fields are stored. '
+                          'Saving is always opt-in; original Wine logs are not retained.', 'gw-caption'))
+        actions = box(vertical=False, spacing=8)
+        refresh = Gtk.Button(label='Refresh history')
+        refresh.connect('clicked', self.on_refresh_history)
+        actions.append(refresh)
+        page.append(actions)
+        page.append(label('Import an existing GameWeld benchmark JSON (local file):'))
+        import_row = box(vertical=False, spacing=8)
+        self.import_entry = Gtk.Entry()
+        self.import_entry.set_placeholder_text('Path to gameweld-desktop-030-benchmark.json')
+        self.import_entry.set_hexpand(True)
+        import_row.append(self.import_entry)
+        import_btn = Gtk.Button(label='Import validated summary')
+        import_btn.connect('clicked', self.on_import_history)
+        import_row.append(import_btn)
+        page.append(import_row)
+        self.history_status = label('History not loaded.', 'gw-caption')
+        page.append(self.history_status)
+        view = Gtk.ScrolledWindow()
+        view.set_vexpand(True)
+        self.history_text = Gtk.TextView()
+        self.history_text.set_editable(False)
+        self.history_text.set_cursor_visible(False)
+        self.history_text.set_monospace(True)
+        self.history_text.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        view.set_child(self.history_text)
+        page.append(view)
+        page.append(label('Read-only statistics do not prove compatibility with trainers, games or Steam Proton.', 'gw-safety'))
+        self.tabs.add_titled(page, 'history', 'History')
+        self.on_refresh_history(None)
+
+    def on_refresh_history(self, _):
+        try:
+            report = history_report()
+            records = report['records']
+            self.history_status.set_text(
+                f"{report['record_count']} saved reports  ·  {report['success_count']} successful")
+            lines = []
+            for item in reversed(records[-30:]):
+                value = item['startup_mean_ms']
+                startup = f'{value / 1000:.2f} s' if value is not None else 'not measured'
+                lines.append(f"{item['recorded_at_utc']}   {item['state']}\n"
+                             f"   {item['runs_completed']} session(s)  ·  mean READY {startup}\n")
+            self.history_text.get_buffer().set_text('\n'.join(lines) or 'No benchmark summaries recorded.')
+        except (OSError, ValueError):
+            self.history_status.set_text('Cannot load saved history. Check local file permissions/format.')
+            self.history_text.get_buffer().set_text('Existing history was not modified.')
+
+    def on_import_history(self, _):
+        path = self.import_entry.get_text().strip()
+        try:
+            result = record_summary(read_report(path))
+        except (OSError, ValueError):
+            self.history_status.set_text('Import rejected: invalid or unsafe benchmark report.')
+            return
+        self.on_refresh_history(None)
+        self.history_status.set_text('Benchmark summary imported.' if result['state']=='summary_recorded'
+                                     else 'Benchmark already present in history.')
+
     def make_preferences(self):
         page = margins(box(spacing=12), 8)
         page.append(label('Preferences & safety', 'gw-heading'))
@@ -213,7 +283,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(save)
         self.preferences_status = label('Favourites and personal notes are saved locally.')
         page.append(self.preferences_status)
-        page.append(label('GameWeld 0.3.0-alpha. Third-party trainers, live-game memory '
+        page.append(label('GameWeld 0.4.0-alpha. Third-party trainers, live-game memory '
                           'access and Steam launch-option changes are unavailable.', 'gw-safety'))
         self.tabs.add_titled(page, 'settings', 'Preferences')
 
@@ -395,15 +465,26 @@ class DesktopWindow(Gtk.ApplicationWindow):
         count = self.ipc_run_count.get_selected() + 1
         self.ipc_status.set_text(f'Running {count} owned Wine fixture session(s) in fresh temporary prefixes…')
         fixture = self.fixture_entry.get_text()
+        save_summary = self.ipc_save_history.get_active()
         def worker():
             try:result = run_benchmark(consent=True, fixture=fixture, timeout=75, runs=count,
                                      cancel_event=self.cancel_event)
             except Exception:result = {'state': 'ipc_error', 'trainer_launched':False,
                                       'game_memory_accessed':False}
+            if save_summary and result.get('state') == 'isolated_ipc_benchmark_verified':
+                try:
+                    record_summary(sanitise_benchmark(result))
+                    result['history_summary_saved'] = True
+                except (OSError, ValueError):
+                    result['history_summary_saved'] = False
             def deliver():
                 self.busy = False
                 self.cancel_button.set_sensitive(False)
                 self.show_ipc_result(result)
+                if save_summary:
+                    self.on_refresh_history(None)
+                    if result.get('history_summary_saved') is False:
+                        self.ipc_status.set_text('IPC completed; failed to save local benchmark history.')
                 return False
             GLib.idle_add(deliver)
         threading.Thread(target=worker, daemon=True).start()

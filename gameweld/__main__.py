@@ -6,11 +6,18 @@ from . import __version__
 from .core import installed_games, load_settings
 from .diagnostics import game_report
 from .ipc import preflight, run_probe, run_benchmark
+from .history import (read_report, record_summary, sanitise_benchmark,
+                      history_report, compare_summaries)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='gameweld')
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--history', action='store_true', help='Read saved, redacted benchmark summaries')
+    parser.add_argument('--review-benchmark', metavar='JSON', help='Read and sanitise one benchmark without saving it')
+    parser.add_argument('--record-benchmark', metavar='JSON', help='Explicitly import a benchmark into local history')
+    parser.add_argument('--compare-benchmarks', nargs=2, metavar=('OLD','NEW'), help='Read-only startup comparison')
+    parser.add_argument('--save-history', action='store_true', help='Persist sanitised summary after consented benchmark')
     parser.add_argument('--steamapps', help='Read-only Steam steamapps location')
     parser.add_argument('--diagnose-appid', type=int)
     parser.add_argument('--ipc-preflight', action='store_true')
@@ -23,6 +30,26 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if (args.ipc_test or args.ipc_benchmark) and not 10 <= args.timeout <= 120:
         parser.error('--timeout must be between 10 and 120 seconds')
+    if args.save_history and not args.ipc_benchmark:
+        parser.error('--save-history is only valid with --ipc-benchmark')
+    if args.history or args.review_benchmark or args.record_benchmark or args.compare_benchmarks:
+        try:
+            if args.history:
+                result = history_report()
+            elif args.review_benchmark:
+                result = read_report(args.review_benchmark)
+            elif args.record_benchmark:
+                result = record_summary(read_report(args.record_benchmark))
+            else:
+                result = compare_summaries(read_report(args.compare_benchmarks[0]),
+                                           read_report(args.compare_benchmarks[1]))
+        except (OSError, ValueError):
+            print(json.dumps({'operation': 'gameweld-benchmark-history',
+                              'state': 'invalid_or_unreadable_report',
+                              'trainer_launched': False, 'raw_paths_disclosed': False}))
+            return 1
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.smoke:
         prefs=load_settings()
         games=installed_games(args.steamapps or prefs['steamapps'])
@@ -53,6 +80,12 @@ def main(argv=None):
                                  timeout=args.timeout,runs=args.runs)
         except ValueError:
             parser.error('--runs must be 1..3 and timeout 10..120')
+        if args.save_history and report.get('state')=='isolated_ipc_benchmark_verified':
+            try:
+                recorded = record_summary(sanitise_benchmark(report))
+                report['history_summary_saved'] = recorded['state'] in ('summary_recorded','already_recorded')
+            except (OSError, ValueError):
+                report['history_summary_saved'] = False
         print(json.dumps(report,sort_keys=True))
         return 0 if report.get('state')=='isolated_ipc_benchmark_verified' else 1
     try:
