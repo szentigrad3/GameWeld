@@ -19,6 +19,13 @@ SCHEMA = 1
 MAX_STORE = 128 * 1024
 MAX_REPORT = 128 * 1024
 MAX_ENTRIES = 64
+STARTUP_CONTEXTS = ('unclassified', 'routine', 'mono_setup', 'gecko_setup', 'other_setup')
+
+def validate_context(value):
+    if type(value) is not str or value not in STARTUP_CONTEXTS:
+        raise ValueError('invalid_startup_context')
+    return value
+
 VALID_STATES = frozenset(('isolated_ipc_benchmark_verified',
                           'isolated_ipc_benchmark_failed',
                           'isolated_ipc_benchmark_cancelled', 'consent_required'))
@@ -168,8 +175,9 @@ def _validated_summary(summary):
 
 
 def _validate_stored(item):
-    if not isinstance(item, dict) or set(item) != {'recorded_at_utc', 'summary'}:
+    if not isinstance(item, dict) or not {'recorded_at_utc', 'summary'} <= set(item) or (set(item) - {'recorded_at_utc', 'summary', 'startup_context'}):
         raise ValueError('invalid_history_entry')
+    context = validate_context(item.get('startup_context', 'unclassified'))
     stamp = item['recorded_at_utc']
     if not isinstance(stamp, str) or len(stamp) > 40:
         raise ValueError('invalid_history_timestamp')
@@ -179,7 +187,8 @@ def _validate_stored(item):
             raise ValueError('timestamp_without_timezone')
     except (ValueError, TypeError) as exc:
         raise ValueError('invalid_history_timestamp') from exc
-    return {'recorded_at_utc': stamp, 'summary': _validated_summary(item['summary'])}
+    return {'recorded_at_utc': stamp, 'summary': _validated_summary(item['summary']),
+            'startup_context': context}
 
 
 def load_history(path=None):
@@ -226,19 +235,68 @@ def _secure_write(path, payload):
         tmp.unlink(missing_ok=True)
 
 
-def record_summary(summary, *, path=None):
+def record_summary(summary, *, path=None, startup_context='unclassified'):
+    startup_context = validate_context(startup_context)
     summary = _validated_summary(summary)
     path = Path(path) if path is not None else history_path()
     entries = load_history(path)
     if any(e['summary']['id'] == summary['id'] for e in entries):
         return {'state': 'already_recorded', 'history_count': len(entries), 'id': summary['id']}
     entry = {'recorded_at_utc': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
-             'summary': summary}
+             'summary': summary, 'startup_context': startup_context}
     entries = (entries + [entry])[-MAX_ENTRIES:]
     payload = (json.dumps({'schema_version': SCHEMA, 'entries': entries},
                           sort_keys=True, separators=(',', ':')) + '\n').encode()
     _secure_write(path, payload)
     return {'state': 'summary_recorded', 'history_count': len(entries), 'id': summary['id']}
+
+
+def annotate_summary(summary, startup_context, *, path=None):
+    """Change an explicit human-supplied startup context, not timing or hash.
+
+    The exact validated report ID must exist. No loose substring or file names
+    are stored. Historic entries without context are supported unchanged.
+    """
+    context = validate_context(startup_context)
+    valid = _validated_summary(summary)
+    path = Path(path) if path is not None else history_path()
+    entries = load_history(path)
+    matched = 0
+    for entry in entries:
+        if entry['summary']['id'] == valid['id']:
+            entry['startup_context'] = context
+            matched += 1
+    if matched != 1:
+        return {'operation': 'gameweld-history-annotation', 'schema_version': 1,
+                'state': 'summary_not_recorded', 'startup_context': context,
+                'raw_paths_disclosed': False, 'trainer_launched': False}
+    payload = (json.dumps({'schema_version': SCHEMA, 'entries': entries},
+                          sort_keys=True, separators=(',', ':')) + '\n').encode()
+    _secure_write(path, payload)
+    return {'operation': 'gameweld-history-annotation', 'schema_version': 1,
+            'state': 'context_recorded', 'id': valid['id'],
+            'startup_context': context, 'cause_verified': False,
+            'raw_paths_disclosed': False, 'trainer_launched': False}
+
+
+
+def annotate_latest(startup_context, *, path=None):
+    """Explicitly label the newest saved benchmark; never infer from its timing."""
+    context = validate_context(startup_context)
+    path = Path(path) if path is not None else history_path()
+    entries = load_history(path)
+    if not entries:
+        return {'operation': 'gameweld-history-annotation', 'schema_version': 1,
+                'state': 'no_saved_benchmarks', 'startup_context': context,
+                'raw_paths_disclosed': False, 'trainer_launched': False}
+    entries[-1]['startup_context'] = context
+    payload = (json.dumps({'schema_version': SCHEMA, 'entries': entries},
+                          sort_keys=True, separators=(',', ':')) + '\n').encode()
+    _secure_write(path, payload)
+    return {'operation': 'gameweld-history-annotation', 'schema_version': 1,
+            'state': 'context_recorded', 'id': entries[-1]['summary']['id'],
+            'startup_context': context, 'cause_verified': False,
+            'raw_paths_disclosed': False, 'trainer_launched': False}
 
 
 def history_report(*, path=None):
@@ -254,10 +312,13 @@ def history_report(*, path=None):
             'success_count': sum(e['summary'].get('state')=='isolated_ipc_benchmark_verified' for e in entries),
             'startup_mean_of_recorded_sessions_ms': round(sum(means)/len(means), 2) if means else None,
             'startup_session_count': len(all_sessions),
+            'contexts': {context: sum(e['startup_context'] == context for e in entries)
+                         for context in STARTUP_CONTEXTS},
             'startup_weighted_mean_ms': round(sum(all_sessions)/len(all_sessions), 2) if all_sessions else None,
             'records': [{'recorded_at_utc': e['recorded_at_utc'],
                          'id': e['summary']['id'], 'state': e['summary']['state'],
                          'runs_completed': e['summary']['runs_completed'],
+                         'startup_context': e['startup_context'],
                          'startup_mean_ms': e['summary'].get('startup_mean_ms')}
                         for e in entries],
             'raw_paths_disclosed': False, 'trainer_launched': False,

@@ -7,7 +7,7 @@ from .core import installed_games, load_settings
 from .diagnostics import game_report
 from .ipc import preflight, run_probe, run_benchmark
 from .history import (read_report, record_summary, sanitise_benchmark,
-                      history_report, compare_summaries)
+                      history_report, compare_summaries, annotate_summary, annotate_latest, STARTUP_CONTEXTS)
 from .startup import compare_startup, startup_trend
 
 
@@ -22,6 +22,12 @@ def main(argv=None):
                         help='Compare verified startup samples without launching Wine')
     parser.add_argument('--startup-trend', action='store_true',
                         help='Read-only session-weighted saved benchmark trend')
+    parser.add_argument('--annotate-latest', action='store_true',
+                        help='Explicitly label the latest saved benchmark context')
+    parser.add_argument('--annotate-benchmark', metavar='JSON',
+                        help='Mark an already saved benchmark with its user-observed startup context')
+    parser.add_argument('--startup-context', choices=STARTUP_CONTEXTS, default='unclassified',
+                        help='User-observed startup context; never an automatic diagnosis')
     parser.add_argument('--save-history', action='store_true', help='Persist sanitised summary after consented benchmark')
     parser.add_argument('--steamapps', help='Read-only Steam steamapps location')
     parser.add_argument('--diagnose-appid', type=int)
@@ -35,9 +41,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if (args.ipc_test or args.ipc_benchmark) and not 10 <= args.timeout <= 120:
         parser.error('--timeout must be between 10 and 120 seconds')
+    if args.startup_context != 'unclassified' and not (args.record_benchmark or args.annotate_benchmark or args.annotate_latest or args.save_history):
+        parser.error('--startup-context requires import, annotation or --save-history')
     if args.save_history and not args.ipc_benchmark:
         parser.error('--save-history is only valid with --ipc-benchmark')
     if (args.history or args.review_benchmark or args.record_benchmark or
+            args.annotate_benchmark or args.annotate_latest or
             args.compare_benchmarks or args.startup_compare or args.startup_trend):
         try:
             if args.history:
@@ -50,7 +59,12 @@ def main(argv=None):
             elif args.review_benchmark:
                 result = read_report(args.review_benchmark)
             elif args.record_benchmark:
-                result = record_summary(read_report(args.record_benchmark))
+                result = record_summary(read_report(args.record_benchmark),
+                                        startup_context=args.startup_context)
+            elif args.annotate_latest:
+                result = annotate_latest(args.startup_context)
+            elif args.annotate_benchmark:
+                result = annotate_summary(read_report(args.annotate_benchmark), args.startup_context)
             else:
                 result = compare_summaries(read_report(args.compare_benchmarks[0]),
                                            read_report(args.compare_benchmarks[1]))
@@ -93,7 +107,7 @@ def main(argv=None):
             parser.error('--runs must be 1..3 and timeout 10..120')
         if args.save_history and report.get('state')=='isolated_ipc_benchmark_verified':
             try:
-                recorded = record_summary(sanitise_benchmark(report))
+                recorded = record_summary(sanitise_benchmark(report), startup_context=args.startup_context)
                 report['history_summary_saved'] = recorded['state'] in ('summary_recorded','already_recorded')
             except (OSError, ValueError):
                 report['history_summary_saved'] = False

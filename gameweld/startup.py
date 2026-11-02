@@ -59,29 +59,50 @@ def compare_startup(old, new):
 
 
 def startup_trend(*, path=None):
-    """Aggregates individual successful sessions; avoids averaging report means."""
+    """Session-weighted trends; explicitly tagged installers excluded from baseline.
+
+    Unclassified is a historical/unknown state, not evidence of routine Wine.
+    User-supplied context is never treated as a mechanically verified cause.
+    """
     history = load_history(path)
-    ordered = [(_sessions(e['summary']), e['recorded_at_utc']) for e in history]
-    values = [n for group, _ in ordered for n in group]
-    if not values:
-        state = 'no_successful_sessions'
-    elif len(values) < 3:
-        state = 'limited_session_sample'
-    else:
-        state = 'startup_trend_available'
-    last = ordered[-1][0] if ordered else []
-    prior = [n for group, _ in ordered[:-1] for n in group]
-    ratio = round(_mean(last) / _mean(prior), 3) if last and prior and _mean(prior) else None
+    tagged = [(entry['startup_context'], _sessions(entry['summary'])) for entry in history]
+    setup_names = {'mono_setup', 'gecko_setup', 'other_setup'}
+    all_values = [n for _, sessions in tagged for n in sessions]
+    comparable = [n for tag, sessions in tagged if tag not in setup_names for n in sessions]
+    tagged_setup = [n for tag, sessions in tagged if tag in setup_names for n in sessions]
+    classified_routine = [n for tag, sessions in tagged if tag == 'routine' for n in sessions]
+    unclassified = [n for tag, sessions in tagged if tag == 'unclassified' for n in sessions]
+    last_tag, last = tagged[-1] if tagged else ('unclassified', [])
+    prior = [n for tag, sessions in tagged[:-1] if tag not in setup_names for n in sessions]
+    # Do not compare a known setup run to routine-or-unknown sessions.
+    compare_latest = last if last_tag not in setup_names else []
+    ratio = round(_mean(compare_latest) / _mean(prior), 3) if compare_latest and prior and _mean(prior) else None
+    state = ('no_successful_sessions' if not all_values else
+             'setup_only_session_history' if not comparable else
+             'limited_session_sample' if len(comparable) < 3 else
+             'startup_trend_available')
     return {
         'operation': 'gameweld-startup-trend', 'schema_version': 1,
         'state': state, 'saved_reports': len(history),
-        'successful_session_count': len(values),
-        'session_weighted_mean_ms': _mean(values), 'session_median_ms': _median(values),
-        'session_min_ms': round(min(values), 3) if values else None,
-        'session_max_ms': round(max(values), 3) if values else None,
-        'latest_report_session_count': len(last), 'latest_vs_earlier_ratio': ratio,
+        'successful_session_count': len(all_values),
+        'session_weighted_mean_ms': _mean(all_values),
+        'session_median_ms': _median(all_values),
+        'session_min_ms': round(min(all_values), 3) if all_values else None,
+        'session_max_ms': round(max(all_values), 3) if all_values else None,
+        'comparable_session_count': len(comparable),
+        'comparable_mean_ms': _mean(comparable),
+        'comparable_median_ms': _median(comparable),
+        'confirmed_setup_session_count': len(tagged_setup),
+        'confirmed_setup_mean_ms': _mean(tagged_setup),
+        'routine_labelled_sessions': len(classified_routine),
+        'unclassified_sessions': len(unclassified),
+        'latest_report_session_count': len(last),
+        'latest_report_startup_context': last_tag,
+        'latest_vs_earlier_ratio': ratio,
+        'latest_comparison_suppressed_setup': bool(last and last_tag in setup_names),
         'latest_comparison_is_single_run': len(last) == 1,
-        'cause_verified': False, 'comparison_is_not_causal': True,
+        'cause_verified': False, 'context_is_user_supplied': True,
+        'comparison_is_not_causal': True,
         'raw_paths_disclosed': False, 'trainer_launched': False,
         'game_memory_accessed': False, 'detached_helpers_fully_verified': False,
     }

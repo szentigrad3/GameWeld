@@ -7,7 +7,8 @@ from gi.repository import Gtk, Gdk, GLib
 from .core import installed_games, load_settings, save_settings, find_games
 from .diagnostics import game_report
 from .ipc import fixture_default_path, preflight, run_probe, run_benchmark
-from .history import read_report, record_summary, sanitise_benchmark, history_report
+from .history import (read_report, record_summary, sanitise_benchmark, history_report,
+                      annotate_summary, annotate_latest, STARTUP_CONTEXTS)
 from .startup import startup_trend
 
 CSS = '''
@@ -228,6 +229,22 @@ class DesktopWindow(Gtk.ApplicationWindow):
         import_btn.connect('clicked', self.on_import_history)
         import_row.append(import_btn)
         page.append(import_row)
+        context_row = box(vertical=False, spacing=8)
+        context_row.append(label('Startup context (your observation):'))
+        self.history_context = Gtk.DropDown.new_from_strings([
+            'Unknown / not recorded', 'Routine launch', 'Wine Mono installation',
+            'Wine Gecko installation', 'Other component setup'])
+        context_row.append(self.history_context)
+        page.append(context_row)
+        tag_actions = box(vertical=False, spacing=8)
+        apply_tag = Gtk.Button(label='Apply context to imported report')
+        apply_tag.connect('clicked', self.on_history_context)
+        tag_actions.append(apply_tag)
+        latest_tag = Gtk.Button(label='Mark latest saved run')
+        latest_tag.connect('clicked', self.on_latest_context)
+        tag_actions.append(latest_tag)
+        page.append(tag_actions)
+        page.append(label('Context is manually supplied. GameWeld does not infer or prove a cause.', 'gw-caption'))
         self.history_status = label('History not loaded.', 'gw-caption')
         page.append(self.history_status)
         view = Gtk.ScrolledWindow()
@@ -248,20 +265,23 @@ class DesktopWindow(Gtk.ApplicationWindow):
             report = history_report()
             records = report['records']
             trend = startup_trend()
-            mean = trend['session_weighted_mean_ms']
-            median = trend['session_median_ms']
-            summary_line = (f"{trend['successful_session_count']} measured sessions"
+            mean = trend['comparable_mean_ms']
+            median = trend['comparable_median_ms']
+            summary_line = (f"{trend['comparable_session_count']} routine/unclassified sessions"
                             + (f"  ·  mean READY {mean/1000:.2f} s" if mean is not None else '')
                             + (f"  ·  median {median/1000:.2f} s" if median is not None else ''))
             self.history_status.set_text(
                 f"{report['record_count']} saved reports  ·  {report['success_count']} successful\n"
                 + summary_line)
-            lines = []
+            lines = [f"Installer/setup-tagged sessions: {trend['confirmed_setup_session_count']}"
+                     + (' · excluded from comparable baseline' if trend['confirmed_setup_session_count'] else '')]
             for item in reversed(records[-30:]):
                 value = item['startup_mean_ms']
                 startup = f'{value / 1000:.2f} s' if value is not None else 'not measured'
-                lines.append(f"{item['recorded_at_utc']}   {item['state']}\n"
+                lines.append(f"{item['recorded_at_utc']}   {item['state']}  [{item['startup_context']}]\n"
                              f"   {item['runs_completed']} session(s)  ·  mean READY {startup}\n")
+            if trend['latest_comparison_suppressed_setup']:
+                lines.insert(0, 'Latest run marked as installer/setup; ordinary-startup comparison suppressed.\n')
             if trend['latest_vs_earlier_ratio'] is not None:
                 ratio = trend['latest_vs_earlier_ratio']
                 lines.insert(0, f"Latest report / earlier sessions: {ratio:.2f}× startup time\n"
@@ -273,10 +293,32 @@ class DesktopWindow(Gtk.ApplicationWindow):
             self.history_status.set_text('Cannot load saved history. Check local file permissions/format.')
             self.history_text.get_buffer().set_text('Existing history was not modified.')
 
+    def on_latest_context(self, _):
+        try:
+            result = annotate_latest(STARTUP_CONTEXTS[self.history_context.get_selected()])
+        except (ValueError, OSError, IndexError):
+            self.history_status.set_text('Could not update latest saved benchmark.')
+            return
+        self.on_refresh_history(None)
+        self.history_status.set_text('Latest saved benchmark labelled.' if result['state']=='context_recorded'
+                                     else 'No saved benchmarks to label.')
+
+    def on_history_context(self, _):
+        try:
+            report = read_report(self.import_entry.get_text().strip())
+            result = annotate_summary(report, STARTUP_CONTEXTS[self.history_context.get_selected()])
+        except (ValueError, OSError, IndexError):
+            self.history_status.set_text('Context not applied: invalid or unreadable report.')
+            return
+        self.on_refresh_history(None)
+        self.history_status.set_text('Context saved.' if result['state']=='context_recorded' else
+                                     'Import the benchmark before applying context.')
+
     def on_import_history(self, _):
         path = self.import_entry.get_text().strip()
         try:
-            result = record_summary(read_report(path))
+            result = record_summary(read_report(path),
+                                    startup_context=STARTUP_CONTEXTS[self.history_context.get_selected()])
         except (OSError, ValueError):
             self.history_status.set_text('Import rejected: invalid or unsafe benchmark report.')
             return
@@ -297,7 +339,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(save)
         self.preferences_status = label('Favourites and personal notes are saved locally.')
         page.append(self.preferences_status)
-        page.append(label('GameWeld 0.4.0-alpha. Third-party trainers, live-game memory '
+        page.append(label('GameWeld 0.6.0-alpha. Third-party trainers, live-game memory '
                           'access and Steam launch-option changes are unavailable.', 'gw-safety'))
         self.tabs.add_titled(page, 'settings', 'Preferences')
 

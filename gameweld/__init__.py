@@ -1,2 +1,2 @@
-"""GameWeld: source-built Linux GTK4 desktop application."""
-__version__ = "0.5.0-alpha"
+"""GameWeld desktop alpha: source-built GTK4 for Linux."""
+__version__ = "0.6.0-alpha"

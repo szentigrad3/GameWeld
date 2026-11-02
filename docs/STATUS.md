@@ -39,3 +39,20 @@ observation, not evidence of the cause. Startup performance comparison, weighted
 history statistics, and separate spawn-vs-READY timing fields added. The legacy
 history schema is unchanged. Graphical GTK4 testing and real new timing evidence
 are still pending on CachyOS. No game attachment or trainer execution.
+
+## Batch 0.6.0-alpha
+
+The user supplied an explanation for the 35,247 ms READY observation: Wine
+Mono installer activity. This remains user-observed context, not a verified
+mechanism proven by the stored timing report. Benchmarks now support an
+allowlisted startup context in the local history envelope, with a CLI and GTK4
+button to mark the newest record. Explicitly tagged setup sessions are not
+used in routine/unclassified baselines; the full population statistics remain
+visible. Historical schema-1 timing summaries and SHA-256 IDs are unchanged.
+
+A new user-level Linux desktop installer copies only allowlisted project
+Python modules and writes a KDE/GNOME application shortcut without sudo. It
+refuses unmanaged conflicting launchers and symlinks, and preserves user
+settings, notes and benchmark history on uninstall. A real CachyOS GUI/menu
+launch still needs verification. The Batch77 pinned fixture, consent gating and
+no-game-access boundaries remain unchanged.

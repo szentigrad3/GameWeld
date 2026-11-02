@@ -1,4 +1,4 @@
-# GameWeld — Desktop 0.4.0 Alpha
+# GameWeld — Desktop 0.6.0 Alpha
 
 A source-built **GTK4 desktop application** for Linux, developed as the clean GameWeld reboot.
 
@@ -105,3 +105,75 @@ bash run.sh --startup-trend
 
 Startup differences are observations only. One slow run cannot establish a Wine regression or its cause.
 The history schema remains compatible with 0.4.0. Do not share raw Wine logs or alter Proton settings to troubleshoot this dashboard.
+
+
+## 0.6.0-alpha: user-observed Wine component installation
+
+The host reported that a single 35.247-second READY wait coincided with a
+**Wine Mono installer**. GameWeld does not pretend to detect the installer from
+the timing or verify its cause. Instead, you can label that **existing saved
+benchmark** with a strictly allowlisted, user-supplied startup context:
+
+```bash
+# Safe, read-only history before any change
+bash run.sh --history
+
+# Labels only the most recently recorded benchmark; no Wine process is started
+bash run.sh --annotate-latest --startup-context mono_setup
+
+# View separate routine/unclassified and setup-tagged timing statistics
+bash run.sh --startup-trend
+```
+
+If you need to label a specific older report instead, use the original JSON
+file (it must already have been imported into history):
+
+```bash
+bash run.sh --annotate-benchmark /path/to/benchmark.json --startup-context mono_setup
+```
+
+Accepted context values: `unclassified`, `routine`, `mono_setup`,
+`gecko_setup`, `other_setup`. Import a new benchmark with `--record-benchmark`
+and `--startup-context` to label it immediately. Setup sessions remain visible
+in all-session statistics but are **excluded from routine/unclassified
+comparisons**, and the UI displays the exclusion. Contexts are user-supplied
+and **never proof** of the actual installer root cause.
+
+Historical history entries without a context remain readable; no migration is
+required and no stored measurements, hashes, personal notes or favourites are
+rewritten by the label. The IPC protocol, pinned Win64 fixture and consent
+boundary are unchanged.
+
+## 0.6.0-alpha: native Linux desktop installation (optional)
+
+A pure-Python user-level installer now creates a normal application launcher
+and `GameWeld` desktop menu entry without sudo and without copying any third-
+party executables. It copies allowlisted Python sources into the current user's
+XDG data directory, and refuses to replace unrecognised existing files.
+
+```bash
+# Inspect intended action (no writes)
+python3 -m gameweld.installer install --dry-run
+# Install into ~/.local/share/gameweld and ~/.local/bin
+python3 -m gameweld.installer install
+# Launch from terminal, or find GameWeld in your KDE app launcher
+~/.local/bin/gameweld
+# Optional user-level removal (keeps all settings, notes and history)
+python3 -m gameweld.installer uninstall
+```
+
+On CachyOS: `sudo pacman -S --needed python python-gobject gtk4`
+(plus `wine` only for the optional IPC Lab). After installing a newer source
+checkout, rerun `python3 -m gameweld.installer install` to update its copy.
+Only `~/.local/bin` may need adding to your `PATH` if launching by name rather
+than through the desktop menu. The installer never changes Steam, a game prefix
+or system applications and will not overwrite an unrelated user launcher.
+
+## 0.6.0-alpha verification limits
+
+The expanded history, CLI and user-level installer are covered by offline
+regression tests. GTK4 appearance and actual desktop-menu integration still
+require a CachyOS host test. A reported Wine Mono installation is user-provided
+context, not a mechanically confirmed explanation. A single additional slow
+startup does not establish a performance regression. Complete detached Wine
+helper cleanup and commercial trainer compatibility remain unverified.
