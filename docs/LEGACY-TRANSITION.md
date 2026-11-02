@@ -6,21 +6,21 @@ GameWeld's public GitHub repository began with a GTK3/AppImage trainer manager (
 
 | Issue | Historical topic | Initial migration disposition |
 |---|---|---|
-| [#4](../issues/4) | Publish 0.7.0 stable AppImage | Legacy release track; do not equate it with the new app |
-| [#5](../issues/5) | Third-party redistribution and licensing | Carry forward the license-review requirement |
-| [#6](../issues/6) | Source-complete reproducible AppImage | Carry forward the build/provenance requirement |
-| [#7](../issues/7) | Publisher metadata and approved downloads | Defer until a trusted provider workflow exists |
+| [#4](https://github.com/szentigrad3/GameWeld/issues/4) | Publish 0.7.0 stable AppImage | Legacy release track; do not equate it with the new app |
+| [#5](https://github.com/szentigrad3/GameWeld/issues/5) | Third-party redistribution and licensing | Carry forward the license-review requirement |
+| [#6](https://github.com/szentigrad3/GameWeld/issues/6) | Source-complete reproducible AppImage | Carry forward the build/provenance requirement |
+| [#7](https://github.com/szentigrad3/GameWeld/issues/7) | Publisher metadata and approved downloads | Defer until a trusted provider workflow exists |
 
 ## Historical open PRs retained for triage
 
 | PR | Initial disposition |
 |---|---|
-| [#13](../pull/13) | Historical WeMod release-discovery workflow; do not auto-port |
-| [#14](../pull/14) | Review state isolation/security before reuse |
-| [#15](../pull/15) | Review unsafe CMD and Wine profile hardening before reuse |
-| [#16](../pull/16) | Historical Steam bridge registration; review compatibility |
-| [#17](../pull/17) | DeckCheatz v2 preflight; compare with current Native Lab |
-| [#18](../pull/18) | Batch43 fixes and live Wine limitations; preserve test evidence |
+| [#13](https://github.com/szentigrad3/GameWeld/pull/13) | Historical WeMod release-discovery workflow; do not auto-port |
+| [#14](https://github.com/szentigrad3/GameWeld/pull/14) | Review state isolation/security before reuse |
+| [#15](https://github.com/szentigrad3/GameWeld/pull/15) | Review unsafe CMD and Wine profile hardening before reuse |
+| [#16](https://github.com/szentigrad3/GameWeld/pull/16) | Historical Steam bridge registration; review compatibility |
+| [#17](https://github.com/szentigrad3/GameWeld/pull/17) | DeckCheatz v2 preflight; compare with current Native Lab |
+| [#18](https://github.com/szentigrad3/GameWeld/pull/18) | Batch43 fixes and live Wine limitations; preserve test evidence |
 
 No issue or PR has been closed merely by adding this document. Keeping them open does not mean they are approved for the new app.
 
