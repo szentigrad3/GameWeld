@@ -1,21 +1,19 @@
-# GameWeld desktop alpha status
+# GameWeld Desktop 0.2.0-alpha status
 
-This is a clean **0.1.0-alpha** GTK4 shell, not a third-party trainer manager.
+## Verified in development container
 
-## Included
+- 36 offline tests and Python source compilation passed.
+- Original Batch77 fixture's byte count, PE format and pinned hash agree.
+- Four-stage original protocol verified with an owned fake Wine launcher; malformed response fails closed.
+- Generated source ZIP integrity check passes.
 
-Read-only installed Steam game discovery, search, favourites, local settings and a graphical game detail panel. The `--smoke` command and core tests do not require GTK.
+## Host-only gates still open
 
-## Not yet validated
+- GTK4 UI layout, selection, notes editing and live status on CachyOS.
+- IPC Lab run with **real system Wine** on CachyOS. This new desktop integration has not been exercised on the host yet.
+- Complete cleanup of unobserved detached Wine helpers is not provable.
+- No live Steam game / Proton process identity or trainer functionality has been validated.
 
-Actual GTK4 window launch on CachyOS; this development environment lacks a graphical session. The Batch77 isolated system-Wine IPC milestone was verified separately, but its executable is deliberately **not bundled** or integrated into this clean GitHub alpha.
+## Historical evidence
 
-No Proton game-session equivalence, game memory attachment or third-party trainer compatibility is verified. No external binaries are embedded.
-
-## History
-
-The old `main` commit before resetting the tree was `5545a3e6464e3044d4699e9ceea98f5aa56e0bd7`. It remains a parent ancestor of the reset commit for recovery. Historical issues and PRs were closed, not deleted. Legacy branch references were removed separately.
-
-## CachyOS first graphical feedback (2026-11-02)
-
-The user verified that the GTK4 window opens and the headless smoke test discovers 127 local Steam games. The initial Gtk.Paned layout was too short to display the game list and GTK emitted minimum-size warnings. Commit `61f40c6` replaces the Paned with an expanding scrolled list, displays visible/discovered counts and preserves selection on favourite toggles. **This layout fix still requires a new graphical verification on CachyOS.** Headless source-contract tests do not prove GTK warnings are gone.
+Earlier Batch77 ran the original Win64 v2 fixture under isolated system Wine in two verified CachyOS sessions. That is a separate, known good baseline and does **not** substitute for testing the new UI supervisor.

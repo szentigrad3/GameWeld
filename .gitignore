@@ -2,12 +2,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+*.log
 build/
 dist/
-*.egg-info/
-*.log
 *.zip
-*.AppImage
 *.exe
 *.dll
 *.so
