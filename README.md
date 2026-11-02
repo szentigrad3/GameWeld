@@ -237,3 +237,52 @@ python -m gameweld.installer install
 ```
 
 The installed launcher copies the new `gameweld/trainer.py` module as well. No external trainer files are installed by GameWeld.
+
+## New in 0.8.0-alpha — practical trainer-testing workflow
+
+This batch makes the 0.7.0 experiment usable from a normal GTK4 window on
+CachyOS. Trainer Lab is vertically scrollable on smaller screens, and includes
+a local EXE picker, explicit choice of discovered Proton versions (nothing is
+selected silently), per-session redacted diagnostics, and a Copy Report button.
+You can also record what **you observed**: whether the Windows trainer window
+was visible and whether any feature worked in an offline single-player game.
+These are manual reports, never independently verified by GameWeld.
+
+Before testing a trainer, run the read-only doctor:
+
+```bash
+bash run.sh --trainer-doctor
+bash run.sh --trainer-doctor --trainer-appid 3008130
+bash run.sh --trainer-list-proton
+```
+
+Then open **Trainer Lab**, select an installed game, and browse to an EXE that
+you obtained from a trustworthy source. Start with **Isolated system Wine** for
+a launch test. Click **Inspect trainer and review launch plan**, check the
+SHA-256 and warnings, tick the explicit consent box, then click **Launch**.
+When finished, use **Stop owned trainer launcher**. Finally, record your
+observations and copy the redacted test report. The application does not
+record raw Wine/Proton errors, filesystem paths, environment variables, or
+process IDs in shareable trainer diagnostics.
+
+**Important:** a Wine or Proton launcher starting is not proof that the Windows
+trainer child launched or that its UI was visible. A zero exit code is not a
+working cheat. The new diagnostics add only bounded, whitelisted hints such as
+missing-DLL or .NET issues, and limit combined stdout/stderr to 128 KiB before
+stopping the owned launcher. Private Wine output is not exported.
+
+Trainer EXEs that require adjacent DLL/JSON/DAT/PAK/INI files get a warning:
+these companion files are **not hash-verified or copied**. Running a bundled
+trainer as a standalone EXE can fail even if its executable passes the check.
+Do not interpret that as evidence that Wine or Proton is incompatible.
+
+For the experimental **Existing Proton game prefix** mode, select the Proton
+version actually configured for that game in Steam; the selector no longer
+silently chooses one. Back up the game's prefix and saves, avoid online games
+or anti-cheat protected sessions, and give the separate prefix-modification
+consent only if you wish to try this advanced mode. It still does not establish
+an active Proton session identity or verify trainer attachment to the game.
+
+The source release is not an AppImage or compiled installer. Its Python tests
+use harmless simulated runtime scripts. A real commercial trainer must be
+validated on your own CachyOS machine.

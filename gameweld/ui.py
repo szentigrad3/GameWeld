@@ -55,6 +55,8 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.trainer_cancel_event = threading.Event()
         self.trainer_review_sha = None
         self.trainer_game_ids = []
+        self.trainer_proton_paths = []
+        self.trainer_last_report = None
         self.connect('close-request', self.on_close_request)
         self.set_child(self.make_ui())
         self.refresh_games()
@@ -215,8 +217,15 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.tabs.add_titled(page, 'lab', 'IPC Lab')
 
     def make_trainer_lab(self):
-        page = margins(box(spacing=12), 8)
-        page.set_vexpand(True)
+        # A Trainer Lab with many independent controls must scroll on 720p and
+        # laptop displays. The launch and stop actions must always be reachable.
+        trainer_scroll = Gtk.ScrolledWindow()
+        trainer_scroll.set_vexpand(True)
+        trainer_scroll.set_hexpand(True)
+        trainer_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page = margins(box(spacing=12), 14)
+        page.set_vexpand(False)
+        trainer_scroll.set_child(page)
         page.append(label('Local Trainer Testing', 'gw-heading'))
         page.append(label('Choose your own trusted Windows trainer. GameWeld checks its Windows PE format '
                           'and SHA-256, but cannot certify the file is safe or compatible.', 'gw-caption'))
@@ -232,7 +241,12 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.trainer_path.set_placeholder_text('/home/user/Downloads/trainer.exe')
         self.trainer_path.set_hexpand(True)
         self.trainer_path.connect('changed', self.on_trainer_changed)
-        page.append(self.trainer_path)
+        file_row = box(vertical=False, spacing=8)
+        file_row.append(self.trainer_path)
+        file_button = Gtk.Button(label='Browse EXE…')
+        file_button.connect('clicked', self.on_trainer_browse)
+        file_row.append(file_button)
+        page.append(file_row)
         mode_row = box(vertical=False, spacing=8)
         mode_row.append(label('Environment:'))
         self.trainer_mode = Gtk.DropDown.new_from_strings([
@@ -251,6 +265,10 @@ class DesktopWindow(Gtk.ApplicationWindow):
         discover = Gtk.Button(label='Find installed Proton versions')
         discover.connect('clicked', self.on_trainer_find_proton)
         page.append(discover)
+        self.trainer_proton_options = Gtk.DropDown.new_from_strings(
+            ['Choose a discovered Proton version (none selected)'])
+        self.trainer_proton_options.connect('notify::selected', self.on_trainer_proton_selected)
+        page.append(self.trainer_proton_options)
         self.trainer_review = Gtk.Button(label='Inspect trainer and review launch plan')
         self.trainer_review.connect('clicked', self.on_trainer_review)
         page.append(self.trainer_review)
@@ -280,10 +298,30 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(trainer_actions)
         self.trainer_status = label('No trainer has been started.')
         page.append(self.trainer_status)
+        page.append(label('Launch confirmation means only that Wine/Proton started. '
+                          'An in-game effect is never assumed.', 'gw-safety'))
+        copy_report = Gtk.Button(label='Copy redacted trainer test report')
+        copy_report.connect('clicked', self.on_trainer_copy_report)
+        page.append(copy_report)
+        self.trainer_report = Gtk.TextView()
+        self.trainer_report.set_monospace(True)
+        self.trainer_report.set_editable(False)
+        self.trainer_report.set_cursor_visible(False)
+        self.trainer_report.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.trainer_report.set_size_request(-1, 115)
+        page.append(self.trainer_report)
+        page.append(label('YOUR OBSERVATIONS (manual, not independently verified)', 'gw-section'))
+        self.trainer_window_observed = Gtk.CheckButton(label='I saw the Windows trainer window open')
+        page.append(self.trainer_window_observed)
+        self.trainer_effect_observed = Gtk.CheckButton(label='I tested an effect in an offline single-player game')
+        page.append(self.trainer_effect_observed)
+        observation = Gtk.Button(label='Add my observations to the report')
+        observation.connect('clicked', self.on_trainer_observation)
+        page.append(observation)
         page.append(label('Proton mode is experimental: shared prefix access does not prove '
                           'trainer-to-game attachment. Never force-close unrelated Wine/Steam processes.',
                           'gw-safety'))
-        self.tabs.add_titled(page, 'trainers', 'Trainer Lab')
+        self.tabs.add_titled(trainer_scroll, 'trainers', 'Trainer Lab')
 
     def _trainer_game_id(self):
         selected = self.trainer_game.get_selected()
@@ -291,6 +329,49 @@ class DesktopWindow(Gtk.ApplicationWindow):
 
     def _trainer_mode_name(self):
         return 'proton' if self.trainer_mode.get_selected() == 1 else 'isolated'
+
+    def on_trainer_browse(self, _):
+        # GTK4 native picker. It never executes or inspects the selected file.
+        chooser = Gtk.FileChooserNative.new('Choose a local Windows trainer', self,
+            Gtk.FileChooserAction.OPEN, 'Choose EXE', 'Cancel')
+        filter_exe = Gtk.FileFilter()
+        filter_exe.set_name('Windows executables (*.exe)')
+        filter_exe.add_pattern('*.exe')
+        filter_exe.add_pattern('*.EXE')
+        chooser.add_filter(filter_exe)
+        def on_response(dialog, response):
+            if response == Gtk.ResponseType.ACCEPT:
+                selected = dialog.get_file()
+                local = selected.get_path() if selected else None
+                if local:
+                    self.trainer_path.set_text(local)
+            dialog.destroy()
+        chooser.connect('response', on_response)
+        chooser.show()
+
+    def on_trainer_proton_selected(self, widget, _param):
+        selected = widget.get_selected()
+        if 1 <= selected <= len(self.trainer_proton_paths):
+            self.trainer_proton.set_text(self.trainer_proton_paths[selected - 1])
+
+    def on_trainer_copy_report(self, _):
+        if self.trainer_last_report is None:
+            self.trainer_status.set_text('No completed trainer session report yet.')
+            return
+        self.get_clipboard().set_text(json.dumps(self.trainer_last_report, indent=2, sort_keys=True))
+        self.trainer_status.set_text('Redacted trainer report copied to clipboard.')
+
+    def on_trainer_observation(self, _):
+        if self.trainer_last_report is None:
+            self.trainer_status.set_text('Run a trainer test before recording your observations.')
+            return
+        report = dict(self.trainer_last_report)
+        report['user_reported_trainer_window_visible'] = bool(self.trainer_window_observed.get_active())
+        report['user_reported_in_game_effect'] = bool(self.trainer_effect_observed.get_active())
+        report['user_observations_not_independently_verified'] = True
+        self.trainer_last_report = report
+        self.trainer_report.get_buffer().set_text(json.dumps(report, indent=2, sort_keys=True))
+        self.trainer_status.set_text('Your observations have been added. Copy the redacted report to share it.')
 
     def on_trainer_game_changed(self, *_):
         if hasattr(self, 'trainer_review_sha') and hasattr(self, 'trainer_run'):
@@ -304,6 +385,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
     def on_trainer_changed(self, *_):
         self.trainer_review_sha = None
         self.trainer_consent.set_active(False)
+        self.trainer_prefix_consent.set_active(False)
         self.trainer_run.set_sensitive(False)
         self.trainer_summary.set_text('Configuration changed. Review the EXE and game again before launching.')
 
@@ -318,12 +400,16 @@ class DesktopWindow(Gtk.ApplicationWindow):
         if not options:
             self.trainer_summary.set_text('No installed Proton launcher was detected. Enter its path manually.')
             return
-        # Discovery is a hint; the user must verify Steam's configured Proton.
-        choice = options[-1]
-        self.trainer_proton.set_text(choice['path'])
+        # Never silently choose the newest or last enumerated version; game
+        # compatibility requires the user to confirm Steam's actual setting.
+        self.trainer_proton_paths = [item['path'] for item in options]
+        names = ['Choose a discovered Proton version (none selected)']
+        names.extend(item['label'] for item in options)
+        self.trainer_proton_options.set_model(Gtk.StringList.new(names))
+        self.trainer_proton_options.set_selected(0)
         self.trainer_summary.set_text(
-            f"Found {len(options)} Proton launcher(s). Suggested: {choice['label']}. "
-            'Confirm this matches the selected game in Steam before continuing.')
+            f'Found {len(options)} Proton versions. Select the one matching the game in Steam. '
+            'No Proton executable was selected automatically.')
 
     def on_trainer_review(self, _):
         self.trainer_review_sha = None
@@ -341,12 +427,15 @@ class DesktopWindow(Gtk.ApplicationWindow):
             self.trainer_summary.set_text('Preflight failed. Verify EXE, Wine/Proton and the selected game prefix.')
             return
         self.trainer_review_sha = result['trainer_sha256']
+        resources = result.get('companion_resources_detected', 0)
         warning = ('Existing game Proton prefix will be used and MAY change.'
                    if result['mode'] == 'proton' else
                    'A disposable Wine prefix will be used; trainer-game attachment is not expected.')
         self.trainer_summary.set_text(
             f"Game App ID: {appid}   ·   Windows {result['machine']}   ·   "
-            f"{result['trainer_bytes']} bytes\nSHA-256: {self.trainer_review_sha}\n{warning}")
+            f"{result['trainer_bytes']} bytes\nSHA-256: {self.trainer_review_sha}\n{warning}"
+            + (f'\nWarning: {resources} adjacent support files found; only the EXE is staged and pinned.'
+               if resources else ''))
         self.trainer_run.set_sensitive(False)
         # User must grant consent *after* viewing this exact hash.
         self.trainer_consent.set_active(False)
@@ -372,6 +461,10 @@ class DesktopWindow(Gtk.ApplicationWindow):
         proton = self.trainer_proton.get_text().strip() or None
         hash_pin = self.trainer_review_sha
         self.trainer_busy = True
+        self.trainer_last_report = None
+        self.trainer_report.get_buffer().set_text('Trainer launched; report available after shutdown.')
+        self.trainer_window_observed.set_active(False)
+        self.trainer_effect_observed.set_active(False)
         self.trainer_cancel_event.clear()
         self.trainer_stop.set_sensitive(True)
         self.trainer_run.set_sensitive(False)
@@ -390,10 +483,12 @@ class DesktopWindow(Gtk.ApplicationWindow):
             def deliver():
                 self.trainer_busy = False
                 self.trainer_stop.set_sensitive(False)
+                self.trainer_last_report = result
+                self.trainer_report.get_buffer().set_text(json.dumps(result, indent=2, sort_keys=True))
                 self.trainer_status.set_text(
                     'Trainer test: ' + result.get('state', 'unknown') +
-                    ' · Application started: ' + str(result.get('trainer_process_started', False)) +
-                    ' · In-game effect NOT verified')
+                    ' · Wine/Proton launcher started: ' + str(result.get('trainer_process_started', False)) +
+                    ' · Windows trainer window and in-game effects NOT verified')
                 return False
             GLib.idle_add(deliver)
         threading.Thread(target=worker, daemon=True).start()
@@ -529,7 +624,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(save)
         self.preferences_status = label('Favourites and personal notes are saved locally.')
         page.append(self.preferences_status)
-        page.append(label('GameWeld 0.7.0-alpha. Trainer Lab supports explicit local EXE launch; live-game memory '
+        page.append(label('GameWeld 0.8.0-alpha. Trainer Lab supports explicit local EXE launch; live-game memory '
                           'access and Steam launch-option changes are unavailable.', 'gw-safety'))
         self.tabs.add_titled(page, 'settings', 'Preferences')
 

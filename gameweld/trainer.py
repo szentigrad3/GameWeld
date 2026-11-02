@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import selectors
 import shutil
 import signal
 import stat
@@ -20,6 +21,7 @@ from pathlib import Path
 from .core import installed_games, load_settings, libraries
 
 MAX_EXE = 256 * 1024 * 1024
+MAX_OUTPUT = 131072
 CHUNK = 1024 * 1024
 MODES = ('isolated', 'proton')
 
@@ -156,11 +158,36 @@ def _selected_game(appid, steamapps=None):
     return game
 
 
+def companion_warning(path):
+    """Read-only warning for common trainers shipped with adjacent resources.
+
+    Deliberately do not auto-stage third-party DLLs, archives or executable
+    sidecars into a new Wine prefix. The selected EXE is the only pinned file.
+    """
+    count = 0
+    truncated = False
+    with os.scandir(Path(path).parent) as folder:
+        for index, item in enumerate(folder):
+            if index >= 512:
+                truncated = True
+                break
+            if item.name == Path(path).name:
+                continue
+            if item.is_file(follow_symlinks=False) and Path(item.name).suffix.lower() in (
+                    '.dll', '.json', '.dat', '.pak', '.ini'):
+                count += 1
+    return {'companion_resources_detected': count,
+            'companion_scan_truncated': truncated,
+            'companion_resources_integrity_verified': False,
+            'companion_resources_staged': False}
+
+
 def prepare_trainer(path, *, appid, mode='isolated', proton=None, steamapps=None):
     if mode not in MODES:
         raise ValueError('unsupported_trainer_mode')
     game = _selected_game(appid, steamapps)
     binary = inspect_trainer(path)
+    companion = companion_warning(path)
     if mode == 'proton':
         if not proton:
             raise ValueError('proton_path_required')
@@ -170,7 +197,7 @@ def prepare_trainer(path, *, appid, mode='isolated', proton=None, steamapps=None
     return {'operation': 'trainer-preflight', 'state': 'ready_for_explicit_consent',
             'game_appid': game['appid'], 'trainer_sha256': binary['sha256'],
             'trainer_bytes': binary['size_bytes'], 'machine': binary['machine'],
-            'mode': mode, 'uses_existing_game_prefix': mode == 'proton',
+            'mode': mode, **companion, 'uses_existing_game_prefix': mode == 'proton',
             'may_modify_game_prefix': mode == 'proton',
             'trainer_reputation_verified': False, 'trainer_game_compatibility_verified': False,
             'game_process_accessed': False, 'trainer_launched': False,
@@ -252,6 +279,53 @@ def _stage_pinned_exe(source, target, expected_hash):
             os.close(out)
 
 
+def _classify_output(raw):
+    """Whitelist hints without revealing private Windows/Wine output lines.
+
+    This is heuristic, not a verified error diagnosis. Never include raw text.
+    """
+    text = raw.decode('utf-8', 'replace').lower()
+    rules = (
+        ('missing_dll_hint', ('module not found', 'failed to load', 'import_dll')),
+        ('display_hint', ('nodrv_createwindow', 'cannot open display', 'no driver could be loaded')),
+        ('dotnet_hint', ('hostfxr', 'dotnet', '.net runtime', 'mscoree')),
+        ('proton_runtime_hint', ('steam compatibility', 'pressure-vessel', 'steam.exe')),
+        ('wine_prefix_hint', ('wineboot', 'prefix is not owned', 'wineprefix')),
+    )
+    return [name for name, patterns in rules if any(p in text for p in patterns)]
+
+
+def trainer_doctor(*, appid=None, mode='isolated', proton=None, steamapps=None):
+    """Read-only availability hints. Never invoke Wine or modify game prefixes."""
+    report = {'operation': 'trainer-doctor', 'mode': mode,
+              'system_wine_available': False, 'game_installed': False,
+              'proton_launchers_found': 0, 'game_prefix_available': False,
+              'trainer_launched': False, 'game_process_accessed': False,
+              'game_runtime_match_verified': False, 'raw_paths_disclosed': False}
+    if mode not in MODES:
+        return {**report, 'state': 'unsupported_mode'}
+    try:
+        _find_wine()
+        report['system_wine_available'] = True
+    except (OSError, ValueError):
+        pass
+    try:
+        report['proton_launchers_found'] = len(discover_proton(steamapps))
+    except (OSError, ValueError):
+        pass
+    if appid is not None:
+        try:
+            game = _selected_game(appid, steamapps)
+            report['game_installed'] = True
+            if proton:
+                _proton_context(game, proton)
+                report['game_prefix_available'] = True
+        except (OSError, ValueError):
+            pass
+    report['state'] = 'readonly_diagnostics_complete'
+    return report
+
+
 def _stop_owned(proc):
     if proc.poll() is not None:
         return
@@ -283,6 +357,7 @@ def run_trainer(path, *, appid, expected_sha256, consent=False, mode='isolated',
     """
     base = {'operation': 'trainer-launch', 'mode': mode, 'trainer_process_started': False,
             'trainer_functional_verified': False, 'trainer_window_verified': False,
+            'windows_trainer_process_verified': False, 'trainer_launch_attempted': False,
             'all_trainer_descendants_terminated_verified': False,
             'game_process_accessed_by_gameweld': False,
             'game_attachment_verified': False, 'steam_modified': False,
@@ -313,6 +388,9 @@ def run_trainer(path, *, appid, expected_sha256, consent=False, mode='isolated',
     elapsed = None
     returncode = None
     proc = None
+    output_bytes = {'stdout': 0, 'stderr': 0}
+    output_limited = False
+    diagnostic_hints = []
     begin = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix='gameweld-trainer-', dir=_staging_base()) as temp:
@@ -329,19 +407,49 @@ def run_trainer(path, *, appid, expected_sha256, consent=False, mode='isolated',
             if cancel_event is not None and cancel_event.is_set():
                 return {**base, 'state': 'cancelled_before_launch'}
             proc = subprocess.Popen(argv, cwd=str(binary.parent), env=env,
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL, close_fds=True,
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, close_fds=True,
                                     start_new_session=True)
             started = True
-            while proc.poll() is None:
-                if cancel_event is not None and cancel_event.is_set():
-                    cancelled = True
-                    break
-                if time.monotonic() - begin >= timeout:
-                    timed_out = True
-                    break
-                time.sleep(0.1)
-            if cancelled or timed_out:
+            # Drain Wine output so its pipes cannot block the application. Only
+            # bounded bytes are examined in memory. Never return raw diagnostics,
+            # environment strings or local file paths to the caller.
+            observed = bytearray()
+            exited_at = None
+            with selectors.DefaultSelector() as poller:
+                for stream, name in ((proc.stdout, 'stdout'), (proc.stderr, 'stderr')):
+                    os.set_blocking(stream.fileno(), False)
+                    poller.register(stream, selectors.EVENT_READ, name)
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        cancelled = True
+                        break
+                    if time.monotonic() - begin >= timeout:
+                        timed_out = True
+                        break
+                    for key, _ in poller.select(timeout=0.08):
+                        try:
+                            chunk = os.read(key.fileobj.fileno(), 16384)
+                        except BlockingIOError:
+                            continue
+                        if not chunk:
+                            poller.unregister(key.fileobj)
+                            continue
+                        output_bytes[key.data] += len(chunk)
+                        if sum(output_bytes.values()) > MAX_OUTPUT:
+                            output_limited = True
+                            break
+                        if key.data == 'stderr' and len(observed) < 16384:
+                            observed.extend(chunk[:16384 - len(observed)])
+                    if output_limited:
+                        break
+                    if proc.poll() is not None:
+                        if exited_at is None:
+                            exited_at = time.monotonic()
+                        if not poller.get_map() or time.monotonic() - exited_at > 0.5:
+                            break
+            diagnostic_hints = _classify_output(bytes(observed))
+            if cancelled or timed_out or output_limited:
                 _stop_owned(proc)
             try:
                 returncode = proc.wait(timeout=3)
@@ -349,12 +457,30 @@ def run_trainer(path, *, appid, expected_sha256, consent=False, mode='isolated',
                 _stop_owned(proc)
                 returncode = proc.wait(timeout=3)
             elapsed = round((time.monotonic() - begin) * 1000)
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.TimeoutExpired, KeyboardInterrupt):
+        if proc is not None and proc.poll() is None:
+            _stop_owned(proc)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
         return {**base, 'state': 'launcher_error', 'trainer_process_started': started,
                 'elapsed_ms': elapsed}
+    finally:
+        if proc is not None:
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None:
+                    stream.close()
     return {**base, 'state': ('cancelled' if cancelled else 'timeout_stopped' if timed_out
+                            else 'output_limit_stopped' if output_limited
+                            else 'trainer_process_failed' if returncode != 0
                             else 'trainer_process_exited'), 'trainer_process_started': started,
+            'trainer_launch_attempted': started,
             'exit_code': returncode, 'elapsed_ms': elapsed,
+            'stdout_bytes_observed': output_bytes['stdout'],
+            'stderr_bytes_observed': output_bytes['stderr'],
+            'output_limit_reached': output_limited,
+            'diagnostic_hints': diagnostic_hints,
             'owned_launcher_reaped': proc.poll() is not None,
             'wine_prefix_may_have_changed': mode == 'proton',
             'isolated_prefix_removed': mode == 'isolated'}

@@ -9,7 +9,7 @@ from .ipc import preflight, run_probe, run_benchmark
 from .history import (read_report, record_summary, sanitise_benchmark,
                       history_report, compare_summaries, annotate_summary, annotate_latest, STARTUP_CONTEXTS)
 from .startup import compare_startup, startup_trend
-from .trainer import inspect_trainer, prepare_trainer, run_trainer, discover_proton
+from .trainer import inspect_trainer, prepare_trainer, run_trainer, discover_proton, trainer_doctor
 
 
 def main(argv=None):
@@ -40,6 +40,7 @@ def main(argv=None):
     parser.add_argument('--consent-owned-fixture', action='store_true', help='Required for --ipc-test')
     parser.add_argument('--fixture', help='Must match the pinned original Win64 v2 SHA-256')
     parser.add_argument('--trainer-list-proton', action='store_true', help='Read-only installed Proton discovery')
+    parser.add_argument('--trainer-doctor', action='store_true', help='Read-only Wine/Proton and game-prefix availability diagnostic')
     parser.add_argument('--trainer-inspect', metavar='EXE', help='Read-only Windows PE and SHA-256 inspection')
     parser.add_argument('--trainer-preview', metavar='EXE', help='Review selected game and trainer before launching')
     parser.add_argument('--trainer-launch', metavar='EXE', help='Launch a personally trusted local trainer with explicit consent')
@@ -51,6 +52,10 @@ def main(argv=None):
     parser.add_argument('--consent-game-prefix', action='store_true', help='I accept that Proton mode can modify existing game prefix')
     parser.add_argument('--trainer-timeout', type=int, default=180, help='Maximum trainer window lifetime, 10..1800 seconds')
     args = parser.parse_args(argv)
+    if args.trainer_doctor:
+        print(json.dumps(trainer_doctor(appid=args.trainer_appid, mode=args.trainer_mode,
+              proton=args.trainer_proton, steamapps=args.steamapps), sort_keys=True))
+        return 0
     if args.trainer_list_proton:
         print(json.dumps({'operation': 'trainer-proton-discovery',
                           'candidates': discover_proton(args.steamapps),
