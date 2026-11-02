@@ -1,58 +1,34 @@
-# GameWeld
+# GameWeld — Linux Desktop Application
 
-**Linux game and trainer management for Steam, Heroic and Lutris.**
+**Development transition (Batch78). Not a stable release.**
 
-GameWeld keeps local trainer assignments together, helps discover publisher-listed trainers, and launches supported games and trainers through their existing Wine, Proton and launcher sessions.
+GameWeld is moving toward a source-built Linux desktop application for organising installed games, viewing read-only compatibility diagnostics, and managing **explicitly authorised** standalone sidecar sessions. The near-term UI target is GTK4 on Linux, with CachyOS/Arch among the development hosts.
 
-**Latest stable:** 0.7.0  
-**Current development build:** 0.8.0 Dev 1 (publisher-file review; no unattended downloads)
+> The historical repository on `main` contains a different, older GameWeld GTK3/AppImage trainer-manager implementation (0.7.0 / 0.8.0 Dev 1). This branch documents the transition; the Batch78 GTK4 app source is **not yet merged into this GitHub branch**. Do not treat the old packaging instructions as the new desktop app's build instructions.
 
-GameWeld is maintained by [@szentigrad3](https://github.com/szentigrad3).
+## New direction
 
-## Features
+- **Desktop library:** Steam game discovery, local search and favourites.
+- **Diagnostics:** read-only installed-game, Wine and Proton status, with uncertainty shown accurately.
+- **IPC Lab:** a GameWeld-owned, SHA-256-pinned Win64 probe with READY → PING/PONG → STATUS/OK → STOP/STOPPED protocol.
+- **Session management:** explicit consent, bounded runtime, per-session temporary Wine prefixes and lifecycle observation.
+- **Reproducible releases:** complete source, automated tests and source-built Linux deliverables before publishing as stable.
 
-- Trainer Library with **My Trainers**, **Find Updates**, and **Advanced** views.
-- Steam and Steam-shortcut, Heroic (Epic/GOG), and Lutris game discovery and session-aware trainer launching.
-- FLiNG publisher page and release-listing discovery with game-version compatibility hints.
-- Local trainer filename comparisons and read-only metadata reporting.
-- Signed-catalog verification (Ed25519 with locally pinned keys), approved checksum-pinned staging, inspection and rollback.
-- Read-only upgrade preflight, automatic-check limits, and support diagnostics.
-- Experimental Wand/WeMod prefix detection and manager awareness.
+The Batch77 prototype demonstrated the four-stage Win64 IPC handshake in two real isolated system-Wine runs. That evidence is **not proof** of compatibility with third-party trainers, live games, Steam-managed Proton or anti-cheat systems.
 
-**Important:** a publisher page is not a verified trainer update. GameWeld does not bundle third-party trainers, does not guarantee that a found executable is trustworthy, and does not install arbitrary publisher files automatically. The signed catalog format is implemented, but no official signing keys or authenticated feeds for FLiNG, HexTrainer, Aurora, Cheat Evolution or Wand are bundled.
+## Safety and compatibility boundaries
 
-## Install
+No game-memory reads/writes, automatic trainer attachment, anti-cheat bypass, arbitrary executable launching, Steam launch-option mutation or third-party trainer redistribution is enabled by this transition. Experimental native-lab fixtures and game diagnostics must remain explicitly marked as such.
 
-**GitHub release assets are not published yet.** Track the first stable release in [issue #4](https://github.com/szentigrad3/GameWeld/issues/4). Once published, download the Linux x86_64 **AppImage** from [Releases](https://github.com/szentigrad3/GameWeld/releases), then:
+## Project status and navigation
 
-```bash
-chmod +x GameWeld-0.7.0-x86_64.AppImage
-./GameWeld-0.7.0-x86_64.AppImage
-```
+- [Desktop-first roadmap](ROADMAP.md)
+- [Architecture and release gates](docs/DESKTOP-ARCHITECTURE.md)
+- [Legacy work and migration register](docs/LEGACY-TRANSITION.md)
+- [Current historical build instructions](docs/BUILDING.md) — **legacy GTK3/AppImage path only**
+- [Security](SECURITY.md)
+- [Third-party licensing](THIRD-PARTY.md)
 
-Use 0.7.0 for daily play. Test 0.8.0 development releases separately and retain the stable AppImage as a fallback. Existing user configuration lives under XDG configuration/state directories and is not embedded in release packages.
+**Release policy:** no public AppImage or native Linux binary should be labelled ready until its source, packaging, checksums, clean-install test and relevant host validations are available. Do not infer that a GitHub Release asset exists from old roadmap references.
 
-## Build the development AppImage
-
-Current packaging **requires the exact 0.7.0 stable AppImage as its runtime baseline**. This is not yet an entirely from-scratch build. A clean build is a tracked roadmap item. For a build from the checked-out source, see [Building](docs/BUILDING.md).
-
-```bash
-./MAKE-APPIMAGE.sh /absolute/path/GameWeld-0.7.0-x86_64.AppImage
-```
-
-The build regenerates the GTK application and embeds the current GameWeld helpers into the baseline runtime. Do not use an unverified AppImage as the baseline.
-
-## Development & support
-
-- [Build and test](docs/BUILDING.md)
-- [Project roadmap](ROADMAP.md)
-- [Release process](docs/RELEASING.md)
-- [Third-party components](THIRD-PARTY.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security reporting](SECURITY.md)
-
-Bug reports should include the GameWeld version, launcher (Steam/Heroic/Lutris), Linux distribution, relevant symptoms and a **redacted** log. Don't upload credentials, proprietary trainer executables, Wine prefixes or personal files.
-
-## Licensing and independence
-
-GameWeld's own source is distributed under the [MIT license](LICENSE). Third-party tools, libraries, runtime components and artwork retain their own terms; see [THIRD-PARTY.md](THIRD-PARTY.md). GameWeld is not affiliated with Valve, Epic, GOG, FLiNG, Cheat Happens, HexTrainer, Cheat Evolution or WeMod.
+GameWeld is an independent project and is not affiliated with Valve, WeMod, FLiNG, Epic or game publishers.
