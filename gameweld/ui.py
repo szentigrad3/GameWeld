@@ -15,6 +15,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.games = installed_games(self.prefs["steamapps"])
         self.query = ""
         self.favourites_only = False
+        self.sort_mode = 0
         self.selected_appid = None
         self.set_child(self.make_ui())
 
@@ -39,6 +40,12 @@ class DesktopWindow(Gtk.ApplicationWindow):
         search.set_hexpand(True)
         search.connect("search-changed", self.on_search)
         tools.append(search)
+
+        sort_label = Gtk.Label(label="Sort:")
+        tools.append(sort_label)
+        self.sort_picker = Gtk.DropDown.new_from_strings(["Title", "Steam App ID"])
+        self.sort_picker.connect("notify::selected", self.on_sort)
+        tools.append(self.sort_picker)
 
         favourites = Gtk.CheckButton(label="Favourites")
         favourites.connect("toggled", self.on_favourites)
@@ -84,6 +91,10 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.fav_button.set_sensitive(False)
         self.fav_button.connect("clicked", self.on_toggle)
         details.append(self.fav_button)
+        self.copy_id_button = Gtk.Button(label="Copy Steam App ID")
+        self.copy_id_button.set_sensitive(False)
+        self.copy_id_button.connect("clicked", self.on_copy_appid)
+        details.append(self.copy_id_button)
         safety = Gtk.Label(
             label="Game discovery is read-only. Trainer attachment is disabled.",
             xalign=0)
@@ -118,6 +129,8 @@ class DesktopWindow(Gtk.ApplicationWindow):
         visible = find_games(self.games, self.query,
                              self.prefs["favourites"], self.favourites_only)
         favourite_ids = set(self.prefs["favourites"])
+        if self.sort_mode == 1:
+            visible.sort(key=lambda game: game["appid"])
         selected_row = None
         for game in visible:
             row = Gtk.ListBoxRow()
@@ -135,7 +148,8 @@ class DesktopWindow(Gtk.ApplicationWindow):
                 selected_row = row
 
         self.summary.set_text(
-            f"{len(visible)} visible of {len(self.games)} Steam games discovered")
+            f"{len(visible)} visible of {len(self.games)} Steam games discovered"
+            f"  ·  {len(favourite_ids)} favourites")
         if selected_row is not None:
             self.listbox.select_row(selected_row)
         else:
@@ -144,6 +158,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
 
     def show_game(self, game):
         self.fav_button.set_sensitive(game is not None)
+        self.copy_id_button.set_sensitive(game is not None)
         if game is None:
             self.info.set_text("Choose a game for read-only details.")
             return
@@ -161,6 +176,15 @@ class DesktopWindow(Gtk.ApplicationWindow):
     def on_favourites(self, widget):
         self.favourites_only = widget.get_active()
         self.repaint()
+
+    def on_sort(self, widget, _pspec):
+        self.sort_mode = widget.get_selected()
+        self.repaint()
+
+    def on_copy_appid(self, _):
+        game = self.selected()
+        if game is not None:
+            self.get_clipboard().set_text(str(game["appid"]))
 
     def on_refresh(self, _):
         self.games = installed_games(self.prefs["steamapps"])
