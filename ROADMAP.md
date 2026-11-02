@@ -1,27 +1,44 @@
-# Roadmap
+# GameWeld roadmap — desktop application reboot
 
-## 0.7.0 — Stable
+**Status: development transition, 2026-11-02.** This supersedes the historical 0.7.0/0.8.0 feature roadmap **for new development**. The previous roadmap's implementation and history remain in Git history; this document does not declare old GitHub releases complete.
 
-Trainer Library, session-aware Steam/Heroic/Lutris launch paths, FLiNG publisher discovery, version-label comparisons, read-only preflight, signed-catalog format, checksum-pinned staging and rollback. Field-tested against an existing library; no provider-authenticated automatic download feed is bundled.
+## Milestone D1 — Batch78 GTK4 app shell (in progress, not yet merged)
 
-## 0.8.0 — Download source integration (in development)
+- Source-built GTK4 launcher for CachyOS/Linux.
+- Steam installed-game browser with search and local favourites.
+- Read-only per-game diagnostics and session state.
+- Separate IPC Lab for the pinned GameWeld Windows fixture. Launch only with explicit consent.
+- XDG local settings/state, clear errors, no placeholder controls or fake status.
+- Headless UI-core tests and an actual graphical smoke test before declaring GUI verified.
 
-- **Dev 1:** inspect exact first-party FLiNG file links without downloading or installing files.
-- Distinguish first-party page links from authenticated package releases.
-- Provider-specific support for verifiable metadata and download workflows where supported.
-- Approved and integrity-checked acquisition, with staging and rollback.
-- Reduce reliance on legacy AppImage bases during builds.
+**Exit gate:** downloadable source-complete app launches on CachyOS and the game library/diagnostics work. It need not attach to a game.
 
-## 0.9.0 — Update automation
+## Milestone D2 — Reliable standalone sidecar manager
 
-- Scheduled discovery, version checks and manager-application monitoring.
-- Unified review queue with explicit *candidate*, *verified* and *installed* states.
-- Background preparation only when a supported provider offers sufficiently trustworthy release data.
+- Versioned IPC protocol and session ownership.
+- Bounded stderr/stdout, startup/idle/shutdown timeouts and cancellation.
+- Deterministic cleanup of owned child processes; accurately report unseen detached helpers.
+- Explicit capability policy: only approved, integrity-pinned executables; no arbitrary trainer upload/execute.
+- Isolation tests and lifecycle evidence on CachyOS.
 
-## 1.0.0 — General availability
+## Milestone D3 — Packaging, architecture, quality
 
-- Self-contained, reproducible Linux builds; stable CI/CD.
-- Documentation, issue triage, application accessibility and localization readiness.
-- Security, install/rollback and compatibility test gates across representative launchers.
+- Replace inherited AppImage-runtime approach with source-complete packaging.
+- Build and smoke-test a Linux native artifact; optional AppImage after dependency audit.
+- CI for Python, GTK4 UI-core, historical regression boundaries and packaging.
+- Security review, private-log redaction, licensing inventory, accessibility and migration tests.
 
-Roadmap targets are not commitments to features unsupported by providers or restricted by licensing.
+## Milestone D4 — Opt-in compatibility research (not currently enabled)
+
+- Verify the exact game/runtime context independently of command-line hints.
+- Test harmless sidecar integration through supported game launch paths.
+- Keep third-party trainer, live game-memory and anti-cheat-dependent workflows behind separate, explicit compatibility and safety gates.
+- Never equate the Batch77 fixture handshake with working game integration.
+
+## Historical backlog status
+
+Existing issues and pull requests are **preserved for review**, not automatically carried into the new architecture. See [legacy transition register](docs/LEGACY-TRANSITION.md). Decide individually whether to port, supersede, or close only after confirming relevant code and permissions.
+
+## Rules
+
+Keep `main` and old release history intact until migration is reviewed. No mass deletion of branches or issues, no history rewrite, and no claim of completed GUI/Proton compatibility without host evidence.
