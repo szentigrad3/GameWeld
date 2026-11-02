@@ -9,6 +9,7 @@ from .ipc import preflight, run_probe, run_benchmark
 from .history import (read_report, record_summary, sanitise_benchmark,
                       history_report, compare_summaries, annotate_summary, annotate_latest, STARTUP_CONTEXTS)
 from .startup import compare_startup, startup_trend
+from .trainer import inspect_trainer, prepare_trainer, run_trainer, discover_proton
 
 
 def main(argv=None):
@@ -38,7 +39,46 @@ def main(argv=None):
     parser.add_argument('--timeout', type=int, default=75, help='Per-fixture session timeout: 10 to 120 sec')
     parser.add_argument('--consent-owned-fixture', action='store_true', help='Required for --ipc-test')
     parser.add_argument('--fixture', help='Must match the pinned original Win64 v2 SHA-256')
+    parser.add_argument('--trainer-list-proton', action='store_true', help='Read-only installed Proton discovery')
+    parser.add_argument('--trainer-inspect', metavar='EXE', help='Read-only Windows PE and SHA-256 inspection')
+    parser.add_argument('--trainer-preview', metavar='EXE', help='Review selected game and trainer before launching')
+    parser.add_argument('--trainer-launch', metavar='EXE', help='Launch a personally trusted local trainer with explicit consent')
+    parser.add_argument('--trainer-appid', type=int, help='Must be an installed Steam App ID')
+    parser.add_argument('--trainer-mode', choices=('isolated', 'proton'), default='isolated')
+    parser.add_argument('--trainer-proton', metavar='PATH', help='Exact installed Proton executable for selected game')
+    parser.add_argument('--trainer-sha256', metavar='SHA256', help='Expected SHA-256 copied from prior inspection')
+    parser.add_argument('--consent-trainer-launch', action='store_true')
+    parser.add_argument('--consent-game-prefix', action='store_true', help='I accept that Proton mode can modify existing game prefix')
+    parser.add_argument('--trainer-timeout', type=int, default=180, help='Maximum trainer window lifetime, 10..1800 seconds')
     args = parser.parse_args(argv)
+    if args.trainer_list_proton:
+        print(json.dumps({'operation': 'trainer-proton-discovery',
+                          'candidates': discover_proton(args.steamapps),
+                          'game_runtime_match_verified': False}, sort_keys=True))
+        return 0
+    if args.trainer_inspect or args.trainer_preview or args.trainer_launch:
+        if args.trainer_appid is None and not args.trainer_inspect:
+            parser.error('--trainer-appid is required for trainer preview or launch')
+        try:
+            if args.trainer_inspect:
+                result = inspect_trainer(args.trainer_inspect)
+            elif args.trainer_preview:
+                result = prepare_trainer(args.trainer_preview, appid=args.trainer_appid,
+                                         mode=args.trainer_mode, proton=args.trainer_proton,
+                                         steamapps=args.steamapps)
+            else:
+                result = run_trainer(args.trainer_launch, appid=args.trainer_appid,
+                                     expected_sha256=args.trainer_sha256,
+                                     consent=args.consent_trainer_launch,
+                                     mode=args.trainer_mode, proton=args.trainer_proton,
+                                     consent_game_prefix=args.consent_game_prefix,
+                                     steamapps=args.steamapps, timeout=args.trainer_timeout)
+        except (OSError, ValueError):
+            result = {'operation': 'trainer-launch-or-inspection', 'state': 'trainer_preflight_failed',
+                      'trainer_process_started': False, 'raw_paths_disclosed': False}
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result.get('state') in ('windows_pe_inspected', 'ready_for_explicit_consent',
+                                          'trainer_process_exited') and (result.get('exit_code') in (None, 0)) else 1
     if (args.ipc_test or args.ipc_benchmark) and not 10 <= args.timeout <= 120:
         parser.error('--timeout must be between 10 and 120 seconds')
     if args.startup_context != 'unclassified' and not (args.record_benchmark or args.annotate_benchmark or args.annotate_latest or args.save_history):

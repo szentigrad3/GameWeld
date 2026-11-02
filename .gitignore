@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+build/
+dist/
+*.log
+*.exe
+*.dll
+*.AppImage
+*.zip
+.env
+.env.*
+*.pem
+*.key

@@ -1,4 +1,4 @@
-# GameWeld — Desktop 0.6.0 Alpha
+# GameWeld — Desktop 0.7.0 Alpha
 
 A source-built **GTK4 desktop application** for Linux, developed as the clean GameWeld reboot.
 
@@ -10,7 +10,7 @@ A source-built **GTK4 desktop application** for Linux, developed as the clean Ga
 - A dedicated IPC Lab using **only the pinned GameWeld Batch77 Win64 v2 fixture** (SHA-256 checked before execution). The lab uses system Wine, fresh disposable prefixes, exact READY/PING/STATUS/STOP replies, bounded output, an explicit per-test consent checkbox and a background UI worker.
 - Local XDG preferences, no network connections and a headless CLI for diagnostics.
 
-**Not supported:** third-party trainer launching, arbitrary EXE execution, shared game Proton/Wine prefix execution, game memory access, Steam configuration changes or anti-cheat circumvention.
+**New in 0.7:** explicitly consented user-supplied Windows trainer testing; this is experimental and is not evidence of working in-game cheats. No game memory inspection, automatic trainer discovery/download, Steam launch-option changes, or anti-cheat circumvention are provided.
 
 ## CachyOS / Arch
 
@@ -177,3 +177,63 @@ require a CachyOS host test. A reported Wine Mono installation is user-provided
 context, not a mechanically confirmed explanation. A single additional slow
 startup does not establish a performance regression. Complete detached Wine
 helper cleanup and commercial trainer compatibility remain unverified.
+
+## New in 0.7.0-alpha — Test your own local Windows trainer
+
+This is GameWeld's first **real local Windows trainer launch path**, not just the original GameWeld IPC fixture. **Only execute EXEs from sources you personally trust.** SHA-256 pinning and Windows PE validation protect integrity; they do **not** make unknown trainers safe, guarantee compatibility, or detect malware. No executables are downloaded, bundled, patched or modified by GameWeld. Use offline, single-player games and avoid anticheat-protected games or online play.
+
+The GTK4 **Trainer Lab** offers a Steam-game selector, EXE path, a separate *Find installed Proton versions* helper, a checksum inspection/review screen, isolation/advanced mode selector, separate consent checkboxes, a Launch button and a Stop button. GameWeld does not read or write live-game memory itself.
+
+Two modes are available:
+
+- **Isolated system Wine:** starts a private, temporary Wine prefix. This is useful for determining whether the Windows trainer's own window starts, but is **not expected to attach to a Steam Proton game**. Wine Mono setup can take time on fresh prefixes.
+- **Existing Steam Proton game prefix (advanced):** attempts `proton run` with the **pre-existing** selected game's Steam compatdata directory and a user-selected Proton launcher. **May change the game's compatibility prefix, registry and save state. Back up your prefix and game saves before using.** This is an experimental compatibility attempt, not evidence that Steam's existing wineserver, pressure-vessel container or a running game are shared correctly. If Proton refuses to start, don't assume the trainer is broken. GameWeld never runs `wineserver -k`, changes Steam launch options or kills a game.
+
+The source trainer is checked as a regular user-owned PE32/PE32+ `.exe` (not a symlink), hashed, and **copied and reverified** in a short-lived private staging directory before Wine/Proton sees it. Only single-EXE trainers are supported: tools that require adjacent DLLs or files may fail. The original EXE is not modified. Staged files are removed when the tracked launcher exits. Spawned grandchildren and trainer effects are **not verified**.
+
+### Commands (first do a read-only review)
+
+```bash
+cd ~/Downloads/GameWeld
+bash run.sh --trainer-list-proton
+bash run.sh --trainer-inspect "$HOME/Downloads/MyTrustedTrainer.exe"
+bash run.sh --trainer-preview "$HOME/Downloads/MyTrustedTrainer.exe" --trainer-appid 3008130
+```
+
+Copy the `sha256` value from inspection, and **only after personally reviewing the file**, test the isolated launch:
+
+```bash
+bash run.sh --trainer-launch "$HOME/Downloads/MyTrustedTrainer.exe" \
+  --trainer-appid 3008130 --trainer-mode isolated \
+  --trainer-sha256 'PASTE_INSPECTED_SHA256_HERE' \
+  --consent-trainer-launch --trainer-timeout 180
+```
+
+For **advanced existing-game Proton mode**, first launch that game at least once in Steam, shut it down, back up its compatdata and saves, identify the *exact* Proton version the game uses, and then:
+
+```bash
+bash run.sh --trainer-preview "$HOME/Downloads/MyTrustedTrainer.exe" \
+  --trainer-appid 3008130 --trainer-mode proton \
+  --trainer-proton "$HOME/.local/share/Steam/steamapps/common/Proton - Experimental/proton"
+# Only after reviewing the prefix warning and checksum:
+bash run.sh --trainer-launch "$HOME/Downloads/MyTrustedTrainer.exe" \
+  --trainer-appid 3008130 --trainer-mode proton \
+  --trainer-proton "$HOME/.local/share/Steam/steamapps/common/Proton - Experimental/proton" \
+  --trainer-sha256 'PASTE_INSPECTED_SHA256_HERE' \
+  --consent-trainer-launch --consent-game-prefix --trainer-timeout 900
+```
+
+`--trainer-proton` is an example; use the **installed Proton executable for that game**. The command only launches a trainer, **not** the game. If you wish to test in-game effects, start the appropriate offline single-player game separately through Steam. All reports avoid raw file paths and trainer names, and never claim that in-game effects were verified. The trainer itself might make changes to a game's memory or files once started, outside GameWeld's control.
+
+### Updating a previous user-level installation
+
+```bash
+cd ~/Downloads/GameWeld
+git pull --ff-only
+python -m unittest discover -s tests -v
+python -m gameweld.installer install --dry-run
+python -m gameweld.installer install
+~/.local/bin/gameweld
+```
+
+The installed launcher copies the new `gameweld/trainer.py` module as well. No external trainer files are installed by GameWeld.

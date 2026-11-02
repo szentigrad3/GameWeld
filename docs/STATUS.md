@@ -56,3 +56,7 @@ refuses unmanaged conflicting launchers and symlinks, and preserves user
 settings, notes and benchmark history on uninstall. A real CachyOS GUI/menu
 launch still needs verification. The Batch77 pinned fixture, consent gating and
 no-game-access boundaries remain unchanged.
+
+## 0.7.0-alpha local trainer experiment
+
+GameWeld now supports an opt-in, hash-reviewed local Win32/Win64 EXE launch, with isolated system Wine or a separately authorised pre-existing Steam game Proton prefix. An actual third-party trainer has **not** been run on the developer host. Existing Batch77 fixture IPC evidence does not verify trainers. GUI behaviour and Proton compatibility require the user's real CachyOS evidence. Only the user-supplied original EXE is executed; no trainer provider files are distributed. No game-memory access, trainer-to-game attachment, anticheat compatibility or detached child cleanup is verified by the app.

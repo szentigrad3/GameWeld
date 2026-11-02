@@ -10,6 +10,7 @@ from .ipc import fixture_default_path, preflight, run_probe, run_benchmark
 from .history import (read_report, record_summary, sanitise_benchmark, history_report,
                       annotate_summary, annotate_latest, STARTUP_CONTEXTS)
 from .startup import startup_trend
+from .trainer import inspect_trainer, prepare_trainer, run_trainer, discover_proton
 
 CSS = '''
 .gw-heading {font-size: 23px; font-weight: 700;}
@@ -50,6 +51,10 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.selected_appid = None
         self.busy = False
         self.cancel_event = threading.Event()
+        self.trainer_busy = False
+        self.trainer_cancel_event = threading.Event()
+        self.trainer_review_sha = None
+        self.trainer_game_ids = []
         self.connect('close-request', self.on_close_request)
         self.set_child(self.make_ui())
         self.refresh_games()
@@ -67,7 +72,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         refresh.connect('clicked', lambda *_: self.refresh_games())
         head.append(refresh)
         root.append(head)
-        root.append(label('Linux desktop alpha  ·  Local library  ·  No trainer attachment', 'gw-caption'))
+        root.append(label('Linux desktop alpha  ·  Local library  ·  Consent-gated Trainer Lab', 'gw-caption'))
 
         self.tabs = Gtk.Stack()
         self.tabs.set_vexpand(True)
@@ -77,6 +82,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         root.append(self.tabs)
         self.make_library()
         self.make_ipc()
+        self.make_trainer_lab()
         self.make_history()
         self.make_preferences()
         return root
@@ -156,7 +162,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         self.inspect_label = label('Select a game to view read-only installation evidence.', 'gw-caption')
         self.inspect_label.set_selectable(True)
         details.append(self.inspect_label)
-        details.append(label('Trainer controls disabled. Game and Proton processes are never attached.', 'gw-safety'))
+        details.append(label('Local trainer execution is available in Trainer Lab after consent. GameWeld does not attach or inspect running games.', 'gw-safety'))
         columns.append(details)
         page.append(columns)
         self.tabs.add_titled(page, 'library', 'Game library')
@@ -207,6 +213,190 @@ class DesktopWindow(Gtk.ApplicationWindow):
         output_sc.set_child(self.ipc_output)
         page.append(output_sc)
         self.tabs.add_titled(page, 'lab', 'IPC Lab')
+
+    def make_trainer_lab(self):
+        page = margins(box(spacing=12), 8)
+        page.set_vexpand(True)
+        page.append(label('Local Trainer Testing', 'gw-heading'))
+        page.append(label('Choose your own trusted Windows trainer. GameWeld checks its Windows PE format '
+                          'and SHA-256, but cannot certify the file is safe or compatible.', 'gw-caption'))
+        page.append(label('Installed Steam game:'))
+        self.trainer_game = Gtk.DropDown.new_from_strings(['Select a Steam game'])
+        self.trainer_game.connect('notify::selected', self.on_trainer_game_changed)
+        page.append(self.trainer_game)
+        choose = Gtk.Button(label='Use game selected in Library')
+        choose.connect('clicked', self.on_trainer_use_selected_game)
+        page.append(choose)
+        page.append(label('Trainer EXE (local file you obtained yourself):'))
+        self.trainer_path = Gtk.Entry()
+        self.trainer_path.set_placeholder_text('/home/user/Downloads/trainer.exe')
+        self.trainer_path.set_hexpand(True)
+        self.trainer_path.connect('changed', self.on_trainer_changed)
+        page.append(self.trainer_path)
+        mode_row = box(vertical=False, spacing=8)
+        mode_row.append(label('Environment:'))
+        self.trainer_mode = Gtk.DropDown.new_from_strings([
+            'Isolated system Wine (launch check only)',
+            'Existing Steam Proton game prefix (advanced)'])
+        self.trainer_mode.connect('notify::selected', self.on_trainer_changed)
+        mode_row.append(self.trainer_mode)
+        page.append(mode_row)
+        page.append(label('Proton executable (only for advanced prefix mode):'))
+        self.trainer_proton = Gtk.Entry()
+        self.trainer_proton.set_placeholder_text(
+            '/home/user/.local/share/Steam/steamapps/common/Proton - Experimental/proton')
+        self.trainer_proton.set_hexpand(True)
+        self.trainer_proton.connect('changed', self.on_trainer_changed)
+        page.append(self.trainer_proton)
+        discover = Gtk.Button(label='Find installed Proton versions')
+        discover.connect('clicked', self.on_trainer_find_proton)
+        page.append(discover)
+        self.trainer_review = Gtk.Button(label='Inspect trainer and review launch plan')
+        self.trainer_review.connect('clicked', self.on_trainer_review)
+        page.append(self.trainer_review)
+        self.trainer_summary = label('No trainer has been reviewed.', 'gw-caption')
+        self.trainer_summary.set_selectable(True)
+        page.append(self.trainer_summary)
+        page.append(label('A matching hash is an integrity check, not a malware scan. '
+                          'Use offline/single-player games only and avoid anti-cheat protected sessions.',
+                          'gw-safety'))
+        self.trainer_consent = Gtk.CheckButton(
+            label='I trust this local EXE and explicitly authorise launching it')
+        self.trainer_consent.connect('toggled', self.on_trainer_consent)
+        page.append(self.trainer_consent)
+        self.trainer_prefix_consent = Gtk.CheckButton(
+            label='ADVANCED: I accept this may modify the selected game Proton prefix and saves')
+        self.trainer_prefix_consent.connect('toggled', self.on_trainer_consent)
+        page.append(self.trainer_prefix_consent)
+        trainer_actions = box(vertical=False, spacing=8)
+        self.trainer_run = Gtk.Button(label='Launch reviewed trainer')
+        self.trainer_run.set_sensitive(False)
+        self.trainer_run.connect('clicked', self.on_trainer_run)
+        trainer_actions.append(self.trainer_run)
+        self.trainer_stop = Gtk.Button(label='Stop owned trainer launcher')
+        self.trainer_stop.set_sensitive(False)
+        self.trainer_stop.connect('clicked', self.on_trainer_stop)
+        trainer_actions.append(self.trainer_stop)
+        page.append(trainer_actions)
+        self.trainer_status = label('No trainer has been started.')
+        page.append(self.trainer_status)
+        page.append(label('Proton mode is experimental: shared prefix access does not prove '
+                          'trainer-to-game attachment. Never force-close unrelated Wine/Steam processes.',
+                          'gw-safety'))
+        self.tabs.add_titled(page, 'trainers', 'Trainer Lab')
+
+    def _trainer_game_id(self):
+        selected = self.trainer_game.get_selected()
+        return self.trainer_game_ids[selected - 1] if 1 <= selected <= len(self.trainer_game_ids) else None
+
+    def _trainer_mode_name(self):
+        return 'proton' if self.trainer_mode.get_selected() == 1 else 'isolated'
+
+    def on_trainer_game_changed(self, *_):
+        if hasattr(self, 'trainer_review_sha') and hasattr(self, 'trainer_run'):
+            self.on_trainer_changed(None)
+
+    def on_trainer_use_selected_game(self, _):
+        if self.selected_appid in self.trainer_game_ids:
+            self.trainer_game.set_selected(self.trainer_game_ids.index(self.selected_appid) + 1)
+            self.on_trainer_changed(None)
+
+    def on_trainer_changed(self, *_):
+        self.trainer_review_sha = None
+        self.trainer_consent.set_active(False)
+        self.trainer_run.set_sensitive(False)
+        self.trainer_summary.set_text('Configuration changed. Review the EXE and game again before launching.')
+
+    def on_trainer_consent(self, *_):
+        self.trainer_run.set_sensitive(bool(
+            self.trainer_review_sha and self.trainer_consent.get_active()
+            and (self._trainer_mode_name() != 'proton' or self.trainer_prefix_consent.get_active())
+            and not self.trainer_busy))
+
+    def on_trainer_find_proton(self, _):
+        options = discover_proton(self.prefs['steamapps'])
+        if not options:
+            self.trainer_summary.set_text('No installed Proton launcher was detected. Enter its path manually.')
+            return
+        # Discovery is a hint; the user must verify Steam's configured Proton.
+        choice = options[-1]
+        self.trainer_proton.set_text(choice['path'])
+        self.trainer_summary.set_text(
+            f"Found {len(options)} Proton launcher(s). Suggested: {choice['label']}. "
+            'Confirm this matches the selected game in Steam before continuing.')
+
+    def on_trainer_review(self, _):
+        self.trainer_review_sha = None
+        self.trainer_run.set_sensitive(False)
+        appid = self._trainer_game_id()
+        if appid is None:
+            self.trainer_summary.set_text('Choose an installed Steam game first.')
+            return
+        try:
+            result = prepare_trainer(self.trainer_path.get_text().strip(), appid=appid,
+                                     mode=self._trainer_mode_name(),
+                                     proton=self.trainer_proton.get_text().strip() or None,
+                                     steamapps=self.prefs['steamapps'])
+        except (OSError, ValueError):
+            self.trainer_summary.set_text('Preflight failed. Verify EXE, Wine/Proton and the selected game prefix.')
+            return
+        self.trainer_review_sha = result['trainer_sha256']
+        warning = ('Existing game Proton prefix will be used and MAY change.'
+                   if result['mode'] == 'proton' else
+                   'A disposable Wine prefix will be used; trainer-game attachment is not expected.')
+        self.trainer_summary.set_text(
+            f"Game App ID: {appid}   ·   Windows {result['machine']}   ·   "
+            f"{result['trainer_bytes']} bytes\nSHA-256: {self.trainer_review_sha}\n{warning}")
+        self.trainer_run.set_sensitive(False)
+        # User must grant consent *after* viewing this exact hash.
+        self.trainer_consent.set_active(False)
+
+    def on_trainer_stop(self, _):
+        if self.trainer_busy:
+            self.trainer_cancel_event.set()
+            self.trainer_stop.set_sensitive(False)
+            self.trainer_status.set_text('Stopping the owned trainer launcher; other processes will not be signalled.')
+
+    def on_trainer_run(self, _):
+        if self.trainer_busy or not self.trainer_review_sha or not self.trainer_consent.get_active():
+            return
+        if self._trainer_mode_name() == 'proton' and not self.trainer_prefix_consent.get_active():
+            self.trainer_status.set_text('Advanced Proton game-prefix consent is required.')
+            return
+        appid = self._trainer_game_id()
+        if appid is None:
+            self.trainer_status.set_text('Choose an installed Steam game.')
+            return
+        mode = self._trainer_mode_name()
+        trainer_path = self.trainer_path.get_text().strip()
+        proton = self.trainer_proton.get_text().strip() or None
+        hash_pin = self.trainer_review_sha
+        self.trainer_busy = True
+        self.trainer_cancel_event.clear()
+        self.trainer_stop.set_sensitive(True)
+        self.trainer_run.set_sensitive(False)
+        self.trainer_status.set_text('Trainer launcher running. Stop it from this tab when finished.')
+        self.trainer_consent.set_active(False)
+
+        def worker():
+            try:
+                result = run_trainer(trainer_path, appid=appid, expected_sha256=hash_pin,
+                                     mode=mode, proton=proton, consent=True,
+                                     consent_game_prefix=(mode == 'proton'),
+                                     steamapps=self.prefs['steamapps'], timeout=900,
+                                     cancel_event=self.trainer_cancel_event)
+            except Exception:
+                result = {'state': 'trainer_launch_error', 'trainer_process_started': False}
+            def deliver():
+                self.trainer_busy = False
+                self.trainer_stop.set_sensitive(False)
+                self.trainer_status.set_text(
+                    'Trainer test: ' + result.get('state', 'unknown') +
+                    ' · Application started: ' + str(result.get('trainer_process_started', False)) +
+                    ' · In-game effect NOT verified')
+                return False
+            GLib.idle_add(deliver)
+        threading.Thread(target=worker, daemon=True).start()
 
     def make_history(self):
         page = margins(box(spacing=12), 8)
@@ -339,7 +529,7 @@ class DesktopWindow(Gtk.ApplicationWindow):
         page.append(save)
         self.preferences_status = label('Favourites and personal notes are saved locally.')
         page.append(self.preferences_status)
-        page.append(label('GameWeld 0.6.0-alpha. Third-party trainers, live-game memory '
+        page.append(label('GameWeld 0.7.0-alpha. Trainer Lab supports explicit local EXE launch; live-game memory '
                           'access and Steam launch-option changes are unavailable.', 'gw-safety'))
         self.tabs.add_titled(page, 'settings', 'Preferences')
 
@@ -348,6 +538,14 @@ class DesktopWindow(Gtk.ApplicationWindow):
             self.games = installed_games(self.prefs['steamapps'])
         except (OSError, ValueError) as exc:
             self.games = []
+        if hasattr(self, 'trainer_game'):
+            previous = self._trainer_game_id()
+            self.trainer_game_ids = [g['appid'] for g in self.games]
+            names = ['Select a Steam game'] + [f"{g['title']} ({g['appid']})" for g in self.games]
+            self.trainer_game.set_model(Gtk.StringList.new(names))
+            self.trainer_game.set_selected(
+                self.trainer_game_ids.index(previous) + 1 if previous in self.trainer_game_ids else 0)
+            self.on_trainer_changed(None)
         self.repaint()
 
     def repaint(self):
@@ -508,7 +706,10 @@ class DesktopWindow(Gtk.ApplicationWindow):
     def on_close_request(self, *_args):
         if self.busy:
             self.on_ipc_cancel(None)
-            return True  # The owned child must be cleaned up before window close.
+        if self.trainer_busy:
+            self.on_trainer_stop(None)
+        if self.busy or self.trainer_busy:
+            return True  # Wait for owned launcher cleanup before closing.
         return False
 
     def on_ipc_run(self, _):

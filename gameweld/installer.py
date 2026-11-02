@@ -19,7 +19,7 @@ from .core import read_file
 MARKER = '.gameweld-desktop-managed'
 DESKTOP_NAME = 'io.github.gameweld.Desktop.desktop'
 MODULES = ('__init__.py', '__main__.py', 'core.py', 'diagnostics.py',
-           'helpers.py', 'history.py', 'installer.py', 'ipc.py', 'startup.py', 'ui.py')
+           'helpers.py', 'history.py', 'installer.py', 'ipc.py', 'startup.py', 'trainer.py', 'ui.py')
 MAX_MODULE = 256 * 1024
 
 
