@@ -11,7 +11,9 @@ from gameweld import helpers, ipc
 class HelperReviewTests(unittest.TestCase):
     def test_invalid_prefix_and_identity_are_rejected(self):
         with self.assertRaises(ValueError):
-            helpers.snapshot_active('relative-prefix')
+            helpers.snapshot_active('relative-prefix', owned_pgid=10)
+        with self.assertRaises(ValueError):
+            helpers.snapshot_active('/tmp/owned', owned_pgid=0)
         with self.assertRaises(ValueError):
             helpers.identity_states([(1, 2)])
 

@@ -159,7 +159,8 @@ def _run_once_v2(wine, fixture, timeout, *, cancel_event=None):
                         observed_at=time.monotonic()
                         timestamps.append(round((observed_at-began)*1000))
                         if stage == 1:
-                            try:active_helpers=helpers.snapshot_active(env['WINEPREFIX'])
+                            try:active_helpers=helpers.snapshot_active(env['WINEPREFIX'],
+                                owned_pgid=process.pid)
                             except (OSError, ValueError):active_helpers=None
                         if stage>1 and stage-2 in sent_at:
                             roundtrips[COMMANDS[stage-2].lower()]=round((observed_at-sent_at[stage-2])*1000,3)

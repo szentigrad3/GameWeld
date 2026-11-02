@@ -8,7 +8,7 @@ The user ran the 0.2.0 desktop IPC fixture on CachyOS. READY, PING/PONG, STATUS 
 
 - Optional one-, two- or three-session Wine benchmark with explicit consent and owned-process cancellation.
 - Separate cold-start timing (time until READY) and sub-millisecond IPC round-trip measurement.
-- Bounded read-only /proc census matching only an exact owned WINEPREFIX, with two post-exit checks against previously observed PID/starttime identities.
+- Bounded read-only /proc census matching only an exact owned WINEPREFIX within the new owned process group, with two post-exit checks against previously observed PID/starttime identities.
 - Neither this census nor zero post-exit matches prove all detached Wine helpers were reaped.
 - GTK4 IPC tab run-count selector and mean startup display.
 

@@ -54,7 +54,7 @@ Repeatable diagnostic benchmark (1–3 separate, fresh Wine sessions; explicit c
 bash run.sh --ipc-benchmark --consent-owned-fixture --runs 2 --timeout 75
 ```
 
-The benchmark reports each session's cold-start time separately from PING, STATUS and STOP round-trip times. The desktop can cancel a benchmark, terminating only its own launched process group and waiting for cleanup. It also observes previously identified same-prefix Linux process identities after exit, while always reporting complete detached helper cleanup as unverified. It reads only bounded, same-user /proc metadata and does not disclose environment strings or PIDs in JSON. Each session uses a new prefix; this **measures** startup variability but does not claim to accelerate Wine.
+The benchmark reports each session's cold-start time separately from PING, STATUS and STOP round-trip times. The desktop can cancel a benchmark, terminating only its own launched process group and waiting for cleanup. It also observes previously identified same-prefix Linux process identities within the owned launcher process group after exit, while always reporting complete detached helper cleanup as unverified. It opens process environment data only for the newly created, owned launcher process group, after a bounded same-user process-group check. It reads bounded /proc metadata and does not disclose environment strings or PIDs in JSON. Each session uses a new prefix; this **measures** startup variability but does not claim to accelerate Wine.
 
 Read-only per-game report:
 

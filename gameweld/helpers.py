@@ -39,10 +39,12 @@ def _proc_identity(pid):
         return None
 
 
-def snapshot_active(prefix):
+def snapshot_active(prefix, *, owned_pgid):
     """Return ephemeral identities and counters, no host-private values in JSON."""
     if not isinstance(prefix, str) or not os.path.isabs(prefix) or len(prefix) > 4096:
         raise ValueError('invalid_owned_prefix')
+    if type(owned_pgid) is not int or not 1 <= owned_pgid <= 4194304:
+        raise ValueError('invalid_owned_process_group')
     own_uid = os.getuid()
     marked = set()
     unreadable = 0
@@ -66,6 +68,10 @@ def snapshot_active(prefix):
                 continue
             try:
                 if os.stat(item.path, follow_symlinks=False).st_uid != own_uid:
+                    continue
+                # Never open another process's environ unless it is already in
+                # the new session created exclusively for the pinned fixture.
+                if os.getpgid(pid) != owned_pgid:
                     continue
                 before = _proc_identity(pid)
                 if before is None:
@@ -136,6 +142,7 @@ def review(active):
             'active_census_env_unreadable': active['unreadable'],
             'active_census_truncated': active['truncated'],
             'active_census_available': active['available'],
+            'census_scope': 'owned_launcher_process_group_only',
             'post_exit_identity_observations': [first, second],
             'observed_identities_absent_twice': absent,
             'unseen_helpers_not_excluded': True,
